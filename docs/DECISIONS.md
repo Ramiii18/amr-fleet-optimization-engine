@@ -61,3 +61,21 @@ with an insertion counter.
 Algorithms stay simple and uniform.
 **Consequences:** Detecting head-on conflicts on a single-lane two-way corridor requires knowing that two
 directed edges share one physical corridor. That shared resource is added in the traffic phase (M4).
+
+## D9: The warehouse generator is deterministic, with no random seed
+**Status:** Accepted (2026-11-03). The original plan proposed a seeded generator.
+**Why:** Nothing in the layout needs randomness. A map that is a pure function of its spec is easier to
+reason about, diff and reproduce. Experiment variability comes from seeded order and event streams (M2+),
+not from the map.
+**Consequences:** The example maps in `scenarios/maps/` are regenerated with `scripts/generate_maps.py`,
+and a test fails if a committed map no longer matches the generator. If randomized layouts are needed
+later, they will take an injected `random.Random` (D7).
+
+## D10: A* uses a closed set and never reopens nodes, so it requires a consistent heuristic
+**Status:** Accepted (2026-11-03)
+**Why:** With a consistent heuristic, the first expansion of a node is final. That gives a simpler and
+faster search with the same optimality guarantee. Euclidean distance is consistent on every valid map
+(D5 plus the triangle inequality). Manhattan distance is consistent on the axis-aligned generated maps.
+**Consequences:** A heuristic that is admissible but not consistent can produce suboptimal routes. A test
+documents this with an inflated heuristic. If such heuristics are ever needed, add node reopening and
+benchmark it.

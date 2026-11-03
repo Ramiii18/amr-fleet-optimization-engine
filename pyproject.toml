@@ -67,7 +67,7 @@ select = [
 python_version = "3.13"
 strict = true
 warn_unreachable = true
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 mypy_path = "src"
 explicit_package_bases = true # module names come from folders: tests/unit/x.py -> tests.unit.x
 
