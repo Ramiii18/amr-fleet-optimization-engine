@@ -11,7 +11,13 @@ import random
 import networkx as nx
 import pytest
 
-from amr_optimizer.routing import shortest_path, shortest_path_lengths, validate_route
+from amr_optimizer.routing import (
+    astar,
+    euclidean,
+    shortest_path,
+    shortest_path_lengths,
+    validate_route,
+)
 from amr_optimizer.warehouse import Edge, EdgeKey, Node, NodeId, WarehouseGraph
 
 SEEDS = range(60)
@@ -82,6 +88,28 @@ def test_one_to_all_matches_networkx(seed: int) -> None:
     assert ours.keys() == expected.keys()
     for node_id, distance in ours.items():
         assert math.isclose(distance, expected[node_id], rel_tol=1e-9, abs_tol=1e-9)
+
+
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("with_blocked_edges", [False, True])
+def test_astar_euclidean_matches_dijkstra(seed: int, with_blocked_edges: bool) -> None:
+    """Random geometric graphs have diagonal, curved edges: a fair test of consistency."""
+    graph = random_geometric_digraph(seed)
+    rng = random.Random(3000 + seed)
+    blocked = random_blocked_edges(graph, rng) if with_blocked_edges else set()
+    ids = [node.id for node in graph]
+
+    for _ in range(QUERIES_PER_GRAPH):
+        source, target = rng.choice(ids), rng.choice(ids)
+        ours = astar(graph, source, target, euclidean, blocked_edges=blocked)
+        reference = shortest_path(graph, source, target, blocked_edges=blocked)
+        if reference.route is None:
+            assert ours.route is None
+            continue
+        assert ours.route is not None
+        assert math.isclose(ours.route.length_m, reference.route.length_m, rel_tol=1e-9)
+        assert ours.expanded <= reference.expanded
+        validate_route(graph, ours.route, blocked_edges=blocked)
 
 
 def test_random_graphs_cover_both_reachable_and_unreachable_queries() -> None:
