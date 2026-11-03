@@ -21,6 +21,7 @@ dependencies = []
 dev = [
     "pytest>=8.3",
     "networkx>=3.4", # reference oracle for tests only; never imported from src/
+    "types-networkx", # type stubs so mypy can check the oracle tests
     "ruff>=0.8",
     "mypy>=1.13",
 ]
