@@ -20,7 +20,7 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
 
 ## M1 sessions
 
-- [ ] S1: Environment and project skeleton
+- [x] S1: Environment and project skeleton (2026-11-03)
 - [ ] S2: Python for structured code (dataclasses, Enum, type hints), `Node` and `Edge`
 - [ ] S3: `WarehouseGraph` with validation (test-first)
 - [ ] S4: Dijkstra (implemented by the owner, stepped through in the debugger)
