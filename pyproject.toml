@@ -1,0 +1,76 @@
+# Project metadata, dependencies and tool configuration, all in one file (PEP 517/518/621).
+#
+# Development install, from the repository root:
+#     .venv\Scripts\python.exe -m pip install -e ".[dev]"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amr-fleet-optimization-engine"
+version = "0.0.1"
+description = "Synthetic, simulation-based AMR fleet dispatch, routing and traffic optimization engine."
+readme = "README.md"
+requires-python = ">=3.13"
+# Runtime dependencies: intentionally none yet. The core uses only the standard library.
+# Each new dependency is added when code needs it, with a reason (see docs/DECISIONS.md).
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "networkx>=3.4", # reference oracle for tests only; never imported from src/
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+viz = ["matplotlib>=3.9"]
+
+# --- Packaging: "src layout". The importable package lives in src/amr_optimizer. ---
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+amr_optimizer = ["py.typed"] # marker file: "this package ships type hints"
+
+# --- pytest ---
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--import-mode=importlib", # no __init__.py needed in test folders; same file names allowed
+    "-ra",                     # print a short summary of skipped/failed tests
+    "--strict-markers",        # unknown @pytest.mark.<name> is an error, not a silent no-op
+    "--strict-config",         # typos in this section are errors
+]
+
+# --- ruff: linter + formatter ---
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes: unused imports/variables, undefined names
+    "I",   # import sorting
+    "B",   # flake8-bugbear: likely bugs (e.g. mutable default arguments)
+    "UP",  # pyupgrade: modern Python syntax
+    "N",   # pep8-naming
+    "SIM", # simplifications
+]
+
+# --- mypy: static type checking ---
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+files = ["src", "tests"]
+mypy_path = "src"
+explicit_package_bases = true # module names come from folders: tests/unit/x.py -> tests.unit.x
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+# Tests may skip annotations; their bodies are still type-checked (strict enables check_untyped_defs).
+disallow_untyped_defs = false
