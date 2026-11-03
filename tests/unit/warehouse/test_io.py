@@ -59,6 +59,7 @@ def test_saved_file_has_one_node_or_edge_per_line(tmp_path: Path) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == len(graph) + graph.num_edges + 8
     json.loads(path.read_text(encoding="utf-8"))  # and it is still plain JSON
+    assert b"\r\n" not in path.read_bytes()  # LF line endings on every OS
 
 
 def test_empty_graph_round_trips(tmp_path: Path) -> None:

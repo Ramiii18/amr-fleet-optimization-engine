@@ -79,7 +79,8 @@ def save_graph(graph: WarehouseGraph, path: Path | str) -> None:
         "  ]",
         "}",
     ]
-    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # newline="\n": identical bytes on every OS (Windows would otherwise write CRLF).
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
 def _one_line(item: object) -> str:
