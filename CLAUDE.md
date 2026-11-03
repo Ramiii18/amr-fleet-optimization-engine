@@ -5,21 +5,14 @@ This is a portfolio and learning project: a synthetic AMR fleet dispatch, routin
 discrete-event simulator. The full brief is `docs/PROJECT_BRIEF.md`. At the start of every session, read
 `docs/ROADMAP.md` (current milestone) and `docs/LEARNING_PROGRESS.md` (last session, open items).
 
-## Working agreement (learning protocol)
-- The owner must be able to implement, explain, debug and defend every algorithm. Claude acts as mentor and reviewer.
-- The owner writes the algorithm cores (Dijkstra, A*, space-time A*, CP-SAT models, dispatch heuristics) and
-  most tests. Claude reviews with comments first and does not rewrite the owner's code unless asked.
-- Claude may write tooling and config (pyproject, CI, scripts), plus one worked example per new concept,
-  explained line by line.
-- Each feature goes through these steps in order:
-  1. Explain the problem.
-  2. Explain the algorithm.
-  3. Set a small exercise.
-  4. Implement.
-  5. Validate.
-  6. Ask review questions.
-  7. Record progress.
-- At the end of every session: run the checks, commit, and add a short entry to `docs/LEARNING_PROGRESS.md`.
+## Working agreement (build-first, since 2026-11-03)
+- Claude implements the project directly: algorithms, tests, tooling and docs. Do not set exercises or quizzes.
+- Explain every design and algorithm choice briefly: the problem, the approach, complexity, invariants and
+  limitations. Record the explanation in `docs/algorithms.md` and record decisions in `docs/DECISIONS.md`, so
+  the owner can defend the work in technical interviews.
+- Work in small, reviewable increments. Each increment must pass all four checks and get its own commit.
+  Push only when the owner asks.
+- After each working session, add a short entry to `docs/LEARNING_PROGRESS.md` (the progress log).
 
 ## Honesty rules (non-negotiable)
 - Never claim that tests or benchmarks passed, or report numbers, unless code was actually run to produce them.
