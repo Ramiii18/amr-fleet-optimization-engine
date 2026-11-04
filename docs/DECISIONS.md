@@ -79,3 +79,12 @@ faster search with the same optimality guarantee. Euclidean distance is consiste
 **Consequences:** A heuristic that is admissible but not consistent can produce suboptimal routes. A test
 documents this with an inflated heuristic. If such heuristics are ever needed, add node reopening and
 benchmark it.
+
+## D11: CI runs the four local checks on both Windows and Linux
+**Status:** Accepted (2026-11-04)
+**Why:** Development happens on Windows, while Docker and any deployment will run on Linux. Running both
+catches platform differences early. M1 already hit one: map files were written with CRLF line endings on
+Windows.
+**Consequences:** Every run starts two jobs. They are free on public repositories; on private ones,
+Windows jobs consume the monthly minutes faster. CI uses exactly the same commands as the README, so a
+local pass predicts a CI pass.
