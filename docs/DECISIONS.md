@@ -201,3 +201,39 @@ local pass predicts a CI pass.
   the arrival rate; completion time is then the KPI that separates policies.
 - Twenty seeds resolve differences of roughly a second in mean completion time for these
   configurations. Smaller effects need more seeds.
+
+## D18: M3 plans a bounded horizon over all robots and commits only the next job of each idle robot
+**Status:** Accepted (2026-11-04)
+**Why:**
+- M2 measured that per-decision matching equals greedy, because almost every event-driven decision has
+  one robot or one order (D16, benchmarks.md). A better decision needs more information or more choice,
+  not a better solver for the same choice.
+- **Look-ahead.** Robots never interfere in this model, so a busy robot's finishing time and place follow
+  exactly from its state. Planning busy robots too lets an order wait for a robot that will be closer
+  soon.
+- **Sequencing.** Planning several orders per robot lets a robot that frees up take a nearby order
+  rather than the oldest one.
+- **Receding horizon.** Future orders are unknown, so a long plan goes stale. Committing only the first
+  job of each idle robot and re-planning at the next decision uses the plan's foresight without being
+  bound to it. This is the rolling-horizon idea used in model predictive control.
+- **Objective: total completion time** of the planned orders. The time from pickup to delivery (loading,
+  loaded trip, unloading) is the same whichever robot does it, so this is equivalent to minimising total
+  waiting time.
+- **Window: the oldest K pending orders.** This bounds the problem size. As in D16, older orders are
+  always considered first, so newer orders cannot push an older one out of the plan.
+
+**Alternatives considered:**
+- Optimal matching with predicted availability, one job per robot: look-ahead without sequencing. The
+  insertion heuristic covers this case and more.
+- The OR-Tools routing solver (vehicle routing with pickups and deliveries): a natural fit, but it is a
+  metaheuristic with no optimality bound, and it would hide the model that this phase is meant to show.
+- Planning with future orders: impossible online without a forecast; out of scope.
+
+**Consequences:**
+- A robot may stay idle while an order waits, because the plan gives that order to a busy robot. This is
+  intended; the KPIs show whether it pays off.
+- The window limits starvation but does not rule it out: an old, distant order can keep being sequenced
+  last. The comparison reports the maximum completion time to show this.
+- The availability prediction is exact only while robots never interfere. With traffic (M4) it becomes
+  an estimate.
+- Each decision now costs a planning solve. Solve time is measured and reported.

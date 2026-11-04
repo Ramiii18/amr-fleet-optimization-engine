@@ -9,7 +9,7 @@ quality dropping.
 |---|---|---|
 | **M1** Routing library | Warehouse graph, Dijkstra, A*, map generator, JSON maps, tests, comparison | **Done** (2026-11-03) |
 | **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | **Done** (2026-11-04) |
-| **M3** Optimization | CP-SAT bounded-horizon dispatch, paired-seed benchmark harness | Not started |
+| **M3** Optimization | Look-ahead and multi-order sequencing over a bounded horizon: insertion heuristic and CP-SAT, compared in simulation | In progress (re-planned 2026-11-04) |
 | **M4** Traffic v0.2 | Space-time A*, reservation table, prioritized planning, conflict tests, mutex zones, deadlock detection | Not started |
 | **M5** Portfolio v1 | Benchmarks at 3–5, 10 and 25 robots, documentation, visualization, honest limitations | Not started |
 
@@ -87,6 +87,41 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
 batching made both worse. M3 (CP-SAT) should therefore target what greedy cannot do: look-ahead to
 robots about to finish, sequencing several orders per robot, and time windows. It should not re-solve
 the same one-sided decision.
+
+## M3: plan (re-planned 2026-11-04)
+
+**Why the re-plan.** The original M3 item, "CP-SAT bounded-horizon dispatch", stays. After the M2
+finding, its model has to do what greedy cannot (D18):
+- **Look-ahead:** busy robots are planned too, from the time and place where they will finish their
+  current order. An order may wait for a busy robot that will be closer soon.
+- **Sequencing:** each robot gets a sequence of orders, so a robot that frees up can take a nearby order
+  instead of the oldest one.
+- **Receding horizon:** each decision plans the oldest K pending orders, commits only the first job of
+  each idle robot, and plans again at the next decision.
+
+**Increments:**
+1. **Planning model.** Predicted robot availability, the planning problem built from a dispatch
+   snapshot, a plan evaluator, and a brute-force oracle for the tests.
+2. **Insertion heuristic and receding-horizon policy.** Cheapest insertion builds the plan, and the
+   policy commits the first jobs. This is the heuristic that CP-SAT has to beat.
+3. **CP-SAT model.** One circuit constraint per robot, the insertion plan as a hint and as a fallback,
+   and deterministic solver limits, checked against the brute-force oracle. Adds OR-Tools as a runtime
+   dependency.
+4. **Comparison.** Greedy vs insertion vs CP-SAT on paired seeds, with solver statistics: the share of
+   solves proven optimal, time-limit hits and solve times. The KPIs gain the maximum completion time,
+   to expose starvation.
+5. **Due times, only if increment 4 leaves the question open.** If look-ahead and sequencing starve
+   distant orders, add per-order due times and a lateness term.
+
+**Acceptance criteria:**
+- CP-SAT finds the brute-force optimum on at least 200 random small instances, and the insertion
+  heuristic never beats it.
+- Both new policies deliver every order of generated scenarios, and runs are reproducible: the same seed
+  gives an identical event log, CP-SAT included.
+- The comparison reports paired differences with 95% confidence intervals. Every solver timeout and
+  fallback is counted, not hidden.
+- CP-SAT earns its place only if it beats the insertion heuristic with a confidence interval that
+  excludes zero. If it doesn't, the result says so, and the heuristic is the recommendation.
 
 ## Phase 2 backlog (after M5, or earlier if time allows)
 
