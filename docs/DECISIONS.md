@@ -157,8 +157,28 @@ local pass predicts a CI pass.
   is O(robots) per tick, which is small next to routing and dispatch.
 
 **Consequences:**
-- The policy is called only when something changes. A policy that waits on purpose, such as batching
-  orders into rounds, needs fixed-interval decision rounds; these will be added if Hungarian dispatch
-  benefits from them.
+- The policy is called only when something changes. Fixed-interval decision rounds, for policies that
+  benefit from batching, were added with D16.
 - Same-tick events are handled in scheduling order. This is deterministic, but it is a modelling choice:
   within one tick, the order of events has no physical meaning.
+
+## D16: Greedy and optimal-assignment dispatch over the oldest orders, with optional decision rounds
+**Status:** Accepted (2026-11-04)
+**Why:**
+- The cost of a pairing is the robot's travel time to the pickup. The rest of the job takes the same
+  time whichever robot does it, so it cannot change which matching is best.
+- Both policies consider only the oldest orders, as many as there are idle robots, so they serve the
+  same orders and a comparison measures matching quality alone. This also prevents starvation.
+- Optimal assignment uses scipy's `linear_sum_assignment`. scipy and numpy are the project's first
+  runtime dependencies. Writing our own Hungarian algorithm would add risk without adding anything to
+  demonstrate; a brute-force oracle test checks the results instead.
+- Called at every event, nearly every decision has one robot or one order, and then optimal equals
+  greedy. Optional decision rounds (`decision_interval_ticks`) let robots and orders accumulate so that
+  matching can matter.
+
+**Consequences:**
+- Decision rounds add up to one interval of waiting before an order is assigned. The KPI comparison
+  must show whether better matching outweighs that.
+- Neither policy looks ahead: busy robots that are about to finish, and orders not yet released, are
+  ignored. Look-ahead belongs to the CP-SAT phase (M3).
+- `scipy-stubs` is a development dependency, so mypy strict can check the calls into scipy.

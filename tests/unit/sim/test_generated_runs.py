@@ -45,19 +45,22 @@ def _length(graph: WarehouseGraph, source: NodeId, target: NodeId) -> float:
     return route.length_m
 
 
-def _run(map_name: str, robots: int, seed: int) -> SimulationResult:
+def _run(map_name: str, robots: int, seed: int, interval: int | None) -> SimulationResult:
     spec = ScenarioSpec(robots=robots, orders_per_hour=150, duration_s=1200)
-    return simulate(generate_scenario(MAPS[map_name], spec, seed=seed), FirstComeFirstServed())
+    scenario = generate_scenario(MAPS[map_name], spec, seed=seed)
+    return simulate(scenario, FirstComeFirstServed(), decision_interval_ticks=interval)
 
 
-CASES = [(m, r, s) for m in MAPS for r in (1, 3, 6) for s in range(4)]
+# Every map, fleet size and seed, with immediate decisions and with 5 s decision rounds.
+CASES = [(m, r, s, i) for m in MAPS for r in (1, 3, 6) for s in range(4) for i in (None, 50)]
+PARAMS = ("map_name", "robots", "seed", "interval")
 
 
-@pytest.mark.parametrize(("map_name", "robots", "seed"), CASES)
+@pytest.mark.parametrize(PARAMS, CASES)
 def test_every_order_goes_through_its_lifecycle_with_exact_durations(
-    map_name: str, robots: int, seed: int
+    map_name: str, robots: int, seed: int, interval: int | None
 ) -> None:
-    result = _run(map_name, robots, seed)
+    result = _run(map_name, robots, seed, interval)
     scenario, graph = result.scenario, result.scenario.graph
     tick_s, speed = scenario.time_model.tick_s, scenario.speed_mps
 
@@ -88,11 +91,11 @@ def test_every_order_goes_through_its_lifecycle_with_exact_durations(
         assert (reached.node, at_drop.node) == (order.pickup, order.dropoff)
 
 
-@pytest.mark.parametrize(("map_name", "robots", "seed"), CASES)
+@pytest.mark.parametrize(PARAMS, CASES)
 def test_robots_do_one_job_at_a_time_and_never_teleport(
-    map_name: str, robots: int, seed: int
+    map_name: str, robots: int, seed: int, interval: int | None
 ) -> None:
-    result = _run(map_name, robots, seed)
+    result = _run(map_name, robots, seed, interval)
     position = {robot.robot_id: robot.node for robot in result.scenario.robots}
     free_from: dict[RobotId, int] = defaultdict(int)
 

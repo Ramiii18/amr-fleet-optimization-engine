@@ -374,13 +374,73 @@ invariant checks and the route computations included.
 - Robots don't interact: there are no collisions, no blocking and no waiting for each other. This is
   the documented MVP simplification; traffic arrives in M4, and the difference in KPIs will measure the
   cost of congestion.
-- The policy is only called when something changes. A batching policy that wants to wait and decide
-  later cannot wake itself up yet; decision rounds at a fixed interval would add that.
+- The policy is only called when something changes, or, with decision rounds, at each round (D16).
 - No faults, blocked edges or replanning (Phase 2).
 
 ---
 
-## 9. Where single-robot shortest paths stop being enough
+## 9. Dispatch: greedy and optimal assignment (`dispatch/`)
+
+**Problem.** At a decision point, some robots are idle and some orders are pending. Which robot takes
+which order? A job's loading, loaded trip and unloading take the same time whichever robot does it.
+So the only part that depends on the choice is the robot's empty trip to the pickup, and that is what
+both policies minimise.
+
+**Greedy** (`GreedyDispatch`). Take the pending orders oldest first, and give each one the idle robot
+that reaches its pickup soonest; ties go to the robot listed first.
+- Cost per decision: O(P + R · min(R, P)) cached travel-time lookups, for P pending orders and R idle
+  robots.
+- It is myopic. Giving the oldest order its nearest robot can leave the next order with a robot far
+  away. The unit test case: robots at N1 and N4, orders picking up at N2 (older) and N0. Greedy needs
+  1 + 4 = 5 edges of empty travel; the optimum needs 2 + 1 = 3.
+
+**Optimal assignment** (`HungarianDispatch`). Take the oldest R serviceable orders, as many as there are
+idle robots, and match them to the robots so that the total travel time to the pickups is as small as
+possible. This is the *linear assignment problem*, classically solved by the Hungarian algorithm in
+O(n³).
+- **Solver.** scipy's `linear_sum_assignment`. According to its documentation, this is a modified
+  Jonker–Volgenant algorithm with no initialization (Crouse, 2016): a shortest augmenting path method,
+  also O(n³), and fast in practice. With R ≤ 25 robots, a decision takes far less time than routing.
+- **Forbidden pairs** (a robot that cannot reach a pickup) are given a cost larger than the sum of all
+  allowed costs. Any matching that uses fewer forbidden pairs is then cheaper, so the solver first
+  maximises the number of allowed pairs and then minimises their total cost. The forbidden pairs are
+  dropped afterwards.
+- **Why only the oldest orders?** Both policies then serve the same orders and differ only in who takes
+  which, so a comparison isolates the quality of the matching. It also prevents starvation. A matching
+  over *all* pending orders would keep picking nearby orders and could leave a distant one waiting
+  indefinitely; avoiding that would need an ageing term in the cost.
+- **Optimal per decision, not over the run.** The matching knows nothing about orders that haven't
+  arrived yet, or about busy robots that are about to finish.
+
+**Why decision rounds matter (D16).** When the policy is called at every event, a decision almost always
+has one side of size one:
+- at low load, one new order meets several idle robots, and both policies pick the nearest robot;
+- at high load, one robot that just became free meets a queue, and both policies give it the oldest
+  order.
+
+With one side of size one, the optimal assignment *is* the greedy choice. Optimal matching can only
+help when several robots meet several orders. The simulator therefore offers optional **decision
+rounds** (`decision_interval_ticks`): the policy is called only at multiples of the interval, so orders
+and idle robots accumulate in between. The trade-off is that a round can add up to one interval of
+waiting before an order is assigned. Whether batching pays off is a measured question for the KPI
+comparison (next increment).
+
+**Testing.**
+- `min_cost_matching` against a brute-force oracle: on 300 seeded random matrices of up to 5 × 5 with
+  forbidden pairs, the result has the same number of pairs and the same total cost as the best
+  assignment found by trying them all.
+- The hand-computed myopic case: greedy 50 ticks of empty travel, Hungarian 30.
+- On 200 seeded random decisions on the medium map, both policies serve the same orders, and Hungarian
+  never needs more travel than greedy. Measured: Hungarian was strictly better in 44 of the 200
+  decisions (139 of them had at least two possible pairs), and needed 5.4% fewer pickup ticks in total.
+  This compares single decisions, not whole runs.
+- Shared behaviour: spare robots stay idle, the oldest orders are served first, busy robots are never
+  assigned, and unreachable orders and robots are skipped.
+- Both policies deliver every order of a generated scenario, with and without decision rounds.
+
+---
+
+## 10. Where single-robot shortest paths stop being enough
 
 A shortest path is computed as if the robot were alone in the warehouse. With several robots:
 
@@ -398,7 +458,7 @@ search.
 
 ---
 
-## 10. Interview notes
+## 11. Interview notes
 
 **Why does Dijkstra need non-negative edge lengths?**
 The proof that a popped node's distance is final assumes edges only add length. With a negative edge, a
@@ -459,3 +519,15 @@ avoidance.
 - Timelines on tiny scenarios are checked tick by tick against hand calculations.
 - On generated runs, durations are checked against times computed independently.
 - The invariant checks are themselves tested, by breaking them on purpose.
+
+**When does optimal assignment beat greedy, and when not?**
+Only when a decision has several robots *and* several orders. With one robot or one order, both pick
+the same pair. Event-driven dispatch mostly creates exactly those one-sided decisions, so batching into
+decision rounds is what gives the optimiser room. The price is waiting time. Measuring that trade-off,
+rather than assuming the optimiser wins, is the point of the comparison.
+
+**Why not CP-SAT for this?**
+If each robot takes one order per decision and the cost is a sum over pairs, the problem is exactly
+the linear assignment problem, and an O(n³) algorithm solves it optimally. CP-SAT earns its place
+when the model needs more: sequences of several orders per robot, time windows, charger capacity or
+battery limits (M3).

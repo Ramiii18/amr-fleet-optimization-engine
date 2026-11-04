@@ -22,13 +22,19 @@ src/amr_optimizer/
                policy.py     dispatch interface: DispatchSnapshot, Assignment, DispatchPolicy
                planner.py    TravelPlanner: cached shortest routes and travel ticks
                log.py        event log (six steps per order)
+  dispatch/    greedy.py     GreedyDispatch: oldest order first, nearest idle robot
+               hungarian.py  HungarianDispatch: optimal matching to the oldest orders
+               matching.py   min_cost_matching (scipy linear_sum_assignment)
 scripts/       generate_maps.py, compare_routing.py
 scenarios/maps small.json (45 nodes), medium.json (179), large.json (461)
 tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkable graphs)
 ```
 
-**Dependency direction:** `sim` → `scenario` → `domain` → `routing` → `warehouse`. Dispatch policies
-(next) implement the interface in `sim/policy.py` and depend on `sim`, never the other way round.
+**Dependency direction:** `dispatch` → `sim` → `scenario` → `domain` → `routing` → `warehouse`. Dispatch
+policies implement the interface in `sim/policy.py`; the simulator never imports a policy.
+
+**Runtime dependencies:** numpy and scipy, for optimal assignment only (D16). Everything else is the
+standard library.
 
 ## Guiding structure
 
@@ -48,7 +54,7 @@ tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkabl
 | `domain` | Robots, orders, state machines, time units | **Exists** (M2) |
 | `scenario` | Validated simulation input; seeded order streams and fleet placement | **Exists** (M2) |
 | `sim` | Discrete-event kernel, plan executor, invariant checks, event log | **Exists** (M2) |
-| `dispatch` | Greedy, Hungarian, CP-SAT and local-search assignment | Planned (M2, M3) |
+| `dispatch` | Greedy, Hungarian, CP-SAT and local-search assignment | **Exists** (M2): greedy and Hungarian; CP-SAT in M3 |
 | `metrics` | KPI computation | Planned (M2) |
 | `traffic` | Reservations, mutex zones, conflict and deadlock detection | Planned (M4) |
 | `energy`, `api`, `viz` | Battery model, FastAPI service, visualization | Phase 2 / M5 |

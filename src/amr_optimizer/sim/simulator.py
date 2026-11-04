@@ -12,6 +12,10 @@ robot is idle and an order is pending. If executing those assignments creates mo
 at the same tick (a robot already at the pickup with zero loading time), they are handled
 and the policy is asked again before time moves on.
 
+With ``decision_interval_ticks``, the policy is asked only at multiples of that interval
+(decision rounds, D16). Orders and idle robots accumulate in between, so the policy can
+match several of each at once, at the cost of up to one interval of extra waiting.
+
 Events at the same tick are handled in the order they were scheduled. Together with
 scenario-ordered robots and release-ordered orders, this makes every run deterministic.
 
@@ -76,16 +80,26 @@ class SimulationResult:
 
 
 def simulate(
-    scenario: Scenario, policy: DispatchPolicy, *, max_tick: int | None = None
+    scenario: Scenario,
+    policy: DispatchPolicy,
+    *,
+    max_tick: int | None = None,
+    decision_interval_ticks: int | None = None,
 ) -> SimulationResult:
     """Run ``scenario`` under ``policy`` until no events remain, or past ``max_tick``.
 
     With ``max_tick``, events after that tick are not handled, and the result reports the
-    orders still in progress, pending or unreleased at that point.
+    orders still in progress, pending or unreleased at that point. With
+    ``decision_interval_ticks``, the policy decides only at multiples of that interval;
+    without it, the policy decides as soon as a robot is idle and an order is pending.
     """
     if max_tick is not None and max_tick < 0:
         raise ValueError(f"max_tick must be non-negative, got {max_tick}")
-    return _Simulation(scenario, policy, max_tick).run()
+    if decision_interval_ticks is not None and decision_interval_ticks < 1:
+        raise ValueError(
+            f"decision_interval_ticks must be at least 1, got {decision_interval_ticks}"
+        )
+    return _Simulation(scenario, policy, max_tick, decision_interval_ticks).run()
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,13 +112,29 @@ class _PhaseEnd:
     robot_id: RobotId
 
 
+@dataclass(frozen=True, slots=True)
+class _DecisionRound:
+    """Makes the loop stop at a round tick, so the policy is asked there."""
+
+
+_Event = _Release | _PhaseEnd | _DecisionRound
+
+
 class _Simulation:
     """The mutable state of one run. Used only through `simulate`."""
 
-    def __init__(self, scenario: Scenario, policy: DispatchPolicy, max_tick: int | None) -> None:
+    def __init__(
+        self,
+        scenario: Scenario,
+        policy: DispatchPolicy,
+        max_tick: int | None,
+        decision_interval_ticks: int | None = None,
+    ) -> None:
         self.scenario = scenario
         self.policy = policy
         self.max_tick = max_tick
+        self.interval = decision_interval_ticks
+        self._next_round: int | None = None
         self.travel_times = TravelTimes(
             scenario.graph, speed_mps=scenario.speed_mps, time_model=scenario.time_model
         )
@@ -115,7 +145,7 @@ class _Simulation:
         self.delivered: list[OrderId] = []
         self.log: list[LogEntry] = []
         self.now = 0
-        self._queue: list[tuple[int, int, _Release | _PhaseEnd]] = []
+        self._queue: list[tuple[int, int, _Event]] = []
         self._counter = itertools.count()
         self._scheduled: dict[RobotId, int] = {}  # each busy robot's one pending event
         for order in scenario.orders:
@@ -139,16 +169,18 @@ class _Simulation:
             self._check_invariants()
         return self._result()
 
-    def _push(self, tick: int, event: _Release | _PhaseEnd) -> None:
+    def _push(self, tick: int, event: _Event) -> None:
         heapq.heappush(self._queue, (tick, next(self._counter), event))
 
-    def _handle(self, event: _Release | _PhaseEnd) -> None:
+    def _handle(self, event: _Event) -> None:
         if isinstance(event, _Release):
             self.pending[event.order.id] = event.order
             self.released += 1
             self._log(EventKind.RELEASED, event.order, event.order.pickup)
-        else:
+        elif isinstance(event, _PhaseEnd):
             self._end_phase(event.robot_id)
+        else:
+            self._next_round = None  # the round is now; the policy is asked after the events
 
     # --- robots ------------------------------------------------------------------------------
 
@@ -193,6 +225,11 @@ class _Simulation:
 
     def _dispatch(self) -> None:
         if not self.pending or not any(robot.is_idle for robot in self.robots.values()):
+            return
+        if self.interval is not None and self.now % self.interval != 0:
+            if self._next_round is None:
+                self._next_round = (self.now // self.interval + 1) * self.interval
+                self._push(self._next_round, _DecisionRound())
             return
         snapshot = DispatchSnapshot(
             self.now, tuple(self.robots.values()), tuple(self.pending.values()), self.planner

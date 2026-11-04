@@ -62,9 +62,10 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
    storage, drop-off at a station, shift-start fleet placement (D14).
 4. **Discrete-event simulation kernel.** Done 2026-11-04: deterministic event queue, executor with
    validated decisions, invariant checks after every tick, and an event log (D15).
-5. **Dispatch policies.**
-   - Greedy: nearest idle robot.
-   - Hungarian: optimal assignment for each decision round, using `scipy`.
+5. **Dispatch policies.** Done 2026-11-04 (D16):
+   - Greedy: oldest order first, nearest idle robot.
+   - Hungarian: optimal assignment of idle robots to the oldest orders, using `scipy`.
+   - Optional decision rounds in the simulator, so that optimal matching has room to help.
 6. **KPIs, CLI runner and comparison.** Throughput, waiting time, completion time (mean and P95),
    distance and utilization, compared on identical seeds.
 7. **GitHub repository and CI.** Done 2026-11-04: public repository under the MIT license. The first CI

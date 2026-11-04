@@ -26,6 +26,8 @@ reproducible simulation.
 - **Simulator (M2):** a deterministic discrete-event simulator with a pure-function dispatch interface,
   invariant checks after every tick, and a per-order event log. Robots don't interact yet (no
   collisions or congestion); that comes with traffic management in M4.
+- **Dispatch (M2):** greedy (oldest order, nearest robot) and optimal assignment (Hungarian problem,
+  solved with scipy), with optional decision rounds.
 - **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
   route validation.
 

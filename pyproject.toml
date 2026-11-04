@@ -15,15 +15,19 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
-# Runtime dependencies: intentionally none yet. The core uses only the standard library.
-# Each new dependency is added when code needs it, with a reason (see docs/DECISIONS.md).
-dependencies = []
+# Runtime dependencies. The core uses the standard library; each dependency is added when code
+# needs it, with a reason (see docs/DECISIONS.md).
+dependencies = [
+    "numpy>=2.1", # cost matrices for optimal assignment (D16); 2.1 is the first with Python 3.13
+    "scipy>=1.14", # linear_sum_assignment for Hungarian dispatch (D16); 1.14 supports Python 3.13
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
     "networkx>=3.4", # reference oracle for tests only; never imported from src/
     "types-networkx", # type stubs so mypy can check the oracle tests
+    "scipy-stubs", # type stubs so mypy strict can check the code that calls scipy
     "ruff>=0.8",
     "mypy>=1.13",
 ]

@@ -320,3 +320,50 @@ def test_invariant_check_detects_an_event_for_an_idle_robot(line_graph: Warehous
 
     with pytest.raises(SimulationInvariantError, match="idle robot 'R1' has an event"):
         sim._check_invariants()
+
+
+# --- decision rounds ---------------------------------------------------------------------------
+
+
+def test_decision_rounds_delay_assignment_to_the_next_round(line_graph: WarehouseGraph) -> None:
+    scenario = _scenario(line_graph, {R1: A}, [_order(O1, B, C, 3)])
+
+    result = simulate(scenario, FirstComeFirstServed(), decision_interval_ticks=10)
+
+    assert [(e.tick, e.kind.name) for e in result.log][:2] == [(3, "RELEASED"), (10, "ASSIGNED")]
+    assert result.end_tick == 40  # the whole job shifts by the 7 ticks of waiting
+
+
+def test_order_released_on_a_round_tick_is_assigned_at_once(line_graph: WarehouseGraph) -> None:
+    scenario = _scenario(line_graph, {R1: A}, [_order(O1, B, C, 20)])
+
+    result = simulate(scenario, FirstComeFirstServed(), decision_interval_ticks=10)
+
+    assert result.log[1].tick == 20
+
+
+def test_rounds_batch_orders_and_robots_into_one_decision(line_graph: WarehouseGraph) -> None:
+    policy = Scripted([])
+    orders = [_order(O1, B, C, 2), _order(O2, A, C, 5)]
+    simulate(_scenario(line_graph, {R1: A, R2: B}, orders), policy, decision_interval_ticks=10)
+
+    assert [(s.tick, len(s.pending_orders), len(s.idle_robots)) for s in policy.seen] == [
+        (10, 2, 2)
+    ]
+
+
+def test_robot_freed_between_rounds_waits_for_the_next_round(line_graph: WarehouseGraph) -> None:
+    orders = [_order(O1, B, C, 0), _order(O2, C, A, 0)]
+    result = simulate(
+        _scenario(line_graph, {R1: A}, orders), FirstComeFirstServed(), decision_interval_ticks=40
+    )
+
+    assigned = [(e.tick, e.order_id) for e in result.log if e.kind is EventKind.ASSIGNED]
+    assert assigned == [(0, O1), (40, O2)]  # R1 is idle again at tick 30
+
+
+def test_decision_interval_must_be_positive(line_graph: WarehouseGraph) -> None:
+    with pytest.raises(ValueError, match="decision_interval_ticks"):
+        simulate(
+            _scenario(line_graph, {R1: A}, []), FirstComeFirstServed(), decision_interval_ticks=0
+        )
