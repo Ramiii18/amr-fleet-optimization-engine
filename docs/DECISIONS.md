@@ -43,7 +43,7 @@ property is called admissibility, and it is what makes A* return optimal routes.
 coordinates consistent with edge lengths.
 
 ## D6: Simulation and reservation time are integer ticks
-**Status:** Accepted (2026-11-03), to be implemented from week 3
+**Status:** Accepted (2026-11-03). Implemented on 2026-11-04 in `domain/timing.py`; rounding details in D12.
 **Why:** Reservation tables and conflict checks compare times for equality and overlap, and floats make
 that fragile (`0.1 + 0.2 != 0.3`). Space-time search needs discrete time anyway.
 **Consequences:** Edge durations are rounded up with `ceil(length / speed / tick)`, which errs on the
@@ -88,3 +88,21 @@ Windows.
 **Consequences:** Every run starts two jobs. They are free on public repositories; on private ones,
 Windows jobs consume the monthly minutes faster. CI uses exactly the same commands as the README, so a
 local pass predicts a CI pass.
+
+## D12: Travel times are rounded up per edge, ignoring floating-point noise; routing stays in metres
+**Status:** Accepted (2026-11-04)
+**Why:**
+- Each edge is rounded separately because a robot must reach every node at a whole tick, which
+  reservation tables (M4) need.
+- Rounding up means a plan never assumes a robot arrives earlier than it physically could.
+- Values within a relative 1e-9 of a whole number snap to it, so floating-point noise doesn't cost an
+  extra tick: 5.4 m at 1.2 m/s with 0.1 s ticks evaluates to 45.00000000000001 ticks, and is charged 45.
+- Every edge takes at least one tick, so no move is instantaneous.
+
+**Consequences:**
+- A route can take up to one tick per edge longer than its exact time.
+- When some edge needs rounding, the shortest route in metres may not be the fastest in ticks; a test
+  shows this. Routing keeps minimising metres because the generated maps are exact at the default
+  1 m/s and 0.1 s tick, and `TravelTimes.is_exact` reports this per scenario.
+- If a scenario that is not exact matters later, add a time-weighted search: the routing functions would
+  take an edge-weight function, with travel ticks as the weight.

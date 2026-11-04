@@ -148,7 +148,52 @@ around one-way aisles.
 
 ---
 
-## 5. Where single-robot shortest paths stop being enough
+## 5. Time in integer ticks (`domain/timing.py`)
+
+**Problem.** The simulator, and later the conflict checks, compare times: is this node free at time t,
+do these two intervals overlap? With floating-point seconds those tests break on rounding noise
+(`0.1 + 0.2 != 0.3`), and a check that passes on one map can fail on another.
+
+**Approach.**
+- All simulation time is an `int` count of ticks. `TimeModel(tick_s)` fixes how long one tick lasts.
+  Seconds appear only at the boundaries: configuration in, reported KPIs out.
+- A duration in seconds becomes ticks by rounding **up** (`to_ticks`), so a plan never assumes a robot
+  arrives earlier than it physically could.
+- An edge's travel time is `max(1, ceil(length / speed / tick))`. The minimum of one tick means every move
+  takes time, the time analogue of D5.
+- **Floating-point noise is not rounded up.** A value within a relative 1e-9 of a whole number snaps to
+  it. Without this, 5.4 m at 1.2 m/s, which is exactly 45 ticks of 0.1 s, evaluates to
+  45.00000000000001 and would cost 46 ticks.
+- `TravelTimes` computes every edge's ticks once, in O(E), for one graph and one speed. A route's
+  duration is the sum of its edges' ticks. `arrival_offsets` gives the tick at which the robot reaches
+  each node of the route.
+
+**Invariants** (tested):
+- Every edge takes at least one tick.
+- Travel ticks never underestimate, and overestimate by less than one tick. In symbols,
+  (ticks − 1) × speed × tick < length ≤ ticks × speed × tick, checked on 4,000 seeded random cases.
+- Every decimal duration k/10 s is exactly k ticks of 0.1 s, and ticks → seconds → ticks is the identity
+  for five different tick lengths.
+
+**Why round each edge separately, and what it costs (D12).** A robot has to reach every node at a whole
+tick, because that is what a reservation table (M4) indexes. So each edge is rounded on its own, and a
+route can take up to one tick per edge longer than its total length converted at once. As a result,
+**the shortest route in metres is not always the fastest in ticks.** The test example: A → B → D is 2.2 m
+but 2 + 2 one-second ticks, while the curved direct edge A → D is 2.5 m but 3 ticks. Routing still
+minimises metres; `TravelTimes.is_exact` reports whether any edge needed rounding. On all three generated
+presets at 1 m/s and 0.1 s ticks, no edge is rounded: every edge length is a whole number of decimetres.
+Metres and ticks then pick the same routes.
+
+**Choosing the tick.** A shorter tick loses less to rounding but makes every time-indexed structure
+larger: reservation tables and space-time search states grow with the number of ticks. The planned
+default is 0.1 s; at 1 m/s, one tick is 10 cm of travel.
+
+**Limitations.** Constant speed: no acceleration, braking or turn time (see ARCHITECTURE.md). One
+`TravelTimes` table per speed, so a fleet with several robot speeds would need one table per speed class.
+
+---
+
+## 6. Where single-robot shortest paths stop being enough
 
 A shortest path is computed as if the robot were alone in the warehouse. With several robots:
 
@@ -166,7 +211,7 @@ search.
 
 ---
 
-## 6. Interview notes
+## 7. Interview notes
 
 **Why does Dijkstra need non-negative edge lengths?**
 The proof that a popped node's distance is final assumes edges only add length. With a negative edge, a
@@ -197,3 +242,13 @@ graphs.
 **Why the insertion counter in heap entries?**
 - Determinism: equal distances resolve in a fixed order, so runs are reproducible.
 - Safety: Python never has to compare two node ids, or two nodes, to break a tie.
+
+**Why integer ticks rather than float seconds?**
+Conflict detection is equality and overlap testing on times. Integers make those tests exact, and they
+make a reservation table a plain lookup by (node, tick). Floats would need tolerances in every
+comparison, and a wrong tolerance shows up as a phantom collision or a missed one.
+
+**Why round travel times up rather than to the nearest tick?**
+Rounding to the nearest tick can make a plan assume a robot arrives at, or leaves, a node before it
+physically does. A reservation that ends too early is how a collision gets into a "conflict-free" plan.
+Rounding up costs at most one tick of slack per edge.

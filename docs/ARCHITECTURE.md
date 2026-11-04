@@ -2,7 +2,7 @@
 
 This is a living document. It describes what exists **now** and marks everything else as planned.
 
-## Current state (M1 complete, 2026-11-03)
+## Current state (M1 complete; M2 in progress, 2026-11-04)
 
 ```text
 src/amr_optimizer/
@@ -13,13 +13,14 @@ src/amr_optimizer/
                dijkstra.py   shortest_path, shortest_path_lengths (one-to-all)
                astar.py      A* (requires a consistent heuristic)
                heuristics.py zero, euclidean, manhattan
+  domain/      timing.py     TimeModel (integer ticks), TravelTimes (per-edge travel ticks)
 scripts/       generate_maps.py, compare_routing.py
 scenarios/maps small.json (45 nodes), medium.json (179), large.json (461)
 tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkable graphs)
 ```
 
-**Dependency direction:** `routing` → `warehouse`. Nothing depends on `routing` yet. Packages added later
-depend inwards, on `warehouse` and `routing`, never the other way round.
+**Dependency direction:** `domain` → `routing` → `warehouse`. Packages added later depend inwards, on
+these three, never the other way round.
 
 ## Guiding structure
 
@@ -36,7 +37,7 @@ depend inwards, on `warehouse` and `routing`, never the other way round.
 |---|---|---|
 | `warehouse` | Graph model, validation, map files, generator | **Exists** (M1) |
 | `routing` | Dijkstra and A*; later space-time A* | **Exists** (M1); space-time in M4 |
-| `domain` | Robots, orders, state machines, time units | Planned (M2) |
+| `domain` | Robots, orders, state machines, time units | **Started** (M2): time units; robots and orders next |
 | `sim` | Discrete-event kernel, plan executor, invariant checks, event log | Planned (M2) |
 | `dispatch` | Greedy, Hungarian, CP-SAT and local-search assignment | Planned (M2, M3) |
 | `metrics` | KPI computation | Planned (M2) |
@@ -56,8 +57,8 @@ Each package is created only when it has real code.
 - Dead-end endpoints in generated maps, so parked robots don't block aisles.
 
 **Not modelled (yet):**
-- **Time.** Edge lengths are metres. Travel time will be derived in M2 from robot speed, in integer
-  ticks (D6).
+- **Speed profiles.** Time is integer ticks (D6). A robot drives every edge at one constant speed, and
+  each edge's time is rounded up to whole ticks (D12).
 - **Robot physics:** acceleration, braking, turning radius, rotate-in-place time at intersections. Turn
   penalties are a known future extension.
 - **Robot footprint and safety separation.** In M4, one robot per node and per corridor stands in for

@@ -6,8 +6,8 @@ A Python engine for dispatching transport orders to a fleet of autonomous mobile
 planning routes on a warehouse graph, and managing traffic between robots, evaluated in a
 reproducible simulation.
 
-> **Status:** milestone M1 (warehouse graph and routing library) is complete. Next is M2: the
-> discrete-event simulator and dispatch policies.
+> **Status:** milestone M1 (warehouse graph and routing library) is complete. M2, the discrete-event
+> simulator and dispatch policies, is in progress.
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning
 > project. It does not control physical robots and has not been deployed in any real fleet.
 
@@ -19,6 +19,8 @@ reproducible simulation.
   JSON maps in [scenarios/maps/](scenarios/maps/).
 - **Routing:** Dijkstra (point-to-point and one-to-all) and A* (Euclidean or Manhattan heuristic), both
   able to avoid blocked edges.
+- **Time model (M2, started):** integer simulation ticks, and per-edge travel times rounded up to
+  whole ticks.
 - **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
   route validation.
 
