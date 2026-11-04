@@ -19,8 +19,8 @@ reproducible simulation.
   JSON maps in [scenarios/maps/](scenarios/maps/).
 - **Routing:** Dijkstra (point-to-point and one-to-all) and A* (Euclidean or Manhattan heuristic), both
   able to avoid blocked edges.
-- **Time model (M2, started):** integer simulation ticks, and per-edge travel times rounded up to
-  whole ticks.
+- **Domain model (M2, in progress):** integer simulation ticks with per-edge travel times, transport
+  orders, and robots whose phases follow an explicit, fully tested state machine.
 - **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
   route validation.
 

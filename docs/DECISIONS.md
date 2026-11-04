@@ -106,3 +106,22 @@ local pass predicts a CI pass.
   1 m/s and 0.1 s tick, and `TravelTimes.is_exact` reports this per scenario.
 - If a scenario that is not exact matters later, add a time-weighted search: the routing functions would
   take an edge-weight function, with travel ticks as the weight.
+
+## D13: Robot state is an immutable value with an explicit transition table; order progress is read from the robot
+**Status:** Accepted (2026-11-04)
+**Why:**
+- A table of allowed phase changes is easy to review and to test exhaustively; every phase and
+  transition combination is tested.
+- Immutable states can be handed to planners as snapshots, and kept in an event log, without copying.
+- Each non-idle phase stores its end tick, so a transition at the wrong tick raises an exception
+  instead of silently skewing KPIs.
+- An order's progress is the phase of the robot carrying it. Storing it separately would create a
+  second state machine that must stay in sync with the first.
+
+**Consequences:**
+- No preemption or reassignment in the MVP: once assigned, an order stays with its robot until it is
+  delivered. Reassignment after faults (Phase 2) needs new transitions in the table.
+- An idle robot stays where it finished, at a drop-off. Without traffic (M2) this is harmless. With
+  traffic (M4), a robot waiting at a station blocks it for others, so a parking policy will be needed.
+- Orders that no robot carries yet, released but unassigned, and orders already delivered are tracked by
+  the simulator (next increments).

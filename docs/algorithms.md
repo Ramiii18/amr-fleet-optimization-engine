@@ -193,7 +193,60 @@ default is 0.1 s; at 1 m/s, one tick is 10 cm of travel.
 
 ---
 
-## 6. Where single-robot shortest paths stop being enough
+## 6. Robots, orders and the robot state machine (`domain/robots.py`, `domain/orders.py`)
+
+**Problem.** The simulator must never put a robot into an impossible situation, such as loading away
+from the pickup, carrying two orders, or finishing a move before it could have arrived. Bugs like these
+don't crash. They quietly produce wrong KPIs.
+
+**Model.**
+- A `TransportOrder` is immutable: carry one load from `pickup` to `dropoff`. It becomes known at
+  `release_tick` and cannot be assigned earlier.
+- A `RobotState` is an immutable snapshot of one robot: its phase, its node (or, while travelling, the
+  node it left), its order, its route, and the ticks at which the phase began and ends.
+
+**The state machine.** A transport job takes a robot through five phases. `ALLOWED_TRANSITIONS` lists
+exactly these changes, and every other one raises `InvalidTransitionError`:
+
+| From | Method | To | Also requires |
+|---|---|---|---|
+| IDLE | `assign(order, route)` | TO_PICKUP | the order is released; the route runs from the robot to the pickup |
+| IDLE | `assign(order, single-node route)` | LOADING | the robot already stands at the pickup |
+| TO_PICKUP | `arrive` | LOADING | the tick is the planned arrival |
+| LOADING | `finish_loading(route)` | TO_DROPOFF | the tick is the end of loading; the route runs to the drop-off |
+| TO_DROPOFF | `arrive` | UNLOADING | the tick is the planned arrival |
+| UNLOADING | `finish_unloading` | IDLE | the tick is the end of unloading; the order is delivered |
+
+**Design choices.**
+- **Immutable states.** Each transition method returns a new state. A dispatcher can be handed a
+  snapshot of the fleet that cannot change underneath it, and an event log can keep old states as they
+  were.
+- **Invariants are checked in the constructor**, so a state that breaks one cannot exist:
+  - an idle robot has no order, no route and no end tick, and every other phase has an order and an end;
+  - loading happens at the pickup, unloading at the drop-off;
+  - only a travelling robot has a route; the route has at least one edge, starts at the robot's node and
+    ends at the pickup (TO_PICKUP) or the drop-off (TO_DROPOFF);
+  - a phase never ends before it begins, and travel takes at least one tick.
+- **Every non-idle phase knows when it ends** (`until_tick`). The simulator sets it when the phase
+  starts: travel time from `TravelTimes`, loading and unloading times from the scenario. A transition at
+  any other tick is refused, so a scheduling bug fails loudly at the event where it happens.
+- **Order progress is read from the robot that carries the order** (D13). Waiting, being carried and
+  being delivered correspond to the robot's phases, so there is no second state machine to keep in sync.
+
+**Cost.** Every transition and every invariant check is O(1). Routes are shared, not copied.
+
+**Testing.** All 20 combinations of phase and transition method are tried: exactly the 5 legal ones
+succeed. Further tests check that the table is exactly the one above, that every phase is reachable from
+IDLE and leads back to IDLE (no dead ends), and that 11 kinds of inconsistent state are each rejected
+with a specific message.
+
+**Limitations (MVP).** No preemption or reassignment: an assigned order stays with its robot until it is
+delivered. No fault, charging or parking phases. An idle robot stays at its last drop-off. One load per
+robot.
+
+---
+
+## 7. Where single-robot shortest paths stop being enough
 
 A shortest path is computed as if the robot were alone in the warehouse. With several robots:
 
@@ -211,7 +264,7 @@ search.
 
 ---
 
-## 7. Interview notes
+## 8. Interview notes
 
 **Why does Dijkstra need non-negative edge lengths?**
 The proof that a popped node's distance is final assumes edges only add length. With a negative edge, a
@@ -252,3 +305,11 @@ comparison, and a wrong tolerance shows up as a phantom collision or a missed on
 Rounding to the nearest tick can make a plan assume a robot arrives at, or leaves, a node before it
 physically does. A reservation that ends too early is how a collision gets into a "conflict-free" plan.
 Rounding up costs at most one tick of slack per edge.
+
+**Why an explicit state machine with immutable states?**
+- The table of allowed transitions is small enough to test exhaustively, and it is the specification of
+  what a robot can do.
+- Immutable states turn "who changed this robot?" bugs into impossible ones: a planner receives a
+  snapshot, and only the simulator replaces states.
+- Storing the end tick of every phase makes timing errors detectable at the exact event where they
+  occur, instead of showing up later as implausible KPIs.

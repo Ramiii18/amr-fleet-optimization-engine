@@ -14,6 +14,8 @@ src/amr_optimizer/
                astar.py      A* (requires a consistent heuristic)
                heuristics.py zero, euclidean, manhattan
   domain/      timing.py     TimeModel (integer ticks), TravelTimes (per-edge travel ticks)
+               orders.py     TransportOrder
+               robots.py     RobotState and the robot state machine (ALLOWED_TRANSITIONS)
 scripts/       generate_maps.py, compare_routing.py
 scenarios/maps small.json (45 nodes), medium.json (179), large.json (461)
 tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkable graphs)
@@ -37,7 +39,7 @@ these three, never the other way round.
 |---|---|---|
 | `warehouse` | Graph model, validation, map files, generator | **Exists** (M1) |
 | `routing` | Dijkstra and A*; later space-time A* | **Exists** (M1); space-time in M4 |
-| `domain` | Robots, orders, state machines, time units | **Started** (M2): time units; robots and orders next |
+| `domain` | Robots, orders, state machines, time units | **Exists** (M2) |
 | `sim` | Discrete-event kernel, plan executor, invariant checks, event log | Planned (M2) |
 | `dispatch` | Greedy, Hungarian, CP-SAT and local-search assignment | Planned (M2, M3) |
 | `metrics` | KPI computation | Planned (M2) |

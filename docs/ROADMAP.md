@@ -56,8 +56,8 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
 
 1. **Time model.** Done 2026-11-04: integer ticks, robot speed, edge travel times rounded up per edge
    (D6, D12).
-2. **Domain model.** Robot and transport order, and a robot state machine with explicitly listed valid
-   transitions.
+2. **Domain model.** Done 2026-11-04: transport order, immutable robot state, and a robot state machine
+   with explicitly listed valid transitions (D13).
 3. **Scenario generator.** A seeded order stream: arrival process, pickup at storage, drop-off at a
    station.
 4. **Discrete-event simulation kernel.** A deterministic event queue, a plan executor, invariant checks
