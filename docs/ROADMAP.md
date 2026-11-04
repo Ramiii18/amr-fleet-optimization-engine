@@ -8,7 +8,7 @@ quality dropping.
 | Milestone | Content | Status |
 |---|---|---|
 | **M1** Routing library | Warehouse graph, Dijkstra, A*, map generator, JSON maps, tests, comparison | **Done** (2026-11-03) |
-| **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | In progress |
+| **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | **Done** (2026-11-04) |
 | **M3** Optimization | CP-SAT bounded-horizon dispatch, paired-seed benchmark harness | Not started |
 | **M4** Traffic v0.2 | Space-time A*, reservation table, prioritized planning, conflict tests, mutex zones, deadlock detection | Not started |
 | **M5** Portfolio v1 | Benchmarks at 3–5, 10 and 25 robots, documentation, visualization, honest limitations | Not started |
@@ -52,7 +52,7 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
    switch to build-first.
 10. **Small, meaningful commits:** met, one commit per increment.
 
-## M2: planned increments (preliminary)
+## M2: what was delivered
 
 1. **Time model.** Done 2026-11-04: integer ticks, robot speed, edge travel times rounded up per edge
    (D6, D12).
@@ -66,10 +66,27 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
    - Greedy: oldest order first, nearest idle robot.
    - Hungarian: optimal assignment of idle robots to the oldest orders, using `scipy`.
    - Optional decision rounds in the simulator, so that optimal matching has room to help.
-6. **KPIs, CLI runner and comparison.** Throughput, waiting time, completion time (mean and P95),
-   distance and utilization, compared on identical seeds.
+6. **KPIs, CLI runner and comparison.** Done 2026-11-04: KPIs from the event log (D17), the `amr-sim`
+   command, and `scripts/compare_dispatch.py` with paired seeds; results in [benchmarks.md](benchmarks.md).
 7. **GitHub repository and CI.** Done 2026-11-04: public repository under the MIT license. The first CI
    run (commit `1b465b3`) passed on both Windows and Linux (D11).
+
+## M2 acceptance against the MVP definition
+
+- **Dispatches a seeded order stream to N identical robots on a synthetic map:** met (`scenario/`,
+  `dispatch/`).
+- **Correct integer travel times:** met. Exact phase durations are checked after every tick, and on
+  generated runs they are checked against times computed independently from Dijkstra.
+- **Invariants checked:** met. The state machine checks every transition, and the simulator checks its
+  invariants after every tick; the checks are tested by breaking them on purpose.
+- **KPIs for at least two policies on identical scenarios:** met. Greedy and Hungarian, each at every
+  event and in rounds, on 20 paired seeds.
+- **Collisions not modelled, and documented:** met (README, ARCHITECTURE, algorithms section 8).
+
+**Finding that shapes M3:** optimal per-decision matching gave no measurable gain over greedy, and
+batching made both worse. M3 (CP-SAT) should therefore target what greedy cannot do: look-ahead to
+robots about to finish, sequencing several orders per robot, and time windows. It should not re-solve
+the same one-sided decision.
 
 ## Phase 2 backlog (after M5, or earlier if time allows)
 

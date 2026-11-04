@@ -182,3 +182,22 @@ local pass predicts a CI pass.
 - Neither policy looks ahead: busy robots that are about to finish, and orders not yet released, are
   ignored. Look-ahead belongs to the CP-SAT phase (M3).
 - `scipy-stubs` is a development dependency, so mypy strict can check the calls into scipy.
+
+## D17: KPIs come from the event log; P95 by nearest rank; comparisons are paired over seeds
+**Status:** Accepted (2026-11-04)
+**Why:**
+- A single source of truth: KPIs are recomputed from the log, never tracked separately inside the
+  simulator.
+- Waiting time ends when a robot reaches the pickup, which is when service starts from the order's
+  point of view. Assignment delay is reported separately, because decision rounds change it directly.
+- Nearest-rank percentiles always return an observed value and are simple to state precisely.
+- Running every variant on the same seeds and comparing per-seed differences removes order-stream
+  variation from the comparison (common random numbers, D14).
+
+**Consequences:**
+- Time KPIs cover delivered orders only. Undelivered orders are counted, and make the comparison script
+  fail rather than flatter an average.
+- Throughput is measured up to the last event. When the fleet keeps up with demand, it simply equals
+  the arrival rate; completion time is then the KPI that separates policies.
+- Twenty seeds resolve differences of roughly a second in mean completion time for these
+  configurations. Smaller effects need more seeds.

@@ -422,8 +422,8 @@ With one side of size one, the optimal assignment *is* the greedy choice. Optima
 help when several robots meet several orders. The simulator therefore offers optional **decision
 rounds** (`decision_interval_ticks`): the policy is called only at multiples of the interval, so orders
 and idle robots accumulate in between. The trade-off is that a round can add up to one interval of
-waiting before an order is assigned. Whether batching pays off is a measured question for the KPI
-comparison (next increment).
+waiting before an order is assigned. Measured on the large map, batching did not pay off: see
+section 10 and [benchmarks.md](benchmarks.md).
 
 **Testing.**
 - `min_cost_matching` against a brute-force oracle: on 300 seeded random matrices of up to 5 × 5 with
@@ -440,7 +440,45 @@ comparison (next increment).
 
 ---
 
-## 10. Where single-robot shortest paths stop being enough
+## 10. KPIs (`metrics/`) and the dispatch comparison
+
+**Definitions (D17).** Every KPI is computed from the event log alone, in seconds of simulated time:
+- **waiting time**: from an order's release until a robot reaches its pickup;
+- **assignment delay**: from release until a robot is assigned; this isolates the cost of decision
+  rounds;
+- **completion time** (lead time): from release until delivery;
+- **throughput**: delivered orders per hour, from tick 0 to the last event;
+- **utilization**: the share of robot time between assignment and delivery;
+- **empty and loaded distance**: metres driven to pickups, and with a load. The empty share is the part
+  dispatch can influence.
+
+Time KPIs are means and P95s over *delivered* orders. Undelivered orders are counted separately and
+make the comparison script fail, so they can never disappear from an average.
+
+**P95 by nearest rank.** The P95 is the smallest observed value with at least 95% of the values at or
+below it: the value at rank ⌈0.95 n⌉. Unlike interpolating definitions, it is always a value that was
+actually observed.
+
+**Paired comparison.** For each seed, all variants run on the same scenario (D14), and the comparison
+uses per-seed differences. Seed-to-seed variation, such as a busy order stream, affects every variant
+alike and cancels out. The 95% confidence interval of the mean difference uses the t distribution with
+n − 1 degrees of freedom.
+
+**Result (M2).** On the large map, optimal matching gave no measurable gain over greedy dispatch when
+deciding at every event. 10 s decision rounds made both policies worse by 5 to 24 s of mean completion
+time. See [benchmarks.md](benchmarks.md) for the table and its reading. The reason is structural:
+event-driven decisions almost always have one robot or one order, and then the optimal choice is the
+greedy one.
+
+**Testing.**
+- KPIs are checked on hand-computed runs: a single job, a queued job, an idle second robot, undelivered
+  orders, and a run cut off by `max_tick`.
+- The nearest-rank percentile is checked on known ranks.
+- The command line is tested end to end, including JSON output, map files and argument errors.
+
+---
+
+## 11. Where single-robot shortest paths stop being enough
 
 A shortest path is computed as if the robot were alone in the warehouse. With several robots:
 
@@ -458,7 +496,7 @@ search.
 
 ---
 
-## 11. Interview notes
+## 12. Interview notes
 
 **Why does Dijkstra need non-negative edge lengths?**
 The proof that a popped node's distance is final assumes edges only add length. With a negative edge, a
@@ -523,11 +561,23 @@ avoidance.
 **When does optimal assignment beat greedy, and when not?**
 Only when a decision has several robots *and* several orders. With one robot or one order, both pick
 the same pair. Event-driven dispatch mostly creates exactly those one-sided decisions, so batching into
-decision rounds is what gives the optimiser room. The price is waiting time. Measuring that trade-off,
-rather than assuming the optimiser wins, is the point of the comparison.
+decision rounds is what gives the optimiser room. The price is waiting time. Measured in M2, that
+price was higher than the gain (benchmarks.md).
 
 **Why not CP-SAT for this?**
 If each robot takes one order per decision and the cost is a sum over pairs, the problem is exactly
 the linear assignment problem, and an O(n³) algorithm solves it optimally. CP-SAT earns its place
 when the model needs more: sequences of several orders per robot, time windows, charger capacity or
 battery limits (M3).
+
+**Your optimizer didn't beat greedy. Isn't that a failure?**
+It is a measured result, and it shows why. The decisions an event-driven dispatcher faces are almost
+always one robot or one order, and there the greedy choice is optimal. Batching created room for the
+optimizer, but the waiting it adds cost more than better matching saved. The useful conclusion is
+where optimization *can* pay off: look-ahead, multi-order sequencing and time windows. That is what
+the CP-SAT phase targets. Reporting this honestly is worth more than a tuned demo.
+
+**Why paired seeds and confidence intervals?**
+Different order streams vary far more than policies do. Running every policy on the same streams and
+comparing per-seed differences removes that variation. The interval shows whether the remaining
+difference is distinguishable from zero at the sample size used.

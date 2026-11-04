@@ -6,8 +6,8 @@ A Python engine for dispatching transport orders to a fleet of autonomous mobile
 planning routes on a warehouse graph, and managing traffic between robots, evaluated in a
 reproducible simulation.
 
-> **Status:** milestone M1 (warehouse graph and routing library) is complete. M2, the discrete-event
-> simulator and dispatch policies, is in progress.
+> **Status:** milestones M1 (routing library) and M2 (simulator, dispatch policies, KPIs) are complete.
+> Next is M3: CP-SAT optimization.
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning
 > project. It does not control physical robots and has not been deployed in any real fleet.
 
@@ -19,7 +19,7 @@ reproducible simulation.
   JSON maps in [scenarios/maps/](scenarios/maps/).
 - **Routing:** Dijkstra (point-to-point and one-to-all) and A* (Euclidean or Manhattan heuristic), both
   able to avoid blocked edges.
-- **Domain model (M2, in progress):** integer simulation ticks with per-edge travel times, transport
+- **Domain model (M2):** integer simulation ticks with per-edge travel times, transport
   orders, and robots whose phases follow an explicit, fully tested state machine.
 - **Scenarios (M2):** seeded, reproducible order streams and fleet start positions; the same seed gives
   the same scenario on Windows and Linux.
@@ -28,6 +28,9 @@ reproducible simulation.
   collisions or congestion); that comes with traffic management in M4.
 - **Dispatch (M2):** greedy (oldest order, nearest robot) and optimal assignment (Hungarian problem,
   solved with scipy), with optional decision rounds.
+- **KPIs and comparison (M2):** waiting, completion (mean and P95), utilization and empty travel, from
+  the event log. Policies are compared on paired seeds, with confidence intervals. In M2, optimal
+  matching gave no measurable gain over greedy; [benchmarks.md](docs/benchmarks.md) explains why.
 - **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
   route validation.
 
@@ -66,11 +69,19 @@ Run all four before every commit:
 .venv\Scripts\python.exe -m mypy
 ```
 
+## Run a simulation
+
+```powershell
+.venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 300 --policy hungarian
+.venv\Scripts\amr-sim.exe --help   # all options; --json prints the KPIs as JSON
+```
+
 ## Scripts
 
 ```powershell
 .venv\Scripts\python.exe scripts\generate_maps.py     # regenerate scenarios/maps from the presets
 .venv\Scripts\python.exe scripts\compare_routing.py   # Dijkstra vs A* comparison (docs/benchmarks.md)
+.venv\Scripts\python.exe scripts\compare_dispatch.py  # dispatch policies in simulation (docs/benchmarks.md)
 ```
 
 ## Documentation
