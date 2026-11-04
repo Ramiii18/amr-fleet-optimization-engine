@@ -2,8 +2,13 @@
 
 ## What this project is
 This is a portfolio and learning project: a synthetic AMR fleet dispatch, routing and traffic engine with a
-discrete-event simulator. The full brief is `docs/PROJECT_BRIEF.md`. At the start of every session, read
-`docs/ROADMAP.md` (current milestone) and `docs/LEARNING_PROGRESS.md` (last session, open items).
+discrete-event simulator. The owner's full brief is `docs/PROJECT_BRIEF.md`. It is **local only and
+git-ignored** because it contains personal and job-search details. The public summary is
+`docs/PROJECT_OVERVIEW.md`. At the start of every session, read `docs/ROADMAP.md` (current milestone) and
+`docs/LEARNING_PROGRESS.md` (last session, open items).
+
+The repository is public. Never commit `docs/PROJECT_BRIEF.md`, and never copy personal, employer, vendor,
+location or job-search details into tracked files or commit messages.
 
 ## Working agreement (build-first, since 2026-11-03)
 - Claude implements the project directly: algorithms, tests, tooling and docs. Do not set exercises or quizzes.

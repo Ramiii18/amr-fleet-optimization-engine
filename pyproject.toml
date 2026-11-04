@@ -4,7 +4,7 @@
 #     .venv\Scripts\python.exe -m pip install -e ".[dev]"
 
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77"] # 77+ understands the SPDX `license` expression below
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -12,6 +12,8 @@ name = "amr-fleet-optimization-engine"
 version = "0.0.1"
 description = "Synthetic, simulation-based AMR fleet dispatch, routing and traffic optimization engine."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
 # Runtime dependencies: intentionally none yet. The core uses only the standard library.
 # Each new dependency is added when code needs it, with a reason (see docs/DECISIONS.md).

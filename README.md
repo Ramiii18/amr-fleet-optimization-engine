@@ -64,10 +64,14 @@ Run all four before every commit:
 
 ## Documentation
 
-- [Project brief](docs/PROJECT_BRIEF.md): goals, scope and constraints
+- [Project overview](docs/PROJECT_OVERVIEW.md): goals, scope and constraints
 - [Roadmap](docs/ROADMAP.md): milestones and current status
 - [Architecture](docs/ARCHITECTURE.md): modules and modelling assumptions
 - [Algorithms](docs/algorithms.md): how each algorithm works, why it is correct, its limits
 - [Benchmarks](docs/benchmarks.md): measured results, reported as run
 - [Decisions](docs/DECISIONS.md): design decisions and their reasons
 - [Progress log](docs/LEARNING_PROGRESS.md): what was built and verified, by session
+
+## License
+
+[MIT](LICENSE)

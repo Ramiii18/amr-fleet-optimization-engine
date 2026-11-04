@@ -1,4 +1,4 @@
-# Learning progress
+# Progress log
 
 ## Session log
 

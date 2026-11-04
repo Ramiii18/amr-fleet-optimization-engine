@@ -16,6 +16,10 @@ dist/
 .coverage
 htmlcov/
 
+# The owner's private project brief (personal and job-search details). Local only, never committed.
+# The public summary is docs/PROJECT_OVERVIEW.md.
+docs/PROJECT_BRIEF.md
+
 # Editors and OS files
 .idea/
 .vscode/
