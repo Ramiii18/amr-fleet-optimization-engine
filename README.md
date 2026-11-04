@@ -21,6 +21,8 @@ reproducible simulation.
   able to avoid blocked edges.
 - **Domain model (M2, in progress):** integer simulation ticks with per-edge travel times, transport
   orders, and robots whose phases follow an explicit, fully tested state machine.
+- **Scenarios (M2):** seeded, reproducible order streams and fleet start positions; the same seed gives
+  the same scenario on Windows and Linux.
 - **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
   route validation.
 

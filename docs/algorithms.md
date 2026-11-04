@@ -246,7 +246,60 @@ robot.
 
 ---
 
-## 7. Where single-robot shortest paths stop being enough
+## 7. Scenarios and seeded order streams (`scenario/`)
+
+**Problem.** Dispatch policies can only be compared fairly on identical inputs, and a result is only
+credible if anyone can regenerate the input from a seed. The input is a map, a fleet, timing
+parameters and a stream of orders.
+
+**`Scenario`** holds everything one simulation run needs, and is validated as a whole:
+- robots start idle at tick 0, each on its own node, with unique ids;
+- orders have unique ids and are sorted by release tick;
+- every node a robot or order mentions exists on the map;
+- speed is positive, and loading and unloading times are non-negative.
+
+**Arrivals: a Bernoulli process.** In each tick, an order is released with probability
+p = rate × tick length. This is the discrete-time counterpart of the Poisson process: counts are
+binomial instead of Poisson, and gaps between orders are geometric instead of exponential. Both converge
+to the Poisson case as p gets small, and p is small at realistic rates: about 0.0017 at 60 orders per
+hour with 0.1 s ticks. Why not sample exponential gaps in seconds?
+- Release times are already whole ticks, so nothing is rounded.
+- The exponential sampler calls `log`, which comes from the platform's maths library. The Bernoulli
+  process uses only `random()`, so the stream doesn't depend on the platform.
+
+**Order content.** Each order is a retrieval: a uniformly random storage location to a uniformly random
+station.
+
+**Fleet placement.** Robots start as at the beginning of a shift: parking spots first, then chargers,
+both in id order. Larger fleets take further start nodes at random from the storage locations. Stations
+stay free.
+
+**Separate random streams (D14).** Orders and placement each draw from their own `random.Random`,
+seeded from the scenario seed with a different label. Changing the fleet size therefore leaves the
+order stream unchanged, so comparisons across fleet sizes are *paired*: every fleet faces exactly the
+same orders. This is the "common random numbers" technique, which removes order-stream noise from the
+difference between two configurations.
+
+**Cost.** O(duration in ticks) to draw the arrivals, plus O(1) per order. Measured on the development
+laptop: about 0.8 ms per 30-minute stream (18,000 ticks).
+
+**Testing.**
+- One scenario is pinned: its order count, first four orders and robot positions. CI runs that test on
+  both Windows and Linux, so a platform difference would make it fail.
+- The same seed gives an identical scenario, and a different seed gives a different one.
+- Changing the fleet size from 1 to 25 robots leaves the orders unchanged.
+- Over 100 seeds at 120 orders per hour for 30 minutes, the mean order count must lie within 3 standard
+  errors of the expected 60. Measured mean: 60.87 orders, which is 1.1 standard errors away. Measured
+  standard deviation: 7.51, against 7.73 for the binomial model.
+
+**Limitations.**
+- Retrievals only: no put-away orders, no pallet returns.
+- Uniform choice of locations: no popularity skew (ABC classes), no waves or peaks over the shift.
+- At most one order per tick. Rates that would need more are rejected rather than silently capped.
+
+---
+
+## 8. Where single-robot shortest paths stop being enough
 
 A shortest path is computed as if the robot were alone in the warehouse. With several robots:
 
@@ -264,7 +317,7 @@ search.
 
 ---
 
-## 8. Interview notes
+## 9. Interview notes
 
 **Why does Dijkstra need non-negative edge lengths?**
 The proof that a popped node's distance is final assumes edges only add length. With a negative edge, a

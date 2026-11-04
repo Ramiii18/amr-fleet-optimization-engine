@@ -58,8 +58,8 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
    (D6, D12).
 2. **Domain model.** Done 2026-11-04: transport order, immutable robot state, and a robot state machine
    with explicitly listed valid transitions (D13).
-3. **Scenario generator.** A seeded order stream: arrival process, pickup at storage, drop-off at a
-   station.
+3. **Scenario generator.** Done 2026-11-04: seeded order stream (Bernoulli arrivals per tick), pickup at
+   storage, drop-off at a station, shift-start fleet placement (D14).
 4. **Discrete-event simulation kernel.** A deterministic event queue, a plan executor, invariant checks
    and an event log.
 5. **Dispatch policies.**

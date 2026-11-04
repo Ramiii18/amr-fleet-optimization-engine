@@ -125,3 +125,21 @@ local pass predicts a CI pass.
   traffic (M4), a robot waiting at a station blocks it for others, so a parking policy will be needed.
 - Orders that no robot carries yet, released but unassigned, and orders already delivered are tracked by
   the simulator (next increments).
+
+## D14: Orders arrive as a per-tick Bernoulli process, drawn from named random streams
+**Status:** Accepted (2026-11-04)
+**Why:**
+- Time is integer ticks (D6), so drawing "does an order arrive in this tick?" gives whole-tick release
+  times with no rounding.
+- Only `random()`, `choice()` and `sample()` are used. They need no platform maths library, unlike an
+  exponential sampler, which calls `log`. A pinned scenario is checked by CI on Windows and Linux.
+- Orders and robot placement use separate streams, seeded as `"<seed>:orders"` and `"<seed>:fleet"`. A
+  different fleet size then faces exactly the same orders (common random numbers), which makes fleet-size
+  comparisons paired.
+
+**Consequences:**
+- At most one order per tick. A rate that needs more is rejected rather than silently capped.
+- Generation costs O(ticks), which is negligible in practice: about 0.8 ms per 30-minute stream.
+- Python guarantees the `random()` sequence for a seed across versions, but not the algorithms behind
+  `choice()` and `sample()`. The pinned test will flag a change after a Python upgrade, and the
+  benchmarks record the Python version.
