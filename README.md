@@ -7,7 +7,7 @@ planning routes on a warehouse graph, and managing traffic between robots, evalu
 reproducible simulation.
 
 > **Status:** milestones M1 (routing library) and M2 (simulator, dispatch policies, KPIs) are complete.
-> Next is M3: CP-SAT optimization.
+> M3 (look-ahead and multi-order planning with CP-SAT) is in progress.
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning
 > project. It does not control physical robots and has not been deployed in any real fleet.
 
@@ -28,9 +28,16 @@ reproducible simulation.
   collisions or congestion); that comes with traffic management in M4.
 - **Dispatch (M2):** greedy (oldest order, nearest robot) and optimal assignment (Hungarian problem,
   solved with scipy), with optional decision rounds.
-- **KPIs and comparison (M2):** waiting, completion (mean and P95), utilization and empty travel, from
-  the event log. Policies are compared on paired seeds, with confidence intervals. In M2, optimal
-  matching gave no measurable gain over greedy; [benchmarks.md](docs/benchmarks.md) explains why.
+- **KPIs and comparison (M2):** waiting, completion (mean, P95 and maximum), utilization and empty
+  travel, from the event log. Policies are compared on paired seeds, with confidence intervals. In M2,
+  optimal matching gave no measurable gain over greedy; [benchmarks.md](docs/benchmarks.md) explains
+  why.
+- **Planning dispatch (M3):** at each decision, plan every robot (busy ones from where and when they
+  will finish) and the oldest 10 orders, then start only the idle robots' first jobs (a receding
+  horizon). Plans come from cheapest insertion or from an exact CP-SAT model with a deterministic time
+  limit, checked against brute force on 300 small problems. At high load, CP-SAT planning cut mean
+  completion time by about a quarter against greedy, but made the worst case worse;
+  [benchmarks.md](docs/benchmarks.md) has the numbers.
 - **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
   route validation.
 
@@ -72,8 +79,8 @@ Run all four before every commit:
 ## Run a simulation
 
 ```powershell
-.venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 300 --policy hungarian
-.venv\Scripts\amr-sim.exe --help   # all options; --json prints the KPIs as JSON
+.venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 300 --policy cpsat
+.venv\Scripts\amr-sim.exe --help   # policies: greedy, hungarian, insertion, cpsat; --json for JSON
 ```
 
 ## Scripts
@@ -82,6 +89,7 @@ Run all four before every commit:
 .venv\Scripts\python.exe scripts\generate_maps.py     # regenerate scenarios/maps from the presets
 .venv\Scripts\python.exe scripts\compare_routing.py   # Dijkstra vs A* comparison (docs/benchmarks.md)
 .venv\Scripts\python.exe scripts\compare_dispatch.py  # dispatch policies in simulation (docs/benchmarks.md)
+.venv\Scripts\python.exe scripts\compare_planning.py  # greedy vs insertion vs CP-SAT planning (docs/benchmarks.md)
 ```
 
 ## Documentation

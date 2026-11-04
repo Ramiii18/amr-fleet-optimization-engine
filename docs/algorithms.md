@@ -662,6 +662,17 @@ outcomes are not noisy: the 0.2 setting proved the same 123 decisions optimal in
   bound is at most its cost.
 - On a generated run, every order is delivered, and for every decision, bound ≤ cost ≤ insertion's cost.
 
+### 11.4 Results in simulation
+
+See [benchmarks.md](benchmarks.md), "Planning". In short:
+- **High load (about 90% utilization).** Insertion cut mean completion time by 18–20% against greedy,
+  and CP-SAT by 24–26%. CP-SAT beat insertion by about 11 s, with intervals that exclude zero.
+- **Moderate load.** Gains of 1–2 s.
+- **Where it comes from.** Less empty travel: a planned robot takes a nearby order, or leaves an order
+  to a busy robot that will be closer.
+- **The cost.** The worst-case completion time grew under CP-SAT, because the objective doesn't care how
+  waiting is distributed.
+
 ---
 
 ## 12. Where single-robot shortest paths stop being enough
@@ -797,6 +808,14 @@ It needs about (R + n)² literals instead of R · n², because the trips between
 the robot. Its catch is symmetry: the robots' segments could appear in any order around the tour.
 Pinning each order's owner fixes that, so each plan has one representation. Measured on recorded
 decisions, it was faster than the per-robot model.
+
+**Did CP-SAT earn its place?**
+Measured against a heuristic on the *same* model, not just against FIFO greedy: yes, at high load,
+where it beat cheapest insertion by about 11 s of mean completion time, with intervals that exclude
+zero. Most of the gain over greedy, however, comes from the planning model itself: look-ahead and
+sequencing. Insertion already gets 36–39 s of the 47–51 s. And optimising the mean made the worst case
+worse. The honest summary is "the model matters most, exact search adds a measurable increment, and
+the objective needs a fairness term".
 
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and

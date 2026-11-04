@@ -107,11 +107,13 @@ finding, its model has to do what greedy cannot (D18):
 3. **CP-SAT model.** Done 2026-11-04: one giant-tour circuit (measured faster than one circuit per
    robot), the insertion plan as a hint and as a fallback, and deterministic solver limits, checked
    against the brute-force oracle. Adds OR-Tools as a runtime dependency (D20).
-4. **Comparison.** Greedy vs insertion vs CP-SAT on paired seeds, with solver statistics: the share of
-   solves proven optimal, time-limit hits and solve times. The KPIs gain the maximum completion time,
-   to expose starvation.
-5. **Due times, only if increment 4 leaves the question open.** If look-ahead and sequencing starve
-   distant orders, add per-order due times and a lateness term.
+4. **Comparison.** Done 2026-11-04: greedy vs insertion vs CP-SAT on paired seeds, with solver
+   statistics (D21); results in [benchmarks.md](benchmarks.md). At high load, CP-SAT cut mean completion
+   time by 24–26% against greedy and by about 11 s against insertion, but its worst-case completion
+   time grew (625 s against 415 s for greedy at 5 robots and 150 orders/h).
+5. **Due times, only if increment 4 leaves the question open.** Triggered by the worst-case result of
+   increment 4: look-ahead and sequencing starve some distant orders. Next: add per-order due times and
+   a lateness term.
 
 **Acceptance criteria:**
 - CP-SAT finds the brute-force optimum on at least 200 random small instances, and the insertion

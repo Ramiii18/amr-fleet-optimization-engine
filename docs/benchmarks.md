@@ -148,3 +148,108 @@ not just solve the same decision better. Candidates for the CP-SAT phase:
   smaller than about 1 s cannot be resolved.
 - The runs are deterministic, and the scenario generator is checked on Windows and Linux by CI. This
   table itself was produced on Windows only.
+
+## Planning: greedy vs insertion vs CP-SAT, in simulation (M3, 2026-11-04)
+
+**Command:** `.venv\Scripts\python.exe scripts\compare_planning.py --jobs 8` with the defaults: 20 seeds,
+orders released for one hour.
+
+**Machine:** the same laptop as above. The KPIs are simulated time, fully determined by the code and the
+seeds, and do not depend on the 8 parallel processes (D21). The solve times and the final line ("240
+runs in ...") do depend on the machine, and on the processes sharing the CPU.
+
+**Setup.**
+- The same map, robot speed, handling times, configurations and seeds as the M2 comparison above.
+- Three variants on exactly the same 20 scenarios per configuration, all deciding at every event:
+  greedy (the M2 baseline), insertion (D19) and CP-SAT (D20), the last two planning every robot and the
+  oldest 10 orders.
+- Paired differences in mean completion time against greedy, and for CP-SAT against insertion, with 95%
+  t confidence intervals over the 20 seeds.
+- "Completion max s" is the mean over seeds of each run's worst completion time.
+
+```text
+Planning comparison, 2026-11-04
+Environment: Python 3.13.1, Windows-11-10.0.26200-SP0, ortools 9.15.6755, amr-fleet-optimization-engine 0.0.1 (commit 551d256), 8 worker processes
+Settings: map large, orders released for 3600 s, seeds 0-19, 1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading; planning window 10 orders; CP-SAT: 1 worker, deterministic limit 0.2, seed 0
+
+| Robots | Orders/h | Policy | Utilization | Waiting s | Completion s | Completion P95 s | Completion max s | Empty share | Completion diff. vs greedy (95% CI) | vs insertion (95% CI) |
+|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|
+| 5 | 100 | greedy | 60.9% | 51.6 | 119.5 | 180.7 | 216.0 | 47.3% | baseline |  |
+| 5 | 100 | insertion | 60.0% | 50.4 | 118.3 | 176.9 | 212.9 | 46.3% | -1.2 s [-1.9, -0.5] |  |
+| 5 | 100 | cpsat | 59.7% | 49.6 | 117.5 | 176.2 | 221.3 | 46.0% | -2.0 s [-2.9, -1.1] | -0.8 s [-1.2, -0.4] |
+| 5 | 150 | greedy | 89.5% | 144.5 | 212.0 | 357.4 | 414.9 | 49.4% | baseline |  |
+| 5 | 150 | insertion | 87.5% | 105.4 | 172.9 | 356.4 | 520.6 | 46.9% | -39.1 s [-55.5, -22.7] |  |
+| 5 | 150 | cpsat | 86.6% | 93.7 | 161.2 | 325.7 | 625.0 | 45.8% | -50.8 s [-70.5, -31.0] | -11.7 s [-15.5, -7.9] |
+| 10 | 200 | greedy | 57.7% | 41.6 | 108.9 | 150.5 | 190.2 | 45.7% | baseline |  |
+| 10 | 200 | insertion | 56.7% | 40.3 | 107.6 | 147.4 | 179.8 | 44.5% | -1.3 s [-1.6, -0.9] |  |
+| 10 | 200 | cpsat | 56.6% | 40.1 | 107.5 | 147.1 | 180.4 | 44.4% | -1.4 s [-1.8, -1.0] | -0.2 s [-0.3, +0.0] |
+| 10 | 300 | greedy | 90.8% | 114.8 | 182.4 | 285.0 | 342.4 | 49.3% | baseline |  |
+| 10 | 300 | insertion | 87.8% | 79.2 | 146.9 | 243.2 | 303.0 | 46.2% | -35.6 s [-48.2, -23.0] |  |
+| 10 | 300 | cpsat | 86.5% | 67.8 | 135.5 | 224.1 | 368.3 | 45.0% | -47.0 s [-63.6, -30.3] | -11.4 s [-15.6, -7.2] |
+
+CP-SAT solver statistics, over all decisions of all seeds:
+
+| Robots | Orders/h | Decisions | Searched | Proven optimal | Stopped at limit | Fallback | Improved on insertion | Mean gap when stopped | Solve s mean / P95 / max |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 5 | 100 | 2434 | 302 | 302 (100.0%) | 0 (0.0%) | 0 (0.0%) | 112 | - | 0.009 / 0.020 / 0.093 |
+| 5 | 150 | 3367 | 1856 | 1579 (85.1%) | 277 (14.9%) | 0 (0.0%) | 1113 | 36.4% | 0.318 / 1.739 / 2.188 |
+| 10 | 200 | 5213 | 485 | 485 (100.0%) | 0 (0.0%) | 0 (0.0%) | 97 | - | 0.052 / 0.087 / 0.203 |
+| 10 | 300 | 7687 | 3915 | 3317 (84.7%) | 598 (15.3%) | 0 (0.0%) | 1967 | 22.3% | 0.318 / 1.608 / 3.693 |
+
+240 runs in 304.5 s.
+Every order was delivered in every run.
+```
+
+### Reading the results
+
+- **The greedy rows reproduce the M2 table exactly**: the same code and seeds give the same runs.
+- **At high load, planning pays off strongly.** At about 90% utilization (5 robots at 150 orders/h, 10
+  robots at 300 orders/h):
+  - insertion cuts mean completion time by 39.1 s and 35.6 s against greedy, 18–20%;
+  - CP-SAT cuts it by 50.8 s and 47.0 s, 24–26%;
+  - mean waiting falls from 144.5 s to 93.7 s, and from 114.8 s to 67.8 s.
+- **At moderate load, the gain is small but measurable:** 1.2 to 2.0 s, with intervals that exclude zero.
+  When idle robots are usually available, there is little to plan.
+- **CP-SAT earns its place over insertion in three of the four configurations** (D19 criterion):
+  - −11.7 s [−15.5, −7.9] at 5 robots and 150 orders/h;
+  - −11.4 s [−15.6, −7.2] at 10 robots and 300 orders/h;
+  - −0.8 s [−1.2, −0.4] at 5 robots and 100 orders/h.
+  At 10 robots and 200 orders/h the difference is −0.2 s and its interval reaches zero, so no difference
+  is resolved there.
+- **The gain comes from less empty travel.** The empty share falls from 49.4% to 45.8% at 5 robots and
+  150 orders/h. The same orders are delivered with less driving, utilization drops by 3–4 percentage
+  points, and the spare capacity shortens the queue.
+- **The price is the worst case.** The maximum completion time rises while the mean and the P95 fall:
+  - at 5 robots and 150 orders/h: 414.9 s for greedy, 520.6 s for insertion, 625.0 s for CP-SAT;
+  - at 10 robots and 300 orders/h: 342.4 s for greedy, 303.0 s for insertion, 368.3 s for CP-SAT.
+
+  A few distant orders keep being sequenced last, which is the starvation risk named in D18. The
+  window of the oldest 10 orders limits it, but does not prevent it. CP-SAT, the stronger optimiser,
+  has the worst maximum in both high-load configurations. That fits the objective: total completion
+  time is indifferent to how the waiting is distributed, so it accepts a few long waits in exchange for
+  many shorter ones.
+- **Solver behaviour.**
+  - At moderate load, every searched decision was proven optimal.
+  - At high load, 15% of searched decisions stopped at the limit, with mean remaining gaps of 36% and
+    22%. The lower bounds are weak (algorithms section 11.3), so these gaps say little about how far
+    the plans actually are from optimal. In the development probe, plans at this limit matched the best
+    plan found by any setting in 157 of 165 decisions.
+  - There was no fallback to the insertion plan.
+  - Solve times: 0.32 s mean, 1.6–1.7 s P95 and 3.7 s maximum at high load, measured with 8 processes
+    sharing the CPU.
+
+### What this means for M3
+
+The planning model is the main win, and exact search adds about another 11 s at high load. The
+worst-case completion time, however, gets worse. Increment 5 of the M3 plan was conditional on exactly
+this: it adds due times, so that the objective cares about the orders that have waited longest.
+
+### What this does not show
+
+- No congestion. Robots never block each other (M4), and the availability of busy robots is predicted
+  exactly. With traffic, both the predictions and the value of look-ahead may change.
+- The worst case is reported as a mean of per-run maxima, without a paired interval.
+- One map, uniform demand and 20 seeds, as in M2.
+- Solve times were measured under parallel load on one laptop. A real-time system would need wall-clock
+  limits, and with them plans would no longer be reproducible.
+- This table was produced on Windows only.
