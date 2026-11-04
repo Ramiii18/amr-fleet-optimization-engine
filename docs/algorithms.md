@@ -583,6 +583,84 @@ CP-SAT with insertion measures what exact search adds on top.
 - Every order of a generated scenario is delivered, with and without decision rounds, and two runs give
   identical event logs.
 
+### 11.3 CP-SAT (`dispatch/cpsat.py`)
+
+**Problem class.** Assigning n orders to R robots and sequencing them, with sequence-dependent setup
+times (the empty trips) and the sum of completion times as the objective, is parallel-machine
+scheduling with setup times, R | s_ij | ΣC_j. It is NP-hard, so exact solving is only realistic for
+small windows, which is what the receding horizon provides.
+
+**The model (a "giant tour").** One circuit visits R robot nodes and n order nodes: robot 0, its
+orders in sequence, robot 1, its orders, …, and back to robot 0. One Boolean literal per arc:
+- robot r → order j: j is r's first job, so C(j) ≥ ready(r) + start(r, j) + job(j);
+- order i → order j: j follows i on the same robot, so C(j) ≥ C(i) + setup(i, j) + job(j);
+- order j → robot r + 1: j is r's last job;
+- robot r → robot r + 1: r does nothing.
+
+Each time constraint applies only when its arc is chosen (CP-SAT's enforcement literals). The circuit
+constraint makes the chosen arcs a single cycle through every node, which rules out sub-tours, so every
+order is done exactly once. The objective is to minimise Σ C(j). Minimisation drives each C(j) down to
+its earliest value, so the model's optimum is the best plan's cost. The plan is then read from the arcs
+and evaluated again by the plan evaluator of section 11.1, which stays the single definition of cost.
+
+**Breaking symmetry.** Without more constraints, the robots' segments could appear in the circuit in any
+order: (R − 1)! circuits for the same plan, all with the same cost, which the search would have to rule
+out one by one. An integer `owner(j)` per order, pinned by every arc, forces the robots into index order:
+- a first job's owner is its robot;
+- a follower has its predecessor's owner;
+- the arc out of a last job must lead to the owner's successor.
+
+Then each plan corresponds to exactly one circuit.
+
+**Size.** About (R + n)² literals: robot → robot R, robot → order R·n, order → order n(n − 1), order →
+robot n·R. A first version used one circuit per robot, with R · n² literals. On 165 decisions recorded
+from one 10-robot run, the giant tour needed 92 s in total against 144 s for the per-robot model, with
+identical optimal objectives. That comparison was a development measurement; the per-robot model is not
+kept in the code.
+
+**Hint, fallback and the trivial case.**
+- The insertion plan is given to CP-SAT as a complete starting solution.
+- If CP-SAT finds nothing better in time, the insertion plan is used, so a decision is never worse than
+  insertion's by the plan objective.
+- With one order or none, there is no search: insertion is then optimal.
+
+**Reproducibility (D20).** One worker, a fixed random seed, and a *deterministic* time limit, which is
+CP-SAT's measure of work done, not wall-clock time. The same decision therefore always gives the same
+plan, and a whole simulation run is reproducible. A wall-clock limit would make plans depend on the
+machine's load.
+
+**What is hard.** Proving optimality, not finding good plans. A sum of completion times under
+conditional precedence constraints has a weak linear relaxation, so the lower bound rises slowly. On the
+same 165 recorded decisions (one worker; deterministic-time limit in CP-SAT's work units):
+
+| Limit | Total solve time | Proven optimal | At the best plan found by any setting | Excess ticks over the best |
+|---|---:|---:|---:|---:|
+| 0.05 | 31 s | 106 | 139 | 4,246 |
+| 0.2 | 64 s | 123 | 157 | 916 |
+| 1.0 | 153 s | 133 | 162 | 135 |
+| 0.2 with 8 workers (deterministic interleaved search) | 108 s | 117 | 156 | 1,204 |
+| Insertion alone | | | 59 | 24,351 |
+
+CP-SAT finds much better plans than insertion, and most of its remaining time goes into the proof.
+- Eight workers in CP-SAT's deterministic parallel mode were slower here than one.
+- A stronger linear relaxation (`linearization_level` 2) did worse: at the 0.2 limit it proved 99
+  decisions optimal, against 123 with the default.
+- The default limit is therefore 0.2, with one worker and the default linearization (D20).
+
+Wall times were measured one solve at a time on the development laptop, and they are noisy. The 1.0
+setting took 92 s in one run and 153 s in another, and the 0.2 setting 64 s and 42 s. The solver
+outcomes are not noisy: the 0.2 setting proved the same 123 decisions optimal in both runs.
+
+**Testing.**
+- The myopic case of section 11.2: CP-SAT finds 41, where insertion gets 100, and proves it optimal.
+- 250 random problems (2 to 5 orders, 1 to 3 robots) and 50 problems with real travel times on the
+  medium map: CP-SAT proves optimality every time, and its objective equals the brute-force optimum.
+- One order or none: no search, and the insertion plan is returned.
+- The same problem solved twice gives the same plan; two simulation runs give identical event logs.
+- With a near-zero time limit, the result is still a valid plan, no worse than insertion's, and its
+  bound is at most its cost.
+- On a generated run, every order is delivered, and for every decision, bound ≤ cost ≤ insertion's cost.
+
 ---
 
 ## 12. Where single-robot shortest paths stop being enough
@@ -694,6 +772,30 @@ them. This is the same idea as model predictive control.
 In M2 every decision saw only idle robots, so "the nearest robot" meant "the nearest idle robot". A
 robot about to deliver next to the pickup is often the better choice. Predicting when and where each
 busy robot finishes turns that into a number the planner can compare.
+
+**How do you know the CP-SAT model is right?**
+- On 300 small problems it matches a brute-force search over every plan.
+- Its plans are re-evaluated by an independent evaluator: the solver's numbers are never trusted on
+  their own.
+- Every solve also checks bound ≤ cost ≤ the insertion plan's cost.
+- The evaluator itself is checked against the simulator: committed jobs are delivered at exactly the
+  planned tick.
+
+**Why does CP-SAT spend most of its time proving rather than finding?**
+The objective is a sum of completion times, linked by constraints that apply only if an arc is chosen.
+The linear relaxation of such constraints is weak, so the lower bound rises slowly even when the best
+plan is already known. In practice: use the hint, stop at a limit, and report the remaining gap.
+
+**Why a deterministic time limit?**
+A simulation run calls the solver hundreds of times, and each plan changes what happens next. With a
+wall-clock limit, a busy machine would get different plans and a different run. CP-SAT's deterministic
+time counts work done, so the same input always gives the same plan.
+
+**Why a giant tour instead of one circuit per robot?**
+It needs about (R + n)² literals instead of R · n², because the trips between orders don't depend on
+the robot. Its catch is symmetry: the robots' segments could appear in any order around the tour.
+Pinning each order's owner fixes that, so each plan has one representation. Measured on recorded
+decisions, it was faster than the per-robot model.
 
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and

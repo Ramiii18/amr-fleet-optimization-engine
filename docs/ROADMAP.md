@@ -104,9 +104,9 @@ finding, its model has to do what greedy cannot (D18):
    dispatch snapshot, a plan evaluator, and a brute-force oracle for the tests.
 2. **Insertion heuristic and receding-horizon policy.** Done 2026-11-04: cheapest insertion builds the
    plan, and the policy commits the first jobs (D19). This is the heuristic that CP-SAT has to beat.
-3. **CP-SAT model.** One circuit constraint per robot, the insertion plan as a hint and as a fallback,
-   and deterministic solver limits, checked against the brute-force oracle. Adds OR-Tools as a runtime
-   dependency.
+3. **CP-SAT model.** Done 2026-11-04: one giant-tour circuit (measured faster than one circuit per
+   robot), the insertion plan as a hint and as a fallback, and deterministic solver limits, checked
+   against the brute-force oracle. Adds OR-Tools as a runtime dependency (D20).
 4. **Comparison.** Greedy vs insertion vs CP-SAT on paired seeds, with solver statistics: the share of
    solves proven optimal, time-limit hits and solve times. The KPIs gain the maximum completion time,
    to expose starvation.

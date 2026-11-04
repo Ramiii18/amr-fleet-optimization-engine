@@ -20,6 +20,7 @@ requires-python = ">=3.13"
 dependencies = [
     "numpy>=2.1", # cost matrices for optimal assignment (D16); 2.1 is the first with Python 3.13
     "scipy>=1.14", # linear_sum_assignment for Hungarian dispatch (D16); 1.14 supports Python 3.13
+    "ortools>=9.15", # CP-SAT for bounded-horizon planning (D20); the version tested and benchmarked
 ]
 
 [project.optional-dependencies]

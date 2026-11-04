@@ -255,3 +255,34 @@ local pass predicts a CI pass.
   small test problems.
 - No local search (moving or swapping orders) for now. If CP-SAT gains little over insertion, local
   search is the cheaper thing to try next (Phase 2 backlog).
+
+## D20: CP-SAT with one giant-tour circuit, one worker and a deterministic time limit
+**Status:** Accepted (2026-11-04)
+**Why:**
+- **CP-SAT** solves the D18 problem exactly for small windows. When it stops early, it still reports a
+  proven lower bound, so the remaining gap is known. The problem maps directly onto CP-SAT's circuit
+  constraint with enforced time constraints.
+- **One giant-tour circuit**, through every robot node and order node, with each order's robot pinned
+  by `owner` constraints. This breaks the symmetry between equivalent circuits, so each plan is exactly
+  one circuit. It has about (R + n)² literals, against R · n² for one circuit per robot. On 165 recorded
+  decisions it needed 92 s in total, against 144 s for the per-robot version, with identical optimal
+  objectives (a development measurement; algorithms section 11.3).
+- **Reproducibility.** One worker, a fixed seed, and `max_deterministic_time` instead of a wall-clock
+  limit. The same decision always gives the same plan, so simulation runs stay reproducible. Eight
+  workers in CP-SAT's deterministic interleaved mode were slower in the same measurement. A stronger
+  linear relaxation (`linearization_level` 2) proved fewer decisions optimal (99 against 123 of 165).
+- **Limit: 0.2 deterministic seconds.** On the 165 decisions, the result was as good as the best plan
+  found by any setting in 157 cases at 0.2, against 162 at 1.0, for less than half the solve time. The
+  difference left is 916 ticks of planned completion time over the 165 decisions, about 5.6 ticks
+  (0.56 s) per decision, summed over the orders it plans. Insertion alone was 24,351 ticks off.
+- **Hint and fallback.** The insertion plan is the starting hint, and it is kept when CP-SAT finds
+  nothing better. So, by the plan objective, CP-SAT never makes a decision worse than insertion would.
+
+**Consequences:**
+- Many solves stop at the limit without a proof (status `limit`). They are counted and reported with
+  their gaps, not hidden.
+- Deterministic time is not wall time, and the ratio between them varies. In the same measurement, single
+  solves took up to 1.9 wall seconds at the 0.2 limit and up to 5.2 s at 1.0. Solve times are reported
+  in wall seconds, as measured.
+- OR-Tools becomes a runtime dependency, which also installs protobuf, pandas, absl-py and
+  immutabledict. Results may differ between OR-Tools versions, so the benchmarks record the version.

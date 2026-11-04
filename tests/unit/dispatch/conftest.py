@@ -127,6 +127,29 @@ def look_ahead_snapshot() -> DispatchSnapshot:
 
 
 @pytest.fixture
+def myopic_problem() -> HorizonProblem:
+    """A case where cheapest insertion is myopic (algorithms section 11.2).
+
+    Two idle robots. O0 is 10 ticks from R1 and 11 from R2; O1 is 10 from R1 and 100 from
+    R2. Every job takes 10 ticks, and every trip between the two orders 50. Insertion gives
+    the older O0 to R1 and ends at 100; the optimum, R1 taking O1 and R2 taking O0, is 41.
+    """
+    return HorizonProblem(
+        tick=0,
+        robots=(
+            RobotAvailability(RobotId("R1"), NodeId("X1"), 0, idle=True),
+            RobotAvailability(RobotId("R2"), NodeId("X2"), 0, idle=True),
+        ),
+        orders=tuple(
+            TransportOrder(OrderId(f"O{j}"), NodeId(f"P{j}"), NodeId(f"D{j}"), j) for j in range(2)
+        ),
+        job_ticks=(10, 10),
+        start_ticks=((10, 10), (11, 100)),
+        setup_ticks=((0, 50), (50, 0)),
+    )
+
+
+@pytest.fixture
 def brute_force() -> BruteForce:
     return brute_force_optimum
 

@@ -11,7 +11,6 @@ from amr_optimizer.dispatch import (
     HorizonProblem,
     InsertionDispatch,
     Plan,
-    RobotAvailability,
     build_problem,
     completion_offsets,
     first_jobs,
@@ -19,10 +18,10 @@ from amr_optimizer.dispatch import (
     sequence_total,
     total_completion,
 )
-from amr_optimizer.domain import OrderId, RobotId, TransportOrder
+from amr_optimizer.domain import OrderId, RobotId
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import Assignment, DispatchSnapshot, EventKind, simulate
-from amr_optimizer.warehouse import PRESETS, NodeId, generate_grid_warehouse
+from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse
 
 BruteForce = Callable[[HorizonProblem], tuple[int, Plan]]
 RandomProblem = Callable[..., HorizonProblem]
@@ -44,31 +43,14 @@ def test_insertion_finds_the_look_ahead_plan(look_ahead_snapshot: DispatchSnapsh
     assert list(GreedyDispatch().assign(look_ahead_snapshot)) == [Assignment(R1, O2)]
 
 
-# Two idle robots. O0 is 10 ticks from R1 and 11 from R2; O1 is 10 from R1 and 100 from R2.
-# Every job takes 10 ticks, and every trip between the two orders 50.
-MYOPIC = HorizonProblem(
-    tick=0,
-    robots=(
-        RobotAvailability(R1, NodeId("X1"), 0, idle=True),
-        RobotAvailability(R2, NodeId("X2"), 0, idle=True),
-    ),
-    orders=tuple(
-        TransportOrder(OrderId(f"O{j}"), NodeId(f"P{j}"), NodeId(f"D{j}"), j) for j in range(2)
-    ),
-    job_ticks=(10, 10),
-    start_ticks=((10, 10), (11, 100)),
-    setup_ticks=((0, 50), (50, 0)),
-)
-
-
-def test_insertion_is_myopic(brute_force: BruteForce) -> None:
+def test_insertion_is_myopic(myopic_problem: HorizonProblem, brute_force: BruteForce) -> None:
     # O0, the older order, is inserted first and takes R1 (20 < 21). O1 then either follows
     # it on R1 or goes to the distant R2: 100 in total either way, against 41 for the optimum.
-    plan = insertion_plan(MYOPIC)
+    plan = insertion_plan(myopic_problem)
 
     assert plan == ((1, 0), ())  # a tie between O1 first and O1 second: the earlier position
-    assert total_completion(MYOPIC, plan) == 100
-    assert brute_force(MYOPIC) == (41, ((1,), (0,)))
+    assert total_completion(myopic_problem, plan) == 100
+    assert brute_force(myopic_problem) == (41, ((1,), (0,)))
 
 
 def test_sequence_total_agrees_with_the_evaluator(

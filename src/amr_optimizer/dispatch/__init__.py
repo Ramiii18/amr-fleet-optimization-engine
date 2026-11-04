@@ -3,6 +3,13 @@
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
+from amr_optimizer.dispatch.cpsat import (
+    CpSatDispatch,
+    SolveOutcome,
+    SolverSettings,
+    SolveStatus,
+    solve_plan,
+)
 from amr_optimizer.dispatch.greedy import GreedyDispatch
 from amr_optimizer.dispatch.horizon import (
     DEFAULT_MAX_ORDERS,
@@ -23,13 +30,19 @@ from amr_optimizer.dispatch.matching import min_cost_matching
 from amr_optimizer.sim import DispatchPolicy
 
 POLICIES: Mapping[str, Callable[[], DispatchPolicy]] = MappingProxyType(
-    {"greedy": GreedyDispatch, "hungarian": HungarianDispatch, "insertion": InsertionDispatch}
+    {
+        "greedy": GreedyDispatch,
+        "hungarian": HungarianDispatch,
+        "insertion": InsertionDispatch,
+        "cpsat": CpSatDispatch,
+    }
 )
 """Every policy by name, as used by the command line and the comparison script."""
 
 __all__ = [
     "DEFAULT_MAX_ORDERS",
     "POLICIES",
+    "CpSatDispatch",
     "GreedyDispatch",
     "HorizonProblem",
     "HungarianDispatch",
@@ -38,6 +51,9 @@ __all__ = [
     "Plan",
     "PlanningProblemError",
     "RobotAvailability",
+    "SolveOutcome",
+    "SolveStatus",
+    "SolverSettings",
     "availability",
     "build_problem",
     "completion_offsets",
@@ -45,5 +61,6 @@ __all__ = [
     "insertion_plan",
     "min_cost_matching",
     "sequence_total",
+    "solve_plan",
     "total_completion",
 ]
