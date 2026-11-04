@@ -286,3 +286,22 @@ local pass predicts a CI pass.
   in wall seconds, as measured.
 - OR-Tools becomes a runtime dependency, which also installs protobuf, pandas, absl-py and
   immutabledict. Results may differ between OR-Tools versions, so the benchmarks record the version.
+
+## D21: The M3 comparison is paired against greedy and against insertion, and runs in parallel processes
+**Status:** Accepted (2026-11-04)
+**Why:**
+- Two questions, two baselines (D19). Insertion against greedy shows what the planning model is worth;
+  CP-SAT against insertion shows what exact search adds. Both are paired over the same 20 seeds and the
+  same configurations as in M2, so the results can be read next to the M2 table.
+- The maximum completion time is reported next to the mean and P95, because look-ahead and sequencing
+  can starve a distant order (D18), and a mean or a P95 can hide that.
+- Every CP-SAT decision is counted by outcome: no search needed, proven optimal, stopped at the limit
+  (with its remaining gap), or fallback to insertion. Solver shortfalls are therefore visible.
+- Runs execute in parallel worker processes. A CP-SAT solve is single-threaded with a deterministic
+  limit, so the KPIs are the same with any number of processes.
+
+**Consequences:**
+- Solve wall times are measured while the processes share the CPU, so they overstate the time of a
+  solve run alone. The output states the number of processes.
+- The shared statistics helper (`metrics.compare.paired_difference`) now also serves the M2 script.
+  Its output is unchanged: checked by diffing the old and new versions on 3 seeds.

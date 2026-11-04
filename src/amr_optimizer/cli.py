@@ -52,7 +52,7 @@ def _report(kpis: RunKpis) -> list[str]:
         f"  throughput         {kpis.throughput_per_h:8.1f} orders/h",
         f"  waiting time       {kpis.waiting_mean_s:8.1f} s mean  {kpis.waiting_p95_s:8.1f} s P95",
         f"  completion time    {kpis.completion_mean_s:8.1f} s mean  "
-        f"{kpis.completion_p95_s:8.1f} s P95",
+        f"{kpis.completion_p95_s:8.1f} s P95  {kpis.completion_max_s:8.1f} s max",
         f"  assignment delay   {kpis.assignment_delay_mean_s:8.1f} s mean",
         f"  utilization        {kpis.utilization:8.1%}",
         f"  distance           {kpis.empty_distance_m:8.0f} m empty  "

@@ -18,7 +18,6 @@ Usage (from the repository root):
 """
 
 import argparse
-import math
 import platform
 import statistics
 import subprocess
@@ -28,10 +27,8 @@ from datetime import date
 from importlib.metadata import version
 from pathlib import Path
 
-from scipy.stats import t as student_t
-
 from amr_optimizer.dispatch import POLICIES
-from amr_optimizer.metrics import RunKpis, compute_kpis
+from amr_optimizer.metrics import RunKpis, compute_kpis, paired_difference
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import simulate
 from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse
@@ -54,18 +51,6 @@ def git_commit() -> str:
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
     return output.stdout.strip()
-
-
-def paired_difference(values: list[float], baseline: list[float]) -> str:
-    """Mean of the per-seed differences, with a 95% t confidence interval."""
-    diffs = [v - b for v, b in zip(values, baseline, strict=True)]
-    mean = statistics.fmean(diffs)
-    if len(diffs) < 2:
-        return f"{mean:+.1f} s"
-    half_width = (
-        student_t.ppf(0.975, len(diffs) - 1) * statistics.stdev(diffs) / math.sqrt(len(diffs))
-    )
-    return f"{mean:+.1f} s [{mean - half_width:+.1f}, {mean + half_width:+.1f}]"
 
 
 def run(seeds: int, duration_s: float) -> int:
@@ -111,7 +96,11 @@ def run(seeds: int, duration_s: float) -> int:
                 return statistics.fmean(values)
 
             completion = [k.completion_mean_s for k in runs]
-            delta = "baseline" if variant == BASELINE else paired_difference(completion, baseline)
+            delta = (
+                "baseline"
+                if variant == BASELINE
+                else paired_difference(completion, baseline).format()
+            )
             decisions = "every event" if variant[1] == 0 else f"{variant[1]:g} s rounds"
             print(
                 f"| {robots} | {rate:g} | {variant[0]} | {decisions} "

@@ -446,7 +446,8 @@ section 10 and [benchmarks.md](benchmarks.md).
 - **waiting time**: from an order's release until a robot reaches its pickup;
 - **assignment delay**: from release until a robot is assigned; this isolates the cost of decision
   rounds;
-- **completion time** (lead time): from release until delivery;
+- **completion time** (lead time): from release until delivery, as mean, P95 and maximum. The
+  maximum was added in M3, to show starvation that a mean and a P95 can hide;
 - **throughput**: delivered orders per hour, from tick 0 to the last event;
 - **utilization**: the share of robot time between assignment and delivery;
 - **empty and loaded distance**: metres driven to pickups, and with a load. The empty share is the part

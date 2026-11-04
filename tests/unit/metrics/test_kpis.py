@@ -88,6 +88,7 @@ def test_single_job(line_graph: WarehouseGraph) -> None:
     assert kpis.waiting_p95_s == pytest.approx(1.0)
     assert kpis.assignment_delay_mean_s == 0.0
     assert kpis.completion_mean_s == pytest.approx(3.0)
+    assert kpis.completion_max_s == pytest.approx(3.0)
     assert kpis.utilization == pytest.approx(1.0)  # busy from 0 to 3.0 s, of 3.0 s
     assert (kpis.empty_distance_m, kpis.loaded_distance_m) == (1.0, 1.0)
     assert kpis.empty_share == pytest.approx(0.5)
@@ -103,6 +104,7 @@ def test_queued_order_waits_for_the_busy_robot(line_graph: WarehouseGraph) -> No
     assert kpis.assignment_delay_mean_s == pytest.approx((0.0 + 3.0) / 2)
     assert kpis.completion_mean_s == pytest.approx((3.0 + 6.0) / 2)
     assert kpis.completion_p95_s == pytest.approx(6.0)
+    assert kpis.completion_max_s == pytest.approx(6.0)
     assert kpis.utilization == pytest.approx(1.0)
     assert (kpis.empty_distance_m, kpis.loaded_distance_m) == (1.0, 3.0)
 
@@ -121,6 +123,7 @@ def test_undelivered_orders_are_counted_and_time_kpis_are_nan(line_graph: Wareho
 
     assert (kpis.delivered, kpis.undelivered) == (0, 2)
     assert math.isnan(kpis.waiting_mean_s) and math.isnan(kpis.completion_p95_s)
+    assert math.isnan(kpis.completion_max_s)
     assert kpis.utilization == 0.0
     assert math.isnan(kpis.empty_share)
 

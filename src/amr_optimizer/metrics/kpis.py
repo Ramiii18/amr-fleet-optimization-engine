@@ -4,7 +4,7 @@ Definitions (all times in seconds of simulated time):
 
 - **waiting time** of an order: from its release until a robot reaches its pickup;
 - **assignment delay**: from release until a robot is assigned (shows the cost of rounds);
-- **completion time** (lead time): from release until delivery;
+- **completion time** (lead time): from release until delivery; mean, P95 and maximum;
 - **throughput**: delivered orders per hour, over the run from tick 0 to the last event;
 - **utilization**: the share of robot time spent between assignment and delivery;
 - **empty / loaded distance**: metres driven to pickups / with a load.
@@ -53,6 +53,7 @@ class RunKpis:
     assignment_delay_mean_s: float
     completion_mean_s: float
     completion_p95_s: float
+    completion_max_s: float  # the worst case: shows starvation that a mean and P95 can hide
     utilization: float
     empty_distance_m: float
     loaded_distance_m: float
@@ -112,6 +113,7 @@ def compute_kpis(result: SimulationResult) -> RunKpis:
         assignment_delay_mean_s=mean(delay),
         completion_mean_s=mean(completion),
         completion_p95_s=p95(completion),
+        completion_max_s=max(completion) if completion else math.nan,
         utilization=busy_ticks / (robots * result.end_tick) if result.end_tick else math.nan,
         empty_distance_m=empty_m,
         loaded_distance_m=loaded_m,

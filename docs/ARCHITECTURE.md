@@ -30,8 +30,9 @@ src/amr_optimizer/
                insertion.py  cheapest-insertion plan; InsertionDispatch (receding horizon)
                cpsat.py      CP-SAT giant-tour model, solve_plan, CpSatDispatch (receding horizon)
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile
+               compare.py    paired_difference: per-seed differences with a t confidence interval
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
-scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py
+scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py
 scenarios/maps small.json (45 nodes), medium.json (179), large.json (461)
 tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkable graphs)
 ```
