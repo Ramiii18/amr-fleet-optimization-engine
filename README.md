@@ -1,5 +1,7 @@
 # AMR Fleet Optimization Engine
 
+[![CI](https://github.com/Ramiii18/amr-fleet-optimization-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Ramiii18/amr-fleet-optimization-engine/actions/workflows/ci.yml)
+
 A Python engine for dispatching transport orders to a fleet of autonomous mobile robots (AMRs),
 planning routes on a warehouse graph, and managing traffic between robots, evaluated in a
 reproducible simulation.
@@ -35,7 +37,7 @@ print(result.route.nodes, result.route.length_m)  # 48.0 m: aisle 5 runs downwar
 Requires Python 3.13 and Git.
 
 ```powershell
-git clone <repository-url>
+git clone https://github.com/Ramiii18/amr-fleet-optimization-engine.git
 cd amr-fleet-optimization-engine
 py -3.13 -m venv .venv
 .venv\Scripts\python.exe -m pip install --upgrade pip
