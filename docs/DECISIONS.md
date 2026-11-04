@@ -143,3 +143,22 @@ local pass predicts a CI pass.
 - Python guarantees the `random()` sequence for a seed across versions, but not the algorithms behind
   `choice()` and `sample()`. The pinned test will flag a change after a Python upgrade, and the
   benchmarks record the Python version.
+
+## D15: An event-driven simulator that calls the policy after each tick's events and validates its decisions
+**Status:** Accepted (2026-11-04)
+**Why:**
+- Work grows with the number of events, not ticks: an hour at 0.1 s ticks is 36,000 ticks, but only a
+  few events per order.
+- Calling the dispatch policy after all of a tick's events gives it a complete, consistent snapshot:
+  every robot that became idle and every order that arrived at that tick.
+- Validating the whole decision before executing any of it means a bad decision is rejected cleanly,
+  never half-applied.
+- Checking invariants after every tick catches simulator bugs at the tick where they happen. The cost
+  is O(robots) per tick, which is small next to routing and dispatch.
+
+**Consequences:**
+- The policy is called only when something changes. A policy that waits on purpose, such as batching
+  orders into rounds, needs fixed-interval decision rounds; these will be added if Hungarian dispatch
+  benefits from them.
+- Same-tick events are handled in scheduling order. This is deterministic, but it is a modelling choice:
+  within one tick, the order of events has no physical meaning.

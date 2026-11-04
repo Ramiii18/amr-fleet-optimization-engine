@@ -23,6 +23,9 @@ reproducible simulation.
   orders, and robots whose phases follow an explicit, fully tested state machine.
 - **Scenarios (M2):** seeded, reproducible order streams and fleet start positions; the same seed gives
   the same scenario on Windows and Linux.
+- **Simulator (M2):** a deterministic discrete-event simulator with a pure-function dispatch interface,
+  invariant checks after every tick, and a per-order event log. Robots don't interact yet (no
+  collisions or congestion); that comes with traffic management in M4.
 - **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
   route validation.
 

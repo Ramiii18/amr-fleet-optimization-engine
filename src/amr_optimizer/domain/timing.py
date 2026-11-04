@@ -101,6 +101,10 @@ class TravelTimes:
         self._is_exact = exact
 
     @property
+    def graph(self) -> WarehouseGraph:
+        return self._graph
+
+    @property
     def speed_mps(self) -> float:
         return self._speed_mps
 

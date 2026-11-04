@@ -299,7 +299,88 @@ laptop: about 0.8 ms per 30-minute stream (18,000 ticks).
 
 ---
 
-## 8. Where single-robot shortest paths stop being enough
+## 8. Discrete-event simulation (`sim/`)
+
+**Problem.** Plan cost alone cannot compare dispatch policies. What matters is what happens when the
+plan is executed over time: how long orders wait, how busy robots are, how many orders per hour get
+delivered. The simulator executes decisions and records what happened, exactly and reproducibly.
+
+**Why discrete-event, not fixed time steps?** Nothing changes between events: a robot driving a route
+of known duration needs no updates until it arrives. A discrete-event simulator jumps straight from one
+event to the next, so its cost grows with the number of events, not with the number of ticks. A
+fixed-step loop would visit each of the 36,000 ticks in an hour at 0.1 s per tick.
+
+**Events.** There are only two kinds:
+- an order is **released** and becomes pending;
+- a robot's current phase **ends**: it arrives at the pickup, finishes loading, arrives at the drop-off,
+  or finishes unloading. The robot then moves to its next phase through the state machine (D13).
+
+A busy robot always has exactly one scheduled event, at the end of its current phase (`until_tick`).
+
+**The loop.** Events wait in a binary heap of `(tick, sequence number, event)` entries. The sequence
+number breaks ties in scheduling order, which keeps runs deterministic and means Python never has to
+compare two events.
+1. Take the earliest tick, and handle every event scheduled for it.
+2. If an order is pending and a robot is idle, call the dispatch policy.
+3. Executing an assignment can create more events at the same tick, for example a robot that already
+   stands at the pickup with zero loading time. Handle those and call the policy again before time
+   moves on.
+4. Check the invariants, then continue with the next tick that has events.
+
+**Dispatch interface.** A policy is a pure decision function. It receives a `DispatchSnapshot`: the
+tick, every robot's immutable state, the pending orders in release order, and a `TravelPlanner` for
+route and time queries. It returns assignments. The simulator validates the whole decision before
+executing any part of it: each robot must be idle, each order pending, neither may appear twice, and
+both the pickup and the drop-off must be reachable. A policy may leave robots idle and orders
+waiting.
+
+**`TravelPlanner`.** Computes the shortest route (by length, D12) between two nodes once, with
+Euclidean A*, and caches it together with its travel ticks. The map is static in M2, so cached answers
+stay valid. Dispatch asks about the same robot-to-pickup pairs over and over, so most queries become
+dictionary lookups.
+
+**Invariants**, checked after every tick (a failure raises `SimulationInvariantError`):
+- every released order is in exactly one place: pending, carried by exactly one robot, or delivered;
+- each busy robot has exactly one scheduled event, at the end of its phase, and each idle robot none;
+- each phase lasts exactly its travel time (from `TravelTimes`), loading time or unloading time;
+- every route a robot starts passes `validate_route`;
+- time never goes backwards.
+
+The state machine adds its own checks at every transition (D13).
+
+**Event log.** Each order produces six entries: released, assigned, pickup reached, loaded, drop-off
+reached, delivered. Each entry records the tick, node and robot; assigned and loaded entries also record
+the route length that starts there. Every KPI is computed from this log (next increment).
+
+**Cost.** O(log n) per event for the heap, plus the policy's own cost. The invariant check is O(robots)
+per tick that has events. Measured on the development laptop: a one-hour scenario on the large map with
+10 robots and 282 orders took 0.086 s (best of 3), with a first-come-first-served test policy, the
+invariant checks and the route computations included.
+
+**Testing.**
+- Hand-computed timelines on a three-node line: a single job tick by tick, a robot already at the pickup,
+  zero handling times (four events chained within one tick), queueing behind a busy robot, two robots in
+  parallel.
+- Invalid decisions are rejected: unknown or busy robots, orders that aren't pending, duplicates,
+  unreachable pickups and drop-offs.
+- The checks for order accounting, double carrying, missing or extra scheduled events and phase
+  durations are each triggered on purpose, to show that they fire.
+- On 24 generated runs (2 maps × 1, 3 and 6 robots × 4 seeds):
+  - every order goes through all six steps in order;
+  - every duration equals the time computed independently from Dijkstra's route length;
+  - every robot does one job at a time, and starts each job where the last one ended (no teleporting).
+
+**Limitations (M2).**
+- Robots don't interact: there are no collisions, no blocking and no waiting for each other. This is
+  the documented MVP simplification; traffic arrives in M4, and the difference in KPIs will measure the
+  cost of congestion.
+- The policy is only called when something changes. A batching policy that wants to wait and decide
+  later cannot wake itself up yet; decision rounds at a fixed interval would add that.
+- No faults, blocked edges or replanning (Phase 2).
+
+---
+
+## 9. Where single-robot shortest paths stop being enough
 
 A shortest path is computed as if the robot were alone in the warehouse. With several robots:
 
@@ -317,7 +398,7 @@ search.
 
 ---
 
-## 9. Interview notes
+## 10. Interview notes
 
 **Why does Dijkstra need non-negative edge lengths?**
 The proof that a popped node's distance is final assumes edges only add length. With a negative edge, a
@@ -366,3 +447,15 @@ Rounding up costs at most one tick of slack per edge.
   snapshot, and only the simulator replaces states.
 - Storing the end tick of every phase makes timing errors detectable at the exact event where they
   occur, instead of showing up later as implausible KPIs.
+
+**Why a discrete-event simulator rather than a time-stepped loop?**
+Between events nothing changes that the model cares about, so stepping through every tick does work
+for nothing. Event-driven simulation scales with the number of events. Time-stepped simulation is the
+better fit when continuous interactions are modelled, for example physics or detailed collision
+avoidance.
+
+**How do you know the simulator is right?**
+- Invariants are checked after every tick, plus the state machine's checks at every transition.
+- Timelines on tiny scenarios are checked tick by tick against hand calculations.
+- On generated runs, durations are checked against times computed independently.
+- The invariant checks are themselves tested, by breaking them on purpose.

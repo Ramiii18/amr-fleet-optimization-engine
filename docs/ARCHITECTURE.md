@@ -18,13 +18,17 @@ src/amr_optimizer/
                robots.py     RobotState and the robot state machine (ALLOWED_TRANSITIONS)
   scenario/    model.py      Scenario: validated input of one simulation run
                generator.py  seeded order stream (Bernoulli arrivals), fleet placement
+  sim/         simulator.py  discrete-event loop, executor, invariant checks
+               policy.py     dispatch interface: DispatchSnapshot, Assignment, DispatchPolicy
+               planner.py    TravelPlanner: cached shortest routes and travel ticks
+               log.py        event log (six steps per order)
 scripts/       generate_maps.py, compare_routing.py
 scenarios/maps small.json (45 nodes), medium.json (179), large.json (461)
 tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkable graphs)
 ```
 
-**Dependency direction:** `scenario` → `domain` → `routing` → `warehouse`. Packages added later depend
-inwards, on these, never the other way round.
+**Dependency direction:** `sim` → `scenario` → `domain` → `routing` → `warehouse`. Dispatch policies
+(next) implement the interface in `sim/policy.py` and depend on `sim`, never the other way round.
 
 ## Guiding structure
 
@@ -32,7 +36,7 @@ inwards, on these, never the other way round.
   decision, such as assignments or routes. It does not own time and does not mutate shared state. Routing
   already works this way: blocked edges are passed per query, and the graph is never changed.
 - **The simulator owns time and state.** It executes decisions, advances time in integer ticks, and checks
-  invariants after every event (M2).
+  invariants after every tick that has events (D15).
 - This split keeps both sides testable on their own. It is also the boundary a future API will wrap.
 
 ## Packages
@@ -43,7 +47,7 @@ inwards, on these, never the other way round.
 | `routing` | Dijkstra and A*; later space-time A* | **Exists** (M1); space-time in M4 |
 | `domain` | Robots, orders, state machines, time units | **Exists** (M2) |
 | `scenario` | Validated simulation input; seeded order streams and fleet placement | **Exists** (M2) |
-| `sim` | Discrete-event kernel, plan executor, invariant checks, event log | Planned (M2) |
+| `sim` | Discrete-event kernel, plan executor, invariant checks, event log | **Exists** (M2) |
 | `dispatch` | Greedy, Hungarian, CP-SAT and local-search assignment | Planned (M2, M3) |
 | `metrics` | KPI computation | Planned (M2) |
 | `traffic` | Reservations, mutex zones, conflict and deadlock detection | Planned (M4) |

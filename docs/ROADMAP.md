@@ -60,8 +60,8 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
    with explicitly listed valid transitions (D13).
 3. **Scenario generator.** Done 2026-11-04: seeded order stream (Bernoulli arrivals per tick), pickup at
    storage, drop-off at a station, shift-start fleet placement (D14).
-4. **Discrete-event simulation kernel.** A deterministic event queue, a plan executor, invariant checks
-   and an event log.
+4. **Discrete-event simulation kernel.** Done 2026-11-04: deterministic event queue, executor with
+   validated decisions, invariant checks after every tick, and an event log (D15).
 5. **Dispatch policies.**
    - Greedy: nearest idle robot.
    - Hungarian: optimal assignment for each decision round, using `scipy`.
