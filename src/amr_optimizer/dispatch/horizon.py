@@ -27,6 +27,11 @@ from amr_optimizer.warehouse import NodeId
 Plan = tuple[tuple[int, ...], ...]
 """One sequence of order indices per robot, in the problem's robot order."""
 
+DEFAULT_MAX_ORDERS = 10
+"""How many of the oldest pending orders a planning policy considers (D18). In the M2 runs at
+about 90% utilization, the queue held 4 to 6 orders on average (Little's law on the measured
+assignment delay), so 10 covers most of it while keeping each problem small."""
+
 
 class PlanningProblemError(ValueError):
     """The data of a planning problem is inconsistent."""

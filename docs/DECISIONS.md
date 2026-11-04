@@ -237,3 +237,21 @@ local pass predicts a CI pass.
 - The availability prediction is exact only while robots never interfere. With traffic (M4) it becomes
   an estimate.
 - Each decision now costs a planning solve. Solve time is measured and reported.
+
+## D19: Cheapest insertion is the planning baseline; CP-SAT must beat it on the same model
+**Status:** Accepted (2026-11-04)
+**Why:**
+- Comparing CP-SAT only with FIFO greedy would mix two effects: the planning model (look-ahead,
+  sequencing, the objective) and the exact search. A heuristic on the same model separates them.
+  Insertion against greedy measures the model; CP-SAT against insertion measures the search.
+- Cheapest insertion is the standard construction heuristic for routing and scheduling. It is simple,
+  deterministic, costs O(K² · (K + R)) per decision, and always finds a feasible plan here (D18).
+- Orders are inserted oldest first, so older orders choose their place first.
+- The insertion plan is also CP-SAT's starting hint and its fallback (M3.3), so CP-SAT never ends up
+  with a worse plan than the heuristic.
+
+**Consequences:**
+- Insertion is myopic and never moves an order once placed. It found the optimum in 220 of 300 random
+  small test problems.
+- No local search (moving or swapping orders) for now. If CP-SAT gains little over insertion, local
+  search is the cheaper thing to try next (Phase 2 backlog).

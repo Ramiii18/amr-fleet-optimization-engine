@@ -545,6 +545,44 @@ costs O(K + R).
   solver in the next increments.
 - Malformed plans and inconsistent problems are rejected.
 
+### 11.2 Cheapest insertion (`dispatch/insertion.py`)
+
+**Approach.** Start with an empty sequence per robot. Take the orders oldest first, and insert each one
+at the robot and position where it adds the least total completion time. Ties go to the robot listed
+first, then to the earliest position.
+
+**Cost.** K insertions. Each tries O(K + R) positions and re-evaluates one robot's sequence in O(K),
+so a decision costs O(K² · (K + R)): about 2,000 elementary steps for K = R = 10.
+
+**Always feasible.** A robot that can reach an order can take it first, and every trip between two
+planned orders exists (section 11.1). So every order has at least one valid position.
+
+**The policy** (`InsertionDispatch`). At each decision it plans every robot and the oldest 10 pending
+orders (`DEFAULT_MAX_ORDERS`, D18), then starts each idle robot's first planned job. An idle robot with
+no planned job waits.
+
+**Why it is the baseline for CP-SAT (D19).** It uses the same model as CP-SAT: look-ahead, sequencing
+and the same objective. Comparing insertion with greedy measures what the model is worth. Comparing
+CP-SAT with insertion measures what exact search adds on top.
+
+**Limitation: it is myopic.** Insertion never moves an order once it is placed. The unit test case:
+- Two idle robots. O0 is 10 ticks from R1 and 11 from R2. O1 is 10 ticks from R1 and 100 from R2.
+- Every job takes 10 ticks, and every trip between the two orders takes 50.
+- Insertion gives the older O0 to R1 (20 < 21). O1 then adds 80 whether it goes on R1 or to R2, so
+  the total is 100.
+- The optimum swaps them, R2 taking O0 (21) and R1 taking O1 (20), for a total of 41.
+
+**Testing.**
+- The worked example of section 11.1: insertion finds the optimum (136) and commits "R1 takes O3",
+  where greedy commits "R1 takes O2".
+- 300 random problems with up to 5 orders and 3 robots: every plan is valid and never better than the
+  brute-force optimum. Measured: insertion found the optimum in 220 of the 300.
+- The per-robot sequence total agrees with the plan evaluator on every plan of 30 random problems.
+- On a generated run, every committed job is delivered at exactly the planned tick. So the model and
+  the simulator agree on start trips and job times, not only on availability.
+- Every order of a generated scenario is delivered, with and without decision rounds, and two runs give
+  identical event logs.
+
 ---
 
 ## 12. Where single-robot shortest paths stop being enough

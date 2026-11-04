@@ -27,6 +27,7 @@ src/amr_optimizer/
                matching.py   min_cost_matching (scipy linear_sum_assignment)
                horizon.py    bounded-horizon planning model: robot availability, HorizonProblem,
                              plan evaluation, first jobs to commit (M3)
+               insertion.py  cheapest-insertion plan; InsertionDispatch (receding horizon)
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
 scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py

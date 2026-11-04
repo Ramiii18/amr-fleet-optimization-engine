@@ -1,4 +1,5 @@
-"""Shared helpers for the planning tests: a brute-force oracle and random small problems.
+"""Shared helpers for the planning tests: a brute-force oracle, random small problems, and
+the look-ahead example as a snapshot.
 
 The oracle tries every plan: every order of the orders, cut into one (possibly empty)
 sequence per robot. That is n! * C(n + R - 1, R - 1) plans, for example 2,520 for five
@@ -18,8 +19,17 @@ from amr_optimizer.dispatch import (
     RobotAvailability,
     total_completion,
 )
-from amr_optimizer.domain import OrderId, RobotId, TransportOrder
-from amr_optimizer.warehouse import NodeId
+from amr_optimizer.domain import (
+    OrderId,
+    RobotId,
+    RobotState,
+    TimeModel,
+    TransportOrder,
+    TravelTimes,
+)
+from amr_optimizer.routing import Route
+from amr_optimizer.sim import DispatchSnapshot, TravelPlanner
+from amr_optimizer.warehouse import Edge, Node, NodeId, WarehouseGraph
 
 BruteForce = Callable[[HorizonProblem], tuple[int, Plan]]
 RandomProblem = Callable[..., HorizonProblem]
@@ -79,6 +89,40 @@ def random_problem(
         setup_ticks=tuple(
             tuple(0 if i == j else rng.randint(0, 40) for j in range(orders)) for i in range(orders)
         ),
+    )
+
+
+@pytest.fixture
+def look_ahead_snapshot() -> DispatchSnapshot:
+    """The worked example of algorithms section 11.1, as the snapshot at tick 20.
+
+    The line N0 <-> N1 <-> ... <-> N4 has 10 ticks per edge; loading takes 5 ticks and
+    unloading 7. R1 is idle at N0. R2 is carrying O1 from N1 to N3 and will be ready there
+    at tick 42. Pending: O2 (N4 -> N0, older) and O3 (N2 -> N4). The best plan gives O3 to
+    R1 and leaves O2 for R2: 136 ticks of total completion time, against 156 for greedy.
+    """
+    n = [NodeId(f"N{i}") for i in range(5)]
+    graph = WarehouseGraph(
+        [Node(n[i], float(i), 0.0) for i in range(5)],
+        [Edge(n[i], n[j], 1.0) for i in range(4) for i, j in ((i, i + 1), (i + 1, i))],
+    )
+    carried = TransportOrder(OrderId("O1"), n[1], n[3], 0)
+    r2 = (
+        RobotState.idle(RobotId("R2"), n[0])
+        .assign(carried, Route((n[0], n[1]), 1.0), tick=0, until_tick=10)
+        .arrive(tick=10, until_tick=15)
+        .finish_loading(Route((n[1], n[2], n[3]), 2.0), tick=15, until_tick=35)
+    )
+    return DispatchSnapshot(
+        20,
+        (RobotState.idle(RobotId("R1"), n[0]), r2),
+        (
+            TransportOrder(OrderId("O2"), n[4], n[0], 1),
+            TransportOrder(OrderId("O3"), n[2], n[4], 2),
+        ),
+        TravelPlanner(TravelTimes(graph, speed_mps=1.0, time_model=TimeModel(0.1))),
+        load_ticks=5,
+        unload_ticks=7,
     )
 
 
