@@ -33,6 +33,9 @@ dev = [
 ]
 viz = ["matplotlib>=3.9"]
 
+[project.scripts]
+amr-sim = "amr_optimizer.cli:main" # the command-line runner, also `python -m amr_optimizer`
+
 # --- Packaging: "src layout". The importable package lives in src/amr_optimizer. ---
 [tool.setuptools.packages.find]
 where = ["src"]
