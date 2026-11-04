@@ -8,7 +8,7 @@ quality dropping.
 | Milestone | Content | Status |
 |---|---|---|
 | **M1** Routing library | Warehouse graph, Dijkstra, A*, map generator, JSON maps, tests, comparison | **Done** (2026-11-03) |
-| **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | Next |
+| **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | In progress |
 | **M3** Optimization | CP-SAT bounded-horizon dispatch, paired-seed benchmark harness | Not started |
 | **M4** Traffic v0.2 | Space-time A*, reservation table, prioritized planning, conflict tests, mutex zones, deadlock detection | Not started |
 | **M5** Portfolio v1 | Benchmarks at 3–5, 10 and 25 robots, documentation, visualization, honest limitations | Not started |
@@ -29,7 +29,8 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
 - [x] Deterministic grid-warehouse generator, 3 presets, strict JSON map format, committed example maps
 - [x] Dijkstra vs A* comparison script; results in [benchmarks.md](benchmarks.md)
 - [x] Algorithm explanations in [algorithms.md](algorithms.md)
-- [ ] GitHub repository and CI workflow, moved to M2 because it needs the owner's GitHub account
+- [x] GitHub repository and CI workflow: moved to M2 because it needed the owner's GitHub account, done
+  there on 2026-11-04
 
 ## M1 acceptance criteria and results
 
@@ -65,7 +66,8 @@ MVP results and traffic-aware results later becomes a measured cost of congestio
    - Hungarian: optimal assignment for each decision round, using `scipy`.
 6. **KPIs, CLI runner and comparison.** Throughput, waiting time, completion time (mean and P95),
    distance and utilization, compared on identical seeds.
-7. **GitHub repository and CI.** This needs the owner's account and a choice of public or private.
+7. **GitHub repository and CI.** Done 2026-11-04: public repository under the MIT license. The first CI
+   run (commit `1b465b3`) passed on both Windows and Linux (D11).
 
 ## Phase 2 backlog (after M5, or earlier if time allows)
 
