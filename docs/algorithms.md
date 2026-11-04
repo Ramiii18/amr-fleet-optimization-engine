@@ -478,7 +478,76 @@ greedy one.
 
 ---
 
-## 11. Where single-robot shortest paths stop being enough
+## 11. Bounded-horizon planning (`dispatch/horizon.py`, M3)
+
+**Problem.** M2 showed that per-decision matching equals greedy (section 10). Two kinds of choice are
+missing from that decision:
+- **Look-ahead.** A busy robot that will soon deliver near a new pickup may be a better choice than an
+  idle robot that is far away.
+- **Sequencing.** A robot that frees up while orders queue could take a nearby order instead of the
+  oldest one.
+
+### 11.1 The planning model
+
+At each decision, a planning policy builds a `HorizonProblem` (D18):
+- **All robots.** Each robot has a *ready time and node*. An idle robot is ready now, where it stands.
+  A busy robot is ready when and where it delivers its current order: the rest of its current phase plus
+  the fixed durations of the phases still ahead. Robots never interfere in this model, so this
+  prediction is exact.
+- **The oldest K pending orders** that can be planned.
+- **Times as plain numbers**, in ticks from now:
+  - each order's *job* time: loading, the loaded trip and unloading;
+  - each robot's *start* trip to each pickup;
+  - each *setup* trip, from one order's drop-off to another order's pickup.
+
+A **plan** gives each robot a sequence of orders. If robot r takes orders j₁, j₂, … in that order, they
+are delivered at
+- C(j₁) = ready(r) + start(r, j₁) + job(j₁)
+- C(j₂) = C(j₁) + setup(j₁, j₂) + job(j₂), and so on.
+
+Robots never wait on purpose, because all times are fixed and a later start only delays later orders.
+
+**Objective: minimise Σ C(j).** An order's waiting time is its delivery time minus its job time, plus
+the time it had already waited at the decision. Both of those are the same in every plan, so minimising
+total completion time also minimises total waiting time.
+
+**Receding horizon.** Only the first job of each idle robot is carried out now. The rest of the plan,
+including the jobs planned for busy robots, is planned again at the next decision. Future orders are
+unknown, so a plan's later steps would go stale anyway.
+
+**Worked example** (a unit test). A line N0–N4 with 10 ticks per edge, loading 5 ticks, unloading 7.
+At tick 20, R1 is idle at N0, and R2 will be ready at N3 in 22 ticks. The older order O2 goes from N4
+to N0 (job time 52); O3 goes from N2 to N4 (job time 32).
+
+| Plan | O2 delivered | O3 delivered | Total |
+|---|---:|---:|---:|
+| R1 takes O2, R2 takes O3 (what greedy does) | 40 + 52 = 92 | 22 + 10 + 32 = 64 | 156 |
+| R1 takes O3, R2 takes O2 (the optimum) | 22 + 10 + 52 = 84 | 20 + 32 = 52 | 136 |
+
+The optimum leaves the far, older order for the busy robot, which will be one edge from its pickup in
+22 ticks. Only "R1 takes O3" is committed now.
+
+**Plannable orders.** On a map that is not strongly connected, some trips do not exist. `build_problem`
+keeps an order only if it can be delivered, some robot can reach its pickup, and the trips to and from
+every older planned order exist. Then a feasible plan always exists: one robot that can reach an order
+can take all the orders, starting with that one. On generated maps nothing is ever skipped.
+
+**Complexity.** Building the problem costs O(K · (K + R)) cached travel-time lookups. Evaluating a plan
+costs O(K + R).
+
+**Testing.**
+- Availability in each busy phase, computed by hand.
+- Availability against the simulator: on a whole generated run, every predicted delivery tick and node,
+  at every decision, matches the actual delivery.
+- The worked example: all six plans evaluated by hand.
+- A brute-force oracle, in the tests only, tries every plan: n! · C(n + R − 1, R − 1) of them for n
+  orders and R robots, each enumerated exactly once. It is the reference for the heuristic and the
+  solver in the next increments.
+- Malformed plans and inconsistent problems are rejected.
+
+---
+
+## 12. Where single-robot shortest paths stop being enough
 
 A shortest path is computed as if the robot were alone in the warehouse. With several robots:
 
@@ -496,7 +565,7 @@ search.
 
 ---
 
-## 12. Interview notes
+## 13. Interview notes
 
 **Why does Dijkstra need non-negative edge lengths?**
 The proof that a popped node's distance is final assumes edges only add length. With a negative edge, a
@@ -576,6 +645,17 @@ always one robot or one order, and there the greedy choice is optimal. Batching 
 optimizer, but the waiting it adds cost more than better matching saved. The useful conclusion is
 where optimization *can* pay off: look-ahead, multi-order sequencing and time windows. That is what
 the CP-SAT phase targets. Reporting this honestly is worth more than a tuned demo.
+
+**What is a receding horizon, and why commit only the first step?**
+Plan several steps ahead, carry out only the first one, then plan again from the new state. The later
+steps exist to make the first one good. For example, a robot should not take a far order if a busy
+robot will be next to it soon. They are not commitments, because new orders arrive and invalidate
+them. This is the same idea as model predictive control.
+
+**Why plan busy robots at all?**
+In M2 every decision saw only idle robots, so "the nearest robot" meant "the nearest idle robot". A
+robot about to deliver next to the pickup is often the better choice. Predicting when and where each
+busy robot finishes turns that into a number the planner can compare.
 
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and

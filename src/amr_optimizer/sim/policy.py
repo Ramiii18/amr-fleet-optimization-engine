@@ -32,12 +32,23 @@ class DispatchSnapshot:
     ``robots`` holds every robot's current state, in scenario order. ``pending_orders``
     holds the released orders that no robot has taken yet, in release order. ``planner``
     answers route and travel-time questions; it caches answers, which does not change them.
+    ``load_ticks`` and ``unload_ticks`` are the scenario's handling times, so a policy can
+    predict when a busy robot will finish (D18).
     """
 
     tick: int
     robots: tuple[RobotState, ...]
     pending_orders: tuple[TransportOrder, ...]
     planner: TravelPlanner
+    load_ticks: int
+    unload_ticks: int
+
+    def __post_init__(self) -> None:
+        if self.load_ticks < 0 or self.unload_ticks < 0:
+            raise ValueError(
+                f"handling times must be non-negative, got load {self.load_ticks}, "
+                f"unload {self.unload_ticks}"
+            )
 
     @property
     def idle_robots(self) -> tuple[RobotState, ...]:

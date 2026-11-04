@@ -232,7 +232,12 @@ class _Simulation:
                 self._push(self._next_round, _DecisionRound())
             return
         snapshot = DispatchSnapshot(
-            self.now, tuple(self.robots.values()), tuple(self.pending.values()), self.planner
+            self.now,
+            tuple(self.robots.values()),
+            tuple(self.pending.values()),
+            self.planner,
+            load_ticks=self.scenario.load_ticks,
+            unload_ticks=self.scenario.unload_ticks,
         )
         assignments = self.policy.assign(snapshot)
         self._check_assignments(assignments)

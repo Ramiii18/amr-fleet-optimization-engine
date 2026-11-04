@@ -1,0 +1,97 @@
+"""Shared helpers for the planning tests: a brute-force oracle and random small problems.
+
+The oracle tries every plan: every order of the orders, cut into one (possibly empty)
+sequence per robot. That is n! * C(n + R - 1, R - 1) plans, for example 2,520 for five
+orders and three robots, so it is only for small problems.
+"""
+
+import itertools
+import random
+from collections.abc import Callable
+
+import pytest
+
+from amr_optimizer.dispatch import (
+    HorizonProblem,
+    InvalidPlanError,
+    Plan,
+    RobotAvailability,
+    total_completion,
+)
+from amr_optimizer.domain import OrderId, RobotId, TransportOrder
+from amr_optimizer.warehouse import NodeId
+
+BruteForce = Callable[[HorizonProblem], tuple[int, Plan]]
+RandomProblem = Callable[..., HorizonProblem]
+
+
+def all_plans(problem: HorizonProblem) -> list[Plan]:
+    n, robots = len(problem.orders), len(problem.robots)
+    plans = []
+    for permutation in itertools.permutations(range(n)):
+        for cuts in itertools.combinations_with_replacement(range(n + 1), robots - 1):
+            bounds = (0, *cuts, n)
+            plans.append(tuple(permutation[bounds[k] : bounds[k + 1]] for k in range(robots)))
+    return plans
+
+
+def brute_force_optimum(problem: HorizonProblem) -> tuple[int, Plan]:
+    """The smallest total completion time over all feasible plans, and the first plan found
+    with it."""
+    best: tuple[int, Plan] | None = None
+    for plan in all_plans(problem):
+        try:
+            total = total_completion(problem, plan)
+        except InvalidPlanError:  # a first job that the robot cannot reach
+            continue
+        if best is None or total < best[0]:
+            best = (total, plan)
+    assert best is not None, "a valid problem always has a feasible plan"
+    return best
+
+
+def random_problem(
+    rng: random.Random, robots: int, orders: int, *, unreachable: float = 0.2
+) -> HorizonProblem:
+    """Random times, without any geometry. Some robots are busy; some first trips are
+    missing, but every order stays reachable by at least one robot."""
+    availability = []
+    for r in range(robots):
+        idle = rng.random() < 0.5
+        ready = 0 if idle else rng.randint(1, 60)
+        availability.append(RobotAvailability(RobotId(f"R{r}"), NodeId(f"X{r}"), ready, idle))
+    starts = [
+        [None if rng.random() < unreachable else rng.randint(0, 40) for _ in range(orders)]
+        for _ in range(robots)
+    ]
+    for j in range(orders):
+        if all(row[j] is None for row in starts):
+            starts[rng.randrange(robots)][j] = rng.randint(0, 40)
+    return HorizonProblem(
+        tick=0,
+        robots=tuple(availability),
+        orders=tuple(
+            TransportOrder(OrderId(f"O{j}"), NodeId(f"P{j}"), NodeId(f"D{j}"), 0)
+            for j in range(orders)
+        ),
+        job_ticks=tuple(rng.randint(1, 40) for _ in range(orders)),
+        start_ticks=tuple(tuple(row) for row in starts),
+        setup_ticks=tuple(
+            tuple(0 if i == j else rng.randint(0, 40) for j in range(orders)) for i in range(orders)
+        ),
+    )
+
+
+@pytest.fixture
+def brute_force() -> BruteForce:
+    return brute_force_optimum
+
+
+@pytest.fixture
+def enumerate_plans() -> Callable[[HorizonProblem], list[Plan]]:
+    return all_plans
+
+
+@pytest.fixture
+def make_problem() -> RandomProblem:
+    return random_problem

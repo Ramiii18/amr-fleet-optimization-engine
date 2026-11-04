@@ -53,7 +53,7 @@ def _snapshot(
     graph: WarehouseGraph, robots: dict[RobotId, NodeId], orders: list[TransportOrder]
 ) -> DispatchSnapshot:
     states = tuple(RobotState.idle(rid, node) for rid, node in robots.items())
-    return DispatchSnapshot(0, states, tuple(orders), _planner(graph))
+    return DispatchSnapshot(0, states, tuple(orders), _planner(graph), load_ticks=0, unload_ticks=0)
 
 
 def _pickup_ticks(snapshot: DispatchSnapshot, assignments: list[Assignment]) -> int:
@@ -124,7 +124,9 @@ def test_busy_robots_are_not_assigned(policy: DispatchPolicy) -> None:
         MYOPIC_ORDERS[0], Route((N[1], N[2]), 1.0), tick=0, until_tick=10
     )
     idle = RobotState.idle(R2, N[4])
-    snapshot = DispatchSnapshot(0, (busy, idle), (MYOPIC_ORDERS[1],), _planner(graph))
+    snapshot = DispatchSnapshot(
+        0, (busy, idle), (MYOPIC_ORDERS[1],), _planner(graph), load_ticks=0, unload_ticks=0
+    )
 
     assert list(policy.assign(snapshot)) == [Assignment(R2, O2)]
 
@@ -135,7 +137,9 @@ def test_no_idle_robots_means_no_assignments(policy: DispatchPolicy) -> None:
     busy = RobotState.idle(R1, N[1]).assign(
         MYOPIC_ORDERS[0], Route((N[1], N[2]), 1.0), tick=0, until_tick=10
     )
-    snapshot = DispatchSnapshot(0, (busy,), (MYOPIC_ORDERS[1],), _planner(graph))
+    snapshot = DispatchSnapshot(
+        0, (busy,), (MYOPIC_ORDERS[1],), _planner(graph), load_ticks=0, unload_ticks=0
+    )
 
     assert list(policy.assign(snapshot)) == []
 
@@ -175,7 +179,7 @@ def test_hungarian_never_needs_more_travel_than_greedy_for_the_same_orders() -> 
             TransportOrder(OrderId(f"O{i}"), rng.choice(storage), rng.choice(stations), 0)
             for i in range(rng.randint(1, 6))
         )
-        snapshot = DispatchSnapshot(0, robots, orders, planner)
+        snapshot = DispatchSnapshot(0, robots, orders, planner, load_ticks=0, unload_ticks=0)
         greedy = list(GreedyDispatch().assign(snapshot))
         hungarian = list(HungarianDispatch().assign(snapshot))
 

@@ -2,7 +2,7 @@
 
 This is a living document. It describes what exists **now** and marks everything else as planned.
 
-## Current state (M1 and M2 complete, 2026-11-04)
+## Current state (M1 and M2 complete, M3 in progress, 2026-11-04)
 
 ```text
 src/amr_optimizer/
@@ -25,6 +25,8 @@ src/amr_optimizer/
   dispatch/    greedy.py     GreedyDispatch: oldest order first, nearest idle robot
                hungarian.py  HungarianDispatch: optimal matching to the oldest orders
                matching.py   min_cost_matching (scipy linear_sum_assignment)
+               horizon.py    bounded-horizon planning model: robot availability, HorizonProblem,
+                             plan evaluation, first jobs to commit (M3)
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
 scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py
