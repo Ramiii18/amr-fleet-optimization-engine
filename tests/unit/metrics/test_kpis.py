@@ -92,6 +92,7 @@ def test_single_job(line_graph: WarehouseGraph) -> None:
     assert kpis.utilization == pytest.approx(1.0)  # busy from 0 to 3.0 s, of 3.0 s
     assert (kpis.empty_distance_m, kpis.loaded_distance_m) == (1.0, 1.0)
     assert kpis.empty_share == pytest.approx(0.5)
+    assert kpis.conflicts == 0  # one robot cannot conflict
 
 
 def test_queued_order_waits_for_the_busy_robot(line_graph: WarehouseGraph) -> None:
@@ -114,7 +115,11 @@ def test_utilization_counts_idle_robots(line_graph: WarehouseGraph) -> None:
         _scenario(line_graph, {R1: A, R2: C}, [TransportOrder(O1, B, C, 0)]), GreedyDispatch()
     )
 
-    assert compute_kpis(result).utilization == pytest.approx(0.5)
+    kpis = compute_kpis(result)
+
+    assert kpis.utilization == pytest.approx(0.5)
+    # In free flow, R1 delivers to C, where idle R2 stands: one vertex conflict.
+    assert kpis.conflicts == 1
 
 
 def test_undelivered_orders_are_counted_and_time_kpis_are_nan(line_graph: WarehouseGraph) -> None:

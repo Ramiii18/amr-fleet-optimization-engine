@@ -451,7 +451,10 @@ section 10 and [benchmarks.md](benchmarks.md).
 - **throughput**: delivered orders per hour, from tick 0 to the last event;
 - **utilization**: the share of robot time between assignment and delivery;
 - **empty and loaded distance**: metres driven to pickups, and with a load. The empty share is the part
-  dispatch can influence.
+  dispatch can influence;
+- **conflicts** (since M4): pairs of robots in the same node or corridor at the same time, counted by
+  the independent checker (section 13.1) in the recorded trajectories. With traffic the count must be
+  zero. In free flow it measures the collisions that traffic management has to prevent.
 
 Time KPIs are means and P95s over *delivered* orders. Undelivered orders are counted separately and
 make the comparison script fail, so they can never disappear from an average.

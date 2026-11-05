@@ -62,6 +62,7 @@ def _report(kpis: RunKpis) -> list[str]:
         f"  utilization        {kpis.utilization:8.1%}",
         f"  distance           {kpis.empty_distance_m:8.0f} m empty  "
         f"{kpis.loaded_distance_m:8.0f} m loaded  ({kpis.empty_share:.1%} empty)",
+        f"  conflicts          {kpis.conflicts:8d} (robots in the same place at the same time)",
     ]
 
 

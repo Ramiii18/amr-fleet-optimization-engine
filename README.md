@@ -97,6 +97,7 @@ Run all four before every commit:
 .venv\Scripts\python.exe scripts\compare_routing.py   # Dijkstra vs A* comparison (docs/benchmarks.md)
 .venv\Scripts\python.exe scripts\compare_dispatch.py  # dispatch policies in simulation (docs/benchmarks.md)
 .venv\Scripts\python.exe scripts\compare_planning.py  # greedy vs insertion vs CP-SAT planning (docs/benchmarks.md)
+.venv\Scripts\python.exe scripts\compare_traffic.py   # every policy in free flow and with traffic (docs/benchmarks.md)
 ```
 
 ## Documentation

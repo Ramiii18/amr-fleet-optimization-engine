@@ -1,4 +1,4 @@
-"""Key performance indicators of one simulation run, computed from its event log alone.
+"""Key performance indicators of one simulation run, computed from its event log and trajectories.
 
 Definitions (all times in seconds of simulated time):
 
@@ -7,7 +7,10 @@ Definitions (all times in seconds of simulated time):
 - **completion time** (lead time): from release until delivery; mean, P95 and maximum;
 - **throughput**: delivered orders per hour, over the run from tick 0 to the last event;
 - **utilization**: the share of robot time spent between assignment and delivery;
-- **empty / loaded distance**: metres driven to pickups / with a load.
+- **empty / loaded distance**: metres driven to pickups / with a load;
+- **conflicts**: pairs of robots in the same node or corridor at the same time, found by the
+  independent checker in the recorded trajectories (D23). Zero with traffic; in free flow it
+  counts the collisions that traffic management has to prevent.
 
 Times are reported over delivered orders; undelivered orders are counted separately and
 never silently dropped. Percentiles use the nearest-rank method (`percentile`).
@@ -20,6 +23,7 @@ from dataclasses import dataclass
 
 from amr_optimizer.domain import OrderId
 from amr_optimizer.sim import EventKind, SimulationResult
+from amr_optimizer.traffic import path_conflicts
 
 SECONDS_PER_HOUR = 3600.0
 
@@ -57,6 +61,7 @@ class RunKpis:
     utilization: float
     empty_distance_m: float
     loaded_distance_m: float
+    conflicts: int
 
     @property
     def empty_share(self) -> float:
@@ -117,4 +122,5 @@ def compute_kpis(result: SimulationResult) -> RunKpis:
         utilization=busy_ticks / (robots * result.end_tick) if result.end_tick else math.nan,
         empty_distance_m=empty_m,
         loaded_distance_m=loaded_m,
+        conflicts=len(path_conflicts({r: [p] for r, p in result.trajectories.items()})),
     )
