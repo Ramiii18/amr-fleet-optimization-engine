@@ -295,7 +295,7 @@ by what they build on:
 | **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | Not started |
 
 **P1 increments:**
-1. **Executor.** Execute a set of conflict-free timed paths under random delays:
+1. **Executor.** Done 2026-11-05. Execute a set of conflict-free timed paths under random delays:
    - *naively*, keeping each robot's own schedule;
    - *in order*, where every robot uses every node and corridor in the planned order of robots.
 

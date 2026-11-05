@@ -34,6 +34,7 @@ src/amr_optimizer/
                reservations.py  ReservationTable: reservations, holds, safe intervals (M4)
                conflicts.py  independent conflict checker (vertex, head-on, following)
                sipp.py       ItineraryPlanner: safe-interval path planning through stops to a hold
+               execution.py  executing plans under delays: naive or in planned order (Phase 2)
   viz/         motion.py     robot position and activity at any tick (pure functions)
                plots.py      map, robots, scaling chart, animation (matplotlib; `viz` extra)
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile

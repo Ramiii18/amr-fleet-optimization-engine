@@ -908,6 +908,56 @@ See [benchmarks.md](benchmarks.md), "Traffic". In short:
   at high load, against 32 s and 38 s in free flow. Less empty driving means fewer robots in the
   aisles, so fewer waits.
 
+### 13.5 Executing plans when robots are delayed (`traffic/execution.py`, D25, Phase 2)
+
+**Problem.** A plan gives every robot exact arrival and departure ticks. A robot that is slowed down,
+for example by an obstacle or a person in the aisle, can no longer keep them. If every robot simply
+keeps its own schedule (*naive* execution), a late robot meets others where the plan assumed it had
+already left.
+
+**Approach: keep the order, not the times.** A conflict-free plan fixes, for every node and corridor,
+the order in which robots use it. *Ordered* execution keeps that order:
+- a robot leaves a node no earlier than planned, and not before its service there is done;
+- it enters a corridor only after every robot planned earlier on that corridor has left it;
+- it enters a node only after every robot planned earlier at that node has left it, at least one tick
+  later. Until then it waits at the end of its corridor, still occupying the corridor.
+
+This is the idea behind the temporal plan graph of MAPF-POST (Hönig et al., ICAPS 2016) and the action
+dependency graph (Hönig et al., IEEE RA-L 2019).
+
+**Why wait at the end of the corridor?** A plan may send a robot towards a node that another robot
+will leave before the first one arrives. Demanding an empty node before departing would add waiting
+even when nobody is late. Waiting at the end of the corridor instead means that, without delays, every
+event happens exactly at its planned tick.
+
+**Why it cannot deadlock.** Every dependency points from an event planned earlier to one planned later:
+- leaving a corridor comes before another robot enters it;
+- leaving a node comes before another robot arrives there;
+- each robot's own events follow its path, and driving takes at least one tick.
+
+Sorting all events by planned time, with arrivals before departures at equal ticks, is therefore a
+topological order. Each event's actual time follows in one pass, as the maximum over its dependencies:
+a longest-path computation in a directed acyclic graph. It always finishes, and a delay can only make
+events later, never earlier.
+
+**Delay model.** Each time a robot drives an edge, with probability p it takes extra time drawn
+uniformly from a range. A draw always uses the same amount of the random stream, so a robot's sequence
+of delays doesn't depend on earlier outcomes.
+
+**Testing.**
+- **By hand.**
+  - A delayed leader: its follower waits for the corridor, then for the node, and arrives at tick 35.
+  - A slow service: the follower drives on but waits at the end of its corridor, entering the node at
+    tick 31 instead of 13.
+- **181 random fleets**, planned one robot after another with SIPP on a grid, each robot with a
+  service stop:
+  - without delays, both policies reproduce every plan exactly;
+  - with random delays (30% of edges, 1 to 15 extra ticks), ordered execution has zero conflicts in
+    every fleet. Every event is no earlier than planned, every service is done, and every drive takes
+    at least its travel time plus its delay;
+  - naive execution of the same fleets causes 136 conflicts, in 71 of them;
+  - adding delay never makes any event earlier.
+
 ---
 
 ## 14. Interview notes
@@ -1090,6 +1140,13 @@ the Phase 2 backlog, to be compared against this baseline.
   - Path planning costs a couple of milliseconds per job, because SIPP searches safe intervals rather
     than ticks.
 - **Untested.** Beyond 25 robots, other layouts and clustered demand (LIMITATIONS.md).
+
+**What happens to a conflict-free plan when a robot is late?**
+If every robot keeps its own times, conflicts appear: in 71 of 181 random test fleets, with 30% of
+edges delayed. The fix is to keep the *order* in which robots use each node and corridor, not the
+times. A robot waits for everyone planned before it on its next corridor and node, if necessary at the
+end of its corridor. All these waits point forward in planned time, so they form a directed acyclic
+graph: execution cannot deadlock, and without delays it reproduces the plan exactly.
 
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and
