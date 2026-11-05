@@ -80,7 +80,7 @@ Run all four before every commit:
 
 ```powershell
 .venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 300 --policy cpsat
-.venv\Scripts\amr-sim.exe --help   # policies: greedy, hungarian, insertion, cpsat; --json for JSON
+.venv\Scripts\amr-sim.exe --help   # policies, --json for JSON, and the other options
 ```
 
 ## Scripts

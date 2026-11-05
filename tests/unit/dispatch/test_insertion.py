@@ -1,5 +1,6 @@
 """Tests for cheapest-insertion planning and the insertion dispatch policy."""
 
+import dataclasses
 import random
 from collections.abc import Callable, Sequence
 
@@ -10,11 +11,13 @@ from amr_optimizer.dispatch import (
     GreedyDispatch,
     HorizonProblem,
     InsertionDispatch,
+    Objective,
     Plan,
     build_problem,
     completion_offsets,
     first_jobs,
     insertion_plan,
+    plan_cost,
     sequence_total,
     total_completion,
 )
@@ -87,6 +90,32 @@ def test_insertion_returns_a_valid_plan_that_never_beats_the_optimum(
     assert 0 < optimal < 300  # both outcomes occur, so the comparison is not vacuous
 
 
+def test_insertion_follows_the_objective(fairness_problem: HorizonProblem) -> None:
+    fair = dataclasses.replace(fairness_problem, objective=Objective.WORST_FIRST)
+
+    assert insertion_plan(fairness_problem) == ((1, 0),)  # the near order first: total 80
+    assert insertion_plan(fair) == ((0, 1),)  # the order that has waited first: lead 160
+
+
+def test_worst_first_insertion_never_beats_the_optimum(
+    make_problem: RandomProblem, brute_force: BruteForce
+) -> None:
+    optimal = 0
+    for seed in range(200):
+        rng = random.Random(seed)
+        problem = make_problem(
+            rng, rng.randint(1, 3), rng.randint(0, 5), objective=Objective.WORST_FIRST
+        )
+
+        cost = plan_cost(problem, insertion_plan(problem))
+        best, _ = brute_force(problem)
+
+        assert cost >= best
+        optimal += cost == best
+
+    assert 0 < optimal < 200
+
+
 # --- the policy ----------------------------------------------------------------------------------
 
 
@@ -122,8 +151,12 @@ def test_the_window_limits_the_planned_orders(look_ahead_snapshot: DispatchSnaps
         InsertionDispatch(max_orders=0)
 
 
-def test_the_policy_is_registered() -> None:
-    assert isinstance(POLICIES["insertion"](), InsertionDispatch)
+def test_the_policies_are_registered_by_objective() -> None:
+    plain, fair = POLICIES["insertion"](), POLICIES["insertion-fair"]()
+
+    assert isinstance(plain, InsertionDispatch) and isinstance(fair, InsertionDispatch)
+    assert (plain.name, plain.objective) == ("insertion", Objective.TOTAL)
+    assert (fair.name, fair.objective) == ("insertion-fair", Objective.WORST_FIRST)
 
 
 class _Predicting:
@@ -159,13 +192,20 @@ def test_committed_jobs_are_delivered_exactly_when_planned() -> None:
     assert policy.predicted == delivered  # every order, at exactly the planned tick
 
 
+@pytest.mark.parametrize("objective", list(Objective))
 @pytest.mark.parametrize("interval", [None, 50])
-def test_every_order_of_a_generated_scenario_is_delivered(interval: int | None) -> None:
+def test_every_order_of_a_generated_scenario_is_delivered(
+    interval: int | None, objective: Objective
+) -> None:
     graph = generate_grid_warehouse(PRESETS["medium"])
     scenario = generate_scenario(graph, ScenarioSpec(robots=5, duration_s=1800), seed=2)
 
-    first = simulate(scenario, InsertionDispatch(), decision_interval_ticks=interval)
-    second = simulate(scenario, InsertionDispatch(), decision_interval_ticks=interval)
+    first = simulate(
+        scenario, InsertionDispatch(objective=objective), decision_interval_ticks=interval
+    )
+    second = simulate(
+        scenario, InsertionDispatch(objective=objective), decision_interval_ticks=interval
+    )
 
     assert first.all_delivered
     assert first.log == second.log  # deterministic

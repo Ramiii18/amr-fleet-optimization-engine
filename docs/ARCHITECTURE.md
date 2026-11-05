@@ -26,7 +26,7 @@ src/amr_optimizer/
                hungarian.py  HungarianDispatch: optimal matching to the oldest orders
                matching.py   min_cost_matching (scipy linear_sum_assignment)
                horizon.py    bounded-horizon planning model: robot availability, HorizonProblem,
-                             plan evaluation, first jobs to commit (M3)
+                             plan evaluation and cost (total or worst first), first jobs (M3)
                insertion.py  cheapest-insertion plan; InsertionDispatch (receding horizon)
                cpsat.py      CP-SAT giant-tour model, solve_plan, CpSatDispatch (receding horizon)
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile

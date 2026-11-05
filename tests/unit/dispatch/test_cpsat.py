@@ -1,5 +1,6 @@
 """Tests for the CP-SAT plan model and the CP-SAT dispatch policy."""
 
+import dataclasses
 import random
 from collections.abc import Callable
 
@@ -8,9 +9,11 @@ import pytest
 from amr_optimizer.dispatch import (
     POLICIES,
     HorizonProblem,
+    Objective,
     Plan,
     build_problem,
     insertion_plan,
+    plan_cost,
     total_completion,
 )
 from amr_optimizer.dispatch.cpsat import CpSatDispatch, SolverSettings, SolveStatus, solve_plan
@@ -95,6 +98,32 @@ def test_cpsat_matches_the_brute_force_optimum_on_map_problems(brute_force: Brut
         assert outcome.objective == brute_force(problem)[0]
 
 
+def test_cpsat_matches_the_brute_force_optimum_worst_first(
+    make_problem: RandomProblem, brute_force: BruteForce
+) -> None:
+    for seed in range(150):
+        rng = random.Random(seed)
+        problem = make_problem(
+            rng, rng.randint(1, 3), rng.randint(2, 5), objective=Objective.WORST_FIRST
+        )
+
+        outcome = solve_plan(problem, insertion_plan(problem))
+        best, _ = brute_force(problem)
+
+        assert outcome.status is SolveStatus.OPTIMAL
+        assert outcome.objective == best == outcome.bound == plan_cost(problem, outcome.plan)
+
+
+def test_cpsat_follows_the_objective(fairness_problem: HorizonProblem) -> None:
+    fair = dataclasses.replace(fairness_problem, objective=Objective.WORST_FIRST)
+    # Start from the other objective's plan, so that CP-SAT has to change it.
+    total = solve_plan(fairness_problem, ((0, 1),))
+    worst_first = solve_plan(fair, ((1, 0),))
+
+    assert (total.status, total.plan, total.objective) == (SolveStatus.OPTIMAL, ((1, 0),), 80)
+    assert (worst_first.status, worst_first.plan) == (SolveStatus.OPTIMAL, ((0, 1),))
+
+
 @pytest.mark.parametrize("orders", [0, 1])
 def test_one_order_or_none_needs_no_search(make_problem: RandomProblem, orders: int) -> None:
     problem = make_problem(random.Random(orders), 3, orders)
@@ -150,15 +179,22 @@ def test_cpsat_policy_commits_the_look_ahead_choice(look_ahead_snapshot: Dispatc
     assert policy.outcomes[0].objective == 136
 
 
-def test_the_policy_is_registered() -> None:
-    assert isinstance(POLICIES["cpsat"](), CpSatDispatch)
+def test_the_policies_are_registered_by_objective() -> None:
+    plain, fair = POLICIES["cpsat"](), POLICIES["cpsat-fair"]()
+
+    assert isinstance(plain, CpSatDispatch) and isinstance(fair, CpSatDispatch)
+    assert (plain.name, plain.objective) == ("cpsat", Objective.TOTAL)
+    assert (fair.name, fair.objective) == ("cpsat-fair", Objective.WORST_FIRST)
 
 
+@pytest.mark.parametrize("objective", list(Objective))
 @pytest.mark.parametrize("interval", [None, 50])
-def test_every_order_of_a_generated_scenario_is_delivered(interval: int | None) -> None:
+def test_every_order_of_a_generated_scenario_is_delivered(
+    interval: int | None, objective: Objective
+) -> None:
     spec = ScenarioSpec(robots=3, orders_per_hour=120, duration_s=1800)  # queues form
     scenario = generate_scenario(MEDIUM, spec, seed=2)
-    first, second = CpSatDispatch(), CpSatDispatch()
+    first, second = CpSatDispatch(objective=objective), CpSatDispatch(objective=objective)
 
     result = simulate(scenario, first, decision_interval_ticks=interval)
     again = simulate(scenario, second, decision_interval_ticks=interval)

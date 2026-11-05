@@ -12,7 +12,9 @@ The model, for R robots and n orders, with completion times C(j) in ticks from n
   segment ends there), so the robots appear in index order and each plan is one circuit.
 - **Completion times.** If j is r's first job, C(j) >= ready(r) + start(r, j) + job(j). If j
   follows i, C(j) >= C(i) + setup(i, j) + job(j).
-- **Objective:** minimise the sum of C(j).
+- **Objective:** minimise the sum of C(j). With ``Objective.WORST_FIRST`` (D22), a variable
+  W >= waited(j) + C(j) for every order is added, and the objective becomes
+  `worst_weight` * W + sum of C(j): the longest lead time first, then the total.
 
 Minimisation drives every C(j) down to its earliest value, so the optimum of the model is the
 best plan's total completion time. The plan itself is read from the arcs and evaluated again
@@ -34,11 +36,15 @@ from ortools.sat.python import cp_model
 from amr_optimizer.dispatch.horizon import (
     DEFAULT_MAX_ORDERS,
     HorizonProblem,
+    Objective,
     Plan,
     build_problem,
     completion_offsets,
+    completion_upper_bound,
     first_jobs,
-    total_completion,
+    plan_cost,
+    worst_lead,
+    worst_weight,
 )
 from amr_optimizer.dispatch.insertion import insertion_plan
 from amr_optimizer.sim import Assignment, DispatchSnapshot
@@ -76,7 +82,8 @@ class SolverSettings:
 class SolveOutcome:
     """The plan of one decision, and how good it is known to be.
 
-    ``bound`` is a proven lower bound on the best total completion time, so ``objective -
+    ``objective`` is the plan's cost (`plan_cost`), and ``hint_objective`` that of the
+    insertion plan. ``bound`` is a proven lower bound on the best cost, so ``objective -
     bound`` is the largest possible remaining gain. ``wall_s`` is measured for reporting
     only; it never influences a decision.
     """
@@ -101,7 +108,7 @@ def solve_plan(
     """
     settings = settings or SolverSettings()
     started = time.perf_counter()
-    hint_total = total_completion(problem, hint)
+    hint_total = plan_cost(problem, hint)
     n, robots = len(problem.orders), len(problem.robots)
     if n <= 1:  # with one order, the best plan gives it to the robot that finishes it first
         return SolveOutcome(
@@ -118,7 +125,7 @@ def solve_plan(
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         plan = model.read_plan(solver)
-        total, objective = total_completion(problem, plan), round(solver.objective_value)
+        total, objective = plan_cost(problem, plan), round(solver.objective_value)
         # The evaluator gives each order its earliest time, so it can only agree with the
         # model or be cheaper, and an optimal model value must be exactly the plan's cost.
         if total > objective or (status == cp_model.OPTIMAL and total != objective):
@@ -152,7 +159,7 @@ class _PlanModel:
         self.problem = problem
         model = self.model = cp_model.CpModel()
         robots, n, job = len(problem.robots), len(problem.orders), problem.job_ticks
-        lower, upper = _completion_bounds(problem)
+        lower, upper = _completion_lower_bounds(problem), completion_upper_bound(problem)
         self.done = [model.new_int_var(lower[j], upper, f"done_{j}") for j in range(n)]
         self.owner = [model.new_int_var(0, robots - 1, f"owner_{j}") for j in range(n)]
         arcs: list[cp_model.ArcT] = []
@@ -198,12 +205,25 @@ class _PlanModel:
                 model.add(self.owner[j] == r).only_enforce_if(literal)
 
         model.add_circuit(arcs)
-        model.minimize(sum(self.done))
+
+        # Worst first (D22): W is at least every order's lead time, and dominates the objective.
+        self.worst: cp_model.IntVar | None = None
+        weight = worst_weight(problem)
+        if weight:
+            leads = [w + low for w, low in zip(problem.waited, lower, strict=True)]
+            worst = self.worst = model.new_int_var(max(leads), max(problem.waited) + upper, "worst")
+            for waited, done in zip(problem.waited, self.done, strict=True):
+                model.add(worst >= waited + done)
+            model.minimize(weight * worst + sum(self.done))
+        else:
+            model.minimize(sum(self.done))
 
     def add_hint(self, plan: Plan) -> None:
         """Give CP-SAT ``plan`` as a complete starting solution."""
         for variable, value in zip(self.done, completion_offsets(self.problem, plan), strict=True):
             self.model.add_hint(variable, value)
+        if self.worst is not None:
+            self.model.add_hint(self.worst, worst_lead(self.problem, plan))
         owners = {j: r for r, sequence in enumerate(plan) for j in sequence}
         for j, variable in enumerate(self.owner):
             self.model.add_hint(variable, owners[j])
@@ -239,29 +259,23 @@ class _PlanModel:
         return tuple(sequences)
 
 
-def _completion_bounds(problem: HorizonProblem) -> tuple[list[int], int]:
-    """A lower bound on each order's completion time, and an upper bound on all of them.
+def _completion_lower_bounds(problem: HorizonProblem) -> list[int]:
+    """A lower bound on each order's completion time, in ticks from now.
 
-    An order is either some robot's first job, or it follows another order whose own job
-    takes at least ``job(i)``. A robot never waits, so no order finishes later than the
-    latest ready time plus, for every order, its job and its longest possible approach.
+    An order is either some robot's first job, or it follows another order, whose own
+    completion takes at least that order's job time.
     """
     n, job = len(problem.orders), problem.job_ticks
     lower: list[int] = []
-    longest_approach: list[int] = []
     for j in range(n):
-        starts = [
-            (robot.ready, start)
+        from_robot = [
+            robot.ready + start
             for robot, row in zip(problem.robots, problem.start_ticks, strict=True)
             if (start := row[j]) is not None
         ]
-        from_robot = [ready + start for ready, start in starts]
         from_order = [job[i] + problem.setup_ticks[i][j] for i in range(n) if i != j]
         lower.append(job[j] + min(from_robot + from_order))
-        approaches = [start for _, start in starts] + [problem.setup_ticks[i][j] for i in range(n)]
-        longest_approach.append(max(approaches))
-    upper = max(robot.ready for robot in problem.robots) + sum(job) + sum(longest_approach)
-    return lower, upper
+    return lower
 
 
 class CpSatDispatch:
@@ -272,24 +286,29 @@ class CpSatDispatch:
     first planned job of each idle robot.
 
     ``outcomes`` records every solve, for the comparison script's solver statistics. It is an
-    observation only: no decision reads it.
+    observation only: no decision reads it. With ``Objective.WORST_FIRST`` (D22), the policy is
+    named ``cpsat-fair``.
     """
 
-    name = "cpsat"
-
     def __init__(
-        self, *, max_orders: int = DEFAULT_MAX_ORDERS, settings: SolverSettings | None = None
+        self,
+        *,
+        max_orders: int = DEFAULT_MAX_ORDERS,
+        objective: Objective = Objective.TOTAL,
+        settings: SolverSettings | None = None,
     ) -> None:
         if max_orders < 1:
             raise ValueError(f"max_orders must be at least 1, got {max_orders}")
         self.max_orders = max_orders
+        self.objective = objective
+        self.name = "cpsat" if objective is Objective.TOTAL else "cpsat-fair"
         self.settings = settings or SolverSettings()
         self.outcomes: list[SolveOutcome] = []
 
     def assign(self, snapshot: DispatchSnapshot) -> Sequence[Assignment]:
         if not snapshot.idle_robots or not snapshot.pending_orders:
             return []
-        problem = build_problem(snapshot, max_orders=self.max_orders)
+        problem = build_problem(snapshot, max_orders=self.max_orders, objective=self.objective)
         outcome = solve_plan(problem, insertion_plan(problem), self.settings)
         self.outcomes.append(outcome)
         return first_jobs(problem, outcome.plan)

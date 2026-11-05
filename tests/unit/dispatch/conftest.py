@@ -15,9 +15,10 @@ import pytest
 from amr_optimizer.dispatch import (
     HorizonProblem,
     InvalidPlanError,
+    Objective,
     Plan,
     RobotAvailability,
-    total_completion,
+    plan_cost,
 )
 from amr_optimizer.domain import (
     OrderId,
@@ -46,12 +47,12 @@ def all_plans(problem: HorizonProblem) -> list[Plan]:
 
 
 def brute_force_optimum(problem: HorizonProblem) -> tuple[int, Plan]:
-    """The smallest total completion time over all feasible plans, and the first plan found
-    with it."""
+    """The smallest cost (`plan_cost`, under the problem's objective) over all feasible plans,
+    and the first plan found with it."""
     best: tuple[int, Plan] | None = None
     for plan in all_plans(problem):
         try:
-            total = total_completion(problem, plan)
+            total = plan_cost(problem, plan)
         except InvalidPlanError:  # a first job that the robot cannot reach
             continue
         if best is None or total < best[0]:
@@ -61,10 +62,18 @@ def brute_force_optimum(problem: HorizonProblem) -> tuple[int, Plan]:
 
 
 def random_problem(
-    rng: random.Random, robots: int, orders: int, *, unreachable: float = 0.2
+    rng: random.Random,
+    robots: int,
+    orders: int,
+    *,
+    unreachable: float = 0.2,
+    objective: Objective = Objective.TOTAL,
 ) -> HorizonProblem:
     """Random times, without any geometry. Some robots are busy; some first trips are
-    missing, but every order stays reachable by at least one robot."""
+    missing, but every order stays reachable by at least one robot.
+
+    The waiting times are drawn last, so adding them left every earlier problem of a seed
+    unchanged."""
     availability = []
     for r in range(robots):
         idle = rng.random() < 0.5
@@ -77,6 +86,10 @@ def random_problem(
     for j in range(orders):
         if all(row[j] is None for row in starts):
             starts[rng.randrange(robots)][j] = rng.randint(0, 40)
+    job_ticks = tuple(rng.randint(1, 40) for _ in range(orders))
+    setup_ticks = tuple(
+        tuple(0 if i == j else rng.randint(0, 40) for j in range(orders)) for i in range(orders)
+    )
     return HorizonProblem(
         tick=0,
         robots=tuple(availability),
@@ -84,11 +97,11 @@ def random_problem(
             TransportOrder(OrderId(f"O{j}"), NodeId(f"P{j}"), NodeId(f"D{j}"), 0)
             for j in range(orders)
         ),
-        job_ticks=tuple(rng.randint(1, 40) for _ in range(orders)),
+        job_ticks=job_ticks,
         start_ticks=tuple(tuple(row) for row in starts),
-        setup_ticks=tuple(
-            tuple(0 if i == j else rng.randint(0, 40) for j in range(orders)) for i in range(orders)
-        ),
+        setup_ticks=setup_ticks,
+        waited=tuple(rng.randint(0, 150) for _ in range(orders)),
+        objective=objective,
     )
 
 
@@ -146,6 +159,30 @@ def myopic_problem() -> HorizonProblem:
         job_ticks=(10, 10),
         start_ticks=((10, 10), (11, 100)),
         setup_ticks=((0, 50), (50, 0)),
+        waited=(0, 0),
+    )
+
+
+@pytest.fixture
+def fairness_problem() -> HorizonProblem:
+    """A case where the two objectives disagree (algorithms section 11.5).
+
+    One idle robot. Order A has waited 100 ticks; its pickup is 50 ticks away. Order B has
+    just arrived and is right next to the robot. Each job takes 10 ticks, and the trip between
+    the two orders 50 either way. Serving B first gives the lower total (80 against 180), but
+    A's lead time then becomes 170 instead of 160.
+    """
+    return HorizonProblem(
+        tick=0,
+        robots=(RobotAvailability(RobotId("R1"), NodeId("X"), 0, idle=True),),
+        orders=(
+            TransportOrder(OrderId("A"), NodeId("PA"), NodeId("DA"), 0),
+            TransportOrder(OrderId("B"), NodeId("PB"), NodeId("DB"), 0),
+        ),
+        job_ticks=(10, 10),
+        start_ticks=((50, 0),),
+        setup_ticks=((0, 50), (50, 0)),
+        waited=(100, 0),
     )
 
 

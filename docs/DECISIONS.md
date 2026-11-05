@@ -305,3 +305,37 @@ local pass predicts a CI pass.
   solve run alone. The output states the number of processes.
 - The shared statistics helper (`metrics.compare.paired_difference`) now also serves the M2 script.
   Its output is unchanged: checked by diffing the old and new versions on 3 seeds.
+
+## D22: A worst-first objective: the longest lead time first, then the total completion time
+**Status:** Accepted (2026-11-05)
+**Why:**
+- M3.4 measured that minimising total completion time starves some distant orders. At 5 robots and 150
+  orders/h, CP-SAT's worst completion time was 625 s against 415 s for greedy. The objective cannot
+  see how waiting is distributed.
+- **Lead time** is the time an order has already waited plus its planned completion time. Minimising
+  the longest planned lead time first gives the order that has waited longest the earliest finish the
+  fleet can offer. Among those plans, the total completion time is then minimised. Re-planned at every
+  decision, this always protects the order that has waited longest.
+- **No parameter to tune.** The M3 plan sketched due times with a lateness term. That needs a service
+  target and a lateness weight, both chosen by hand, and the result depends heavily on them. If every
+  order is already late, for example, total lateness is just total completion time minus a constant,
+  and nothing changes. The worst-first objective needs neither. Its weight is computed from the
+  problem (`worst_weight`).
+- **One number for both planners.** The lexicographic order is encoded as weight × W + Σ C, where W is
+  the longest lead time. The weight is n × U + 1, and U bounds every completion time, so any
+  improvement of W outweighs any change of Σ C. Insertion and CP-SAT minimise the same `plan_cost`,
+  so the D19 comparison still compares like with like.
+
+**Alternatives considered:**
+- Due times with weighted lateness: two hand-chosen parameters (see above).
+- Age weights, minimising Σ (1 + age / τ) · C: smooth, but adds a parameter τ to tune.
+- The sum of squared lead times: penalises long waits directly, but makes the objective quadratic.
+
+**Consequences:**
+- Only the single worst order is protected at each decision. The next-worst one is protected once it
+  becomes the worst.
+- The fair variants give up part of the gain in mean completion time. The comparison measures how
+  much.
+- With the weight, CP-SAT's objective has much larger coefficients. The gaps reported for stopped
+  solves are relative to this weighted cost, so they are not comparable with the gaps of the
+  total-completion variant.

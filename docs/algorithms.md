@@ -673,6 +673,46 @@ See [benchmarks.md](benchmarks.md), "Planning". In short:
 - **The cost.** The worst-case completion time grew under CP-SAT, because the objective doesn't care how
   waiting is distributed.
 
+### 11.5 Worst first: protecting the order that has waited longest (D22)
+
+**Problem.** Total completion time is indifferent to how waiting is distributed. A plan that makes one
+distant order wait much longer, so that several near orders finish sooner, scores better. Re-planned
+at every decision, that distant order can keep being sequenced last (section 11.4).
+
+**Approach.** An order's *lead time* is the time it has already waited plus its planned completion
+time. The worst-first objective (`Objective.WORST_FIRST`) minimises the longest lead time first, and
+then the total completion time. It is used by the `insertion-fair` and `cpsat-fair` policies.
+
+**One number to minimise.** `plan_cost` = weight × W + Σ C(j), where W is the longest lead time.
+- Every completion time lies between 0 and U = `completion_upper_bound`. A robot never waits, so its
+  last delivery comes at most its ready time plus, for every order, the longest possible approach and
+  the job.
+- Two plans' totals therefore differ by at most n · U. With weight = n · U + 1, any improvement of W
+  outweighs any change of the total, so the order is lexicographic.
+- In CP-SAT, a variable W ≥ waited(j) + C(j) for every order carries the worst lead time.
+- Insertion and the brute-force oracle evaluate `plan_cost` directly.
+
+**Worked example** (a unit test). One idle robot. Order A has waited 100 ticks, and its pickup is 50
+ticks away. Order B has just arrived, right next to the robot. Each job takes 10 ticks, and the trip
+between the two orders 50 either way.
+
+| Sequence | Total completion | Longest lead time |
+|---|---:|---:|
+| B, then A (what total completion prefers) | 10 + 70 = 80 | A: 100 + 70 = 170 |
+| A, then B (what worst first prefers) | 60 + 120 = 180 | A: 100 + 60 = 160 |
+
+**Why no service target?** Due times with a lateness penalty need a target and a weight, both chosen by
+hand, and if every order is already late the penalty changes nothing. Worst first has no parameter to
+tune on the benchmark (D22).
+
+**Testing.**
+- The worked example: the evaluator, the oracle, insertion and CP-SAT each choose as in the table.
+- On every plan of 20 random problems, ordering by `plan_cost` equals ordering by (longest lead time,
+  total).
+- CP-SAT equals the brute-force optimum on 150 random problems under worst first.
+- Insertion is never better than the optimum, and finds it in 142 of 200 random problems.
+- Generated runs deliver every order, reproducibly.
+
 ---
 
 ## 12. Where single-robot shortest paths stop being enough

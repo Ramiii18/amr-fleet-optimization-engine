@@ -3,20 +3,24 @@
 Variants, all deciding at every event:
 - greedy: oldest order first, nearest idle robot (the M2 baseline);
 - insertion: receding-horizon plan of every robot and the oldest 10 orders, by cheapest
-  insertion (D18, D19);
-- cpsat: the same plan improved by CP-SAT within its deterministic limit (D20).
+  insertion, minimising total completion time (D18, D19);
+- cpsat: the same plan improved by CP-SAT within its deterministic limit (D20);
+- insertion-fair and cpsat-fair: the same two planners with the worst-first objective, which
+  minimises the longest lead time first and the total completion time second (D22).
 
 For every configuration and seed, one scenario is generated and every variant runs on exactly
 that scenario (D14), so differences are paired over seeds.
 
 Reported per variant, as means over seeds: utilization, waiting time, completion time (mean,
-P95 and maximum, the last to expose starvation) and the empty share of driving. Then the paired
-difference in mean completion time against greedy and, for CP-SAT, against insertion (the D19
-criterion), with 95% t confidence intervals.
+P95 and maximum, the last to expose starvation) and the empty share of driving. Then paired
+differences with 95% t confidence intervals: of the mean completion time against greedy and,
+for each CP-SAT variant, against insertion with the same objective (the D19 criterion); and of
+the maximum completion time against greedy.
 
-Solver statistics per configuration, over all CP-SAT decisions: how many needed a search, how
-many of those were proven optimal, stopped at the limit or fell back to the insertion plan, how
-often CP-SAT improved on insertion, the mean remaining gap of stopped solves, and solve times.
+Solver statistics per configuration and CP-SAT variant, over all decisions: how many needed a
+search, how many of those were proven optimal, stopped at the limit or fell back to the
+insertion plan, how often CP-SAT improved on insertion, the mean remaining gap of stopped solves
+(relative to the plan cost of D22 for the fair variant), and solve times.
 
 Runs execute in parallel worker processes (``--jobs``). Each solve uses one thread and a
 deterministic limit, so the KPIs do not depend on the parallelism. The solve times do: the
@@ -54,7 +58,8 @@ from amr_optimizer.warehouse import PRESETS, WarehouseGraph, generate_grid_wareh
 
 MAP = "large"
 CONFIGS = [(5, 100.0), (5, 150.0), (10, 200.0), (10, 300.0)]  # (robots, orders per hour)
-VARIANTS = ["greedy", "insertion", "cpsat"]
+VARIANTS = ["greedy", "insertion", "cpsat", "insertion-fair", "cpsat-fair"]
+SAME_MODEL = {"cpsat": "insertion", "cpsat-fair": "insertion-fair"}  # the D19 comparison
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +76,7 @@ class Solve:
 @dataclass(frozen=True, slots=True)
 class SeedResult:
     kpis: dict[str, RunKpis]
-    solves: list[Solve]
+    solves: dict[str, list[Solve]]  # per CP-SAT variant
 
 
 def git_commit() -> str:
@@ -98,12 +103,12 @@ def run_seed(robots: int, rate: float, duration_s: float, seed: int) -> SeedResu
     spec = ScenarioSpec(robots=robots, orders_per_hour=rate, duration_s=duration_s)
     scenario = generate_scenario(_graph(), spec, seed=seed)
     kpis: dict[str, RunKpis] = {}
-    solves: list[Solve] = []
+    solves: dict[str, list[Solve]] = {}
     for name in VARIANTS:
         policy = POLICIES[name]()
         kpis[name] = compute_kpis(simulate(scenario, policy))
         if isinstance(policy, CpSatDispatch):
-            solves = [
+            solves[name] = [
                 Solve(o.status, o.objective, o.hint_objective, o.bound, o.wall_s)
                 for o in policy.outcomes
             ]
@@ -115,17 +120,19 @@ def kpi_rows(robots: int, rate: float, results: list[SeedResult]) -> list[str]:
         return statistics.fmean(values)
 
     completion = {name: [r.kpis[name].completion_mean_s for r in results] for name in VARIANTS}
+    worst = {name: [r.kpis[name].completion_max_s for r in results] for name in VARIANTS}
     rows = []
     for name in VARIANTS:
         runs = [r.kpis[name] for r in results]
-        vs_greedy = (
-            "baseline"
-            if name == "greedy"
-            else paired_difference(completion[name], completion["greedy"]).format()
-        )
-        vs_insertion = (
-            paired_difference(completion[name], completion["insertion"]).format()
-            if name == "cpsat"
+        if name == "greedy":
+            vs_greedy = max_vs_greedy = "baseline"
+        else:
+            vs_greedy = paired_difference(completion[name], completion["greedy"]).format()
+            max_vs_greedy = paired_difference(worst[name], worst["greedy"]).format()
+        same_model = SAME_MODEL.get(name)
+        vs_same_model = (
+            paired_difference(completion[name], completion[same_model]).format()
+            if same_model
             else ""
         )
         rows.append(
@@ -134,14 +141,15 @@ def kpi_rows(robots: int, rate: float, results: list[SeedResult]) -> list[str]:
             f"| {mean([k.waiting_mean_s for k in runs]):.1f} "
             f"| {mean(completion[name]):.1f} "
             f"| {mean([k.completion_p95_s for k in runs]):.1f} "
-            f"| {mean([k.completion_max_s for k in runs]):.1f} "
-            f"| {mean([k.empty_share for k in runs]):.1%} | {vs_greedy} | {vs_insertion} |"
+            f"| {mean(worst[name]):.1f} "
+            f"| {mean([k.empty_share for k in runs]):.1%} | {vs_greedy} | {vs_same_model} "
+            f"| {max_vs_greedy} |"
         )
     return rows
 
 
-def solver_row(robots: int, rate: float, results: list[SeedResult]) -> str:
-    solves = [s for r in results for s in r.solves]
+def solver_row(robots: int, rate: float, name: str, results: list[SeedResult]) -> str:
+    solves = [s for r in results for s in r.solves[name]]
     searched = [s for s in solves if s.status is not SolveStatus.TRIVIAL]
 
     def count(status: SolveStatus) -> str:
@@ -162,7 +170,8 @@ def solver_row(robots: int, rate: float, results: list[SeedResult]) -> str:
         else "-"
     )
     return (
-        f"| {robots} | {rate:g} | {len(solves)} | {len(searched)} | {count(SolveStatus.OPTIMAL)} "
+        f"| {robots} | {rate:g} | {name} | {len(solves)} | {len(searched)} "
+        f"| {count(SolveStatus.OPTIMAL)} "
         f"| {count(SolveStatus.LIMIT)} | {count(SolveStatus.FALLBACK)} | {improved} | {gap} "
         f"| {times} |"
     )
@@ -197,9 +206,9 @@ def run(seeds: int, duration_s: float, jobs: int) -> int:
     print(
         "| Robots | Orders/h | Policy | Utilization | Waiting s | Completion s | Completion P95 s "
         "| Completion max s | Empty share | Completion diff. vs greedy (95% CI) "
-        "| vs insertion (95% CI) |"
+        "| vs insertion, same objective (95% CI) | Max diff. vs greedy (95% CI) |"
     )
-    print("|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|")
+    print("|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|")
     by_config = {
         (robots, rate): [results[(robots, rate, seed)] for seed in range(seeds)]
         for robots, rate in CONFIGS
@@ -212,13 +221,14 @@ def run(seeds: int, duration_s: float, jobs: int) -> int:
     print("CP-SAT solver statistics, over all decisions of all seeds:")
     print()
     print(
-        "| Robots | Orders/h | Decisions | Searched | Proven optimal | Stopped at limit "
-        "| Fallback | Improved on insertion | Mean gap when stopped "
+        "| Robots | Orders/h | Policy | Decisions | Searched | Proven optimal "
+        "| Stopped at limit | Fallback | Improved on insertion | Mean gap when stopped "
         "| Solve s mean / P95 / max |"
     )
-    print("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+    print("|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|")
     for (robots, rate), config_results in by_config.items():
-        print(solver_row(robots, rate, config_results))
+        for name in SAME_MODEL:
+            print(solver_row(robots, rate, name, config_results))
 
     undelivered = sum(k.undelivered for r in results.values() for k in r.kpis.values())
     print()

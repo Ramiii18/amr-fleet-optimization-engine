@@ -16,14 +16,19 @@ from amr_optimizer.dispatch import (
     GreedyDispatch,
     HorizonProblem,
     InvalidPlanError,
+    Objective,
     Plan,
     PlanningProblemError,
     RobotAvailability,
     availability,
     build_problem,
     completion_offsets,
+    completion_upper_bound,
     first_jobs,
+    plan_cost,
     total_completion,
+    worst_lead,
+    worst_weight,
 )
 from amr_optimizer.domain import (
     OrderId,
@@ -172,6 +177,16 @@ def test_build_problem_computes_every_time_from_the_map() -> None:
     assert problem.setup_ticks == ((0, 20), (0, 0))  # N0 -> N2 = 20; N4 -> N4 = 0
 
 
+def test_build_problem_records_how_long_each_order_has_waited() -> None:
+    snapshot = _snapshot(20, [RobotState.idle(R1, N[0]), TO_DROPOFF], EXAMPLE_ORDERS)
+
+    problem = build_problem(snapshot, max_orders=10)
+    fair = build_problem(snapshot, max_orders=10, objective=Objective.WORST_FIRST)
+
+    assert problem.waited == (19, 18)  # released at ticks 1 and 2, planned at tick 20
+    assert (problem.objective, fair.objective) == (Objective.TOTAL, Objective.WORST_FIRST)
+
+
 def test_build_problem_keeps_the_oldest_orders() -> None:
     snapshot = _snapshot(20, [RobotState.idle(R1, N[0]), TO_DROPOFF], EXAMPLE_ORDERS)
 
@@ -255,6 +270,54 @@ def test_a_plan_with_an_unreachable_first_job_is_rejected() -> None:
     assert total_completion(problem, ((1,), (0,))) == 136  # the other way round still works
 
 
+def test_lead_times_and_costs_under_both_objectives(fairness_problem: HorizonProblem) -> None:
+    near_first, waited_first = ((1, 0),), ((0, 1),)  # B then A, or A then B
+    fair = dataclasses.replace(fairness_problem, objective=Objective.WORST_FIRST)
+    weight = 2 * 120 + 1  # n x upper bound + 1
+
+    assert completion_upper_bound(fairness_problem) == 0 + 20 + 50 + 50  # ready, jobs, approaches
+    assert (
+        worst_lead(fairness_problem, near_first),
+        worst_lead(fairness_problem, waited_first),
+    ) == (
+        100 + 70,
+        max(100 + 60, 0 + 120),
+    )
+    assert plan_cost(fairness_problem, near_first) == 80  # total only
+    assert plan_cost(fairness_problem, waited_first) == 180
+    assert worst_weight(fairness_problem) == 0
+    assert worst_weight(fair) == weight
+    assert plan_cost(fair, near_first) == weight * 170 + 80
+    assert plan_cost(fair, waited_first) == weight * 160 + 180  # cheaper: the worst comes first
+
+
+def test_the_oracle_follows_the_objective(
+    fairness_problem: HorizonProblem, brute_force: BruteForce
+) -> None:
+    fair = dataclasses.replace(fairness_problem, objective=Objective.WORST_FIRST)
+
+    assert brute_force(fairness_problem) == (80, ((1, 0),))
+    assert brute_force(fair) == (241 * 160 + 180, ((0, 1),))
+
+
+def test_the_worst_weight_orders_plans_lexicographically(
+    make_problem: RandomProblem, enumerate_plans: Callable[[HorizonProblem], list[Plan]]
+) -> None:
+    for seed in range(20):
+        problem = make_problem(random.Random(seed), 2, 3, objective=Objective.WORST_FIRST)
+        ranked = []
+        for plan in enumerate_plans(problem):
+            try:
+                key = (worst_lead(problem, plan), total_completion(problem, plan))
+            except InvalidPlanError:
+                continue
+            ranked.append((plan_cost(problem, plan), key))
+
+        costs_in_key_order = [cost for cost, _ in sorted(ranked, key=lambda pair: pair[1])]
+        assert costs_in_key_order == sorted(costs_in_key_order)  # same order as (worst, total)
+        assert len({cost for cost, _ in ranked}) == len({key for _, key in ranked})
+
+
 # --- committing --------------------------------------------------------------------------------
 
 
@@ -293,6 +356,8 @@ def _valid(make_problem: RandomProblem) -> HorizonProblem:
         (lambda p: {"setup_ticks": ((0, -1), (2, 0))}, "non-negative"),
         (lambda p: {"start_ticks": ((-1, 1), (1, 1))}, "non-negative"),
         (lambda p: {"start_ticks": ((None, 1), (None, 1))}, "'O0': no robot can reach"),
+        (lambda p: {"waited": (0,)}, "waiting times"),
+        (lambda p: {"waited": (0, -1)}, "waiting times"),
     ],
 )
 def test_inconsistent_problems_are_rejected(

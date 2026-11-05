@@ -12,13 +12,18 @@ At a decision point, a planning policy looks further ahead than idle robots and 
 Only the first job of each idle robot is carried out (`first_jobs`). The rest of the plan is
 what makes that first job a good choice, and it is planned again at the next decision.
 
-Times in a `HorizonProblem` are ticks counted from the decision tick. The objective is the
-total completion time of the planned orders (`total_completion`): each order's time from
-pickup to delivery is fixed, so this also minimises total waiting time.
+Times in a `HorizonProblem` are ticks counted from the decision tick. The objective
+(`plan_cost`) is one of two:
+
+- ``Objective.TOTAL``: the total completion time of the planned orders. Each order's time from
+  pickup to delivery is fixed, so this also minimises total waiting time (D18).
+- ``Objective.WORST_FIRST``: first the longest planned *lead time* (the time an order has
+  already waited plus its planned completion time), then the total completion time (D22).
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 
 from amr_optimizer.domain import RobotId, RobotPhase, RobotState, TransportOrder
 from amr_optimizer.sim import Assignment, DispatchSnapshot, TravelPlanner
@@ -31,6 +36,13 @@ DEFAULT_MAX_ORDERS = 10
 """How many of the oldest pending orders a planning policy considers (D18). In the M2 runs at
 about 90% utilization, the queue held 4 to 6 orders on average (Little's law on the measured
 assignment delay), so 10 covers most of it while keeping each problem small."""
+
+
+class Objective(Enum):
+    """What a plan minimises."""
+
+    TOTAL = "total"  # total completion time (D18)
+    WORST_FIRST = "worst-first"  # the longest lead time, then total completion time (D22)
 
 
 class PlanningProblemError(ValueError):
@@ -97,6 +109,8 @@ class HorizonProblem:
       or ``None`` if there is no route.
     - ``setup_ticks[i][j]``: the empty trip from order i's drop-off to order j's pickup. The
       diagonal is unused and 0.
+    - ``waited[j]``: how long order j has already waited at the decision tick.
+    - ``objective``: what a plan minimises (`plan_cost`).
 
     Checked on construction: every job takes at least one tick, every order can be the first
     job of some robot, and every trip between two orders exists. A feasible plan therefore
@@ -109,6 +123,8 @@ class HorizonProblem:
     job_ticks: tuple[int, ...]
     start_ticks: tuple[tuple[int | None, ...], ...]
     setup_ticks: tuple[tuple[int, ...], ...]
+    waited: tuple[int, ...]
+    objective: Objective = Objective.TOTAL
 
     def __post_init__(self) -> None:
         n = len(self.orders)
@@ -118,6 +134,8 @@ class HorizonProblem:
             raise PlanningProblemError("robot ids must be unique")
         if len({order.id for order in self.orders}) != n:
             raise PlanningProblemError("order ids must be unique")
+        if len(self.waited) != n or any(ticks < 0 for ticks in self.waited):
+            raise PlanningProblemError("waiting times must be given per order and non-negative")
         if (
             len(self.job_ticks) != n
             or len(self.start_ticks) != len(self.robots)
@@ -138,7 +156,9 @@ class HorizonProblem:
                 raise PlanningProblemError(f"order {order.id!r}: no robot can reach its pickup")
 
 
-def build_problem(snapshot: DispatchSnapshot, *, max_orders: int) -> HorizonProblem:
+def build_problem(
+    snapshot: DispatchSnapshot, *, max_orders: int, objective: Objective = Objective.TOTAL
+) -> HorizonProblem:
     """The planning problem for ``snapshot``: every robot and the oldest plannable orders.
 
     An order is plannable if its drop-off can be reached from its pickup, some robot can
@@ -180,7 +200,56 @@ def build_problem(snapshot: DispatchSnapshot, *, max_orders: int) -> HorizonProb
             )
             for i, a in enumerate(orders)
         ),
+        waited=tuple(snapshot.tick - order.release_tick for order in orders),
+        objective=objective,
     )
+
+
+def completion_upper_bound(problem: HorizonProblem) -> int:
+    """No order finishes later than this in any plan, in ticks from now.
+
+    A robot never waits, so its last delivery comes at most its ready time plus, for every
+    order it does, the longest possible approach to that order and the order's job.
+    """
+    longest_approach = [
+        max(
+            [start for row in problem.start_ticks if (start := row[j]) is not None]
+            + [problem.setup_ticks[i][j] for i in range(len(problem.orders))]
+        )
+        for j in range(len(problem.orders))
+    ]
+    latest_ready = max(robot.ready for robot in problem.robots)
+    return latest_ready + sum(problem.job_ticks) + sum(longest_approach)
+
+
+def worst_weight(problem: HorizonProblem) -> int:
+    """The weight that turns "worst lead time first, then total" into one number.
+
+    Every completion time lies between 0 and `completion_upper_bound`, so two plans' totals
+    differ by at most n times that bound. Weighting the worst lead time by one more than this
+    makes any improvement of the worst lead time outweigh every possible change of the total.
+    The order is then lexicographic, as `Objective.WORST_FIRST` requires.
+    """
+    if problem.objective is Objective.TOTAL:
+        return 0
+    return len(problem.orders) * completion_upper_bound(problem) + 1
+
+
+def worst_lead(problem: HorizonProblem, plan: Plan) -> int:
+    """The longest lead time under ``plan``: waiting so far plus planned completion time."""
+    offsets = completion_offsets(problem, plan)
+    return max((w + c for w, c in zip(problem.waited, offsets, strict=True)), default=0)
+
+
+def plan_cost(problem: HorizonProblem, plan: Plan) -> int:
+    """The objective of ``plan`` under ``problem.objective``, as one number to minimise.
+
+    ``TOTAL``: the total completion time. ``WORST_FIRST``: `worst_weight` times the longest
+    lead time, plus the total completion time.
+    """
+    total = total_completion(problem, plan)
+    weight = worst_weight(problem)
+    return total if weight == 0 else weight * worst_lead(problem, plan) + total
 
 
 def completion_offsets(problem: HorizonProblem, plan: Plan) -> tuple[int, ...]:
@@ -206,7 +275,7 @@ def completion_offsets(problem: HorizonProblem, plan: Plan) -> tuple[int, ...]:
 
 
 def total_completion(problem: HorizonProblem, plan: Plan) -> int:
-    """The objective: the sum of the planned orders' delivery times, in ticks from now."""
+    """The sum of the planned orders' delivery times, in ticks from now (``Objective.TOTAL``)."""
     return sum(completion_offsets(problem, plan))
 
 
