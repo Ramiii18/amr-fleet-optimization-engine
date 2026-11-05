@@ -464,3 +464,100 @@ decides whether the fleet copes with high load: greedy's mean completion doubles
 - **The planners still estimate future trips in free flow.** Only the availability of busy robots
   comes from their planned itineraries. Traffic-aware cost estimates could improve them.
 - **Scope.** One map, uniform demand, 20 seeds, Windows only.
+
+## Scaling with traffic: 3 to 25 robots (M5, 2026-11-05)
+
+**Command:**
+`.venv\Scripts\python.exe scripts\benchmark_scaling.py --jobs 8 --csv docs/results/scaling.csv`,
+with the defaults: 20 seeds, orders released for one hour.
+
+**Setup.**
+- The large map, as in all earlier comparisons. Every run has traffic.
+- Fleets of 3, 5, 10 and 25 robots. The order rate scales with the fleet: 20 orders per robot per
+  hour (moderate load) and 30 (high load).
+- Greedy, `insertion-fair` and `cpsat-fair` run on exactly the same 20 scenarios per configuration.
+- **Decision latency** is the wall time of each dispatch decision, from building the snapshot to the
+  end of executing the decision, including the traffic planning. It is pooled over all decisions of
+  all seeds, and measured while 8 worker processes share the CPU.
+- One row per run is in [results/scaling.csv](results/scaling.csv). The scaling figure in the README
+  is drawn from it by `scripts/make_figures.py`.
+
+```text
+Scaling benchmark with traffic, 2026-11-05
+Environment: Python 3.13.1, Windows-11-10.0.26200-SP0, ortools 9.15.6755, amr-fleet-optimization-engine 0.0.1 (commit 9c9d5e1), 8 worker processes
+Settings: map large, orders released for 3600 s, seeds 0-19, 1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading, traffic on; 20, 30 orders per robot per hour
+
+| Robots | Orders/h | Policy | Utilization | Waiting s | Completion s | Completion P95 s | Completion max s | Empty share | Conflicts (all seeds) | Completion diff. vs greedy (95% CI) | Decision ms mean / P95 / max |
+|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 3 | 60 | greedy | 66.5% | 84.3 | 152.5 | 257.8 | 302.5 | 51.5% | 0 | baseline | 2.4 / 4.3 / 6.8 |
+| 3 | 60 | insertion-fair | 65.0% | 79.3 | 147.5 | 252.1 | 294.4 | 50.1% | 0 | -5.0 s [-7.3, -2.7] | 2.5 / 5.3 / 41.2 |
+| 3 | 60 | cpsat-fair | 64.4% | 75.7 | 144.0 | 238.7 | 274.5 | 49.5% | 0 | -8.5 s [-11.5, -5.6] | 5.4 / 18.1 / 47.8 |
+| 3 | 90 | greedy | 89.4% | 303.7 | 372.8 | 642.1 | 710.0 | 52.5% | 0 | baseline | 2.9 / 4.8 / 16.8 |
+| 3 | 90 | insertion-fair | 88.0% | 234.3 | 303.4 | 530.3 | 599.3 | 49.7% | 0 | -69.4 s [-90.0, -48.9] | 4.2 / 8.5 / 49.1 |
+| 3 | 90 | cpsat-fair | 87.8% | 212.7 | 281.8 | 480.9 | 527.5 | 48.4% | 0 | -91.0 s [-117.6, -64.4] | 35.1 / 119.7 / 646.7 |
+| 5 | 100 | greedy | 63.4% | 62.8 | 131.8 | 210.6 | 251.2 | 49.4% | 0 | baseline | 2.6 / 4.5 / 9.0 |
+| 5 | 100 | insertion-fair | 61.8% | 59.2 | 128.1 | 200.4 | 238.8 | 47.7% | 0 | -3.6 s [-5.5, -1.8] | 2.5 / 5.5 / 21.5 |
+| 5 | 100 | cpsat-fair | 61.6% | 59.0 | 128.0 | 199.6 | 232.7 | 47.4% | 0 | -3.7 s [-5.3, -2.2] | 4.3 / 16.6 / 67.1 |
+| 5 | 150 | greedy | 88.7% | 275.4 | 344.1 | 588.6 | 656.3 | 52.4% | 0 | baseline | 2.3 / 3.9 / 56.3 |
+| 5 | 150 | insertion-fair | 87.2% | 202.2 | 271.0 | 474.9 | 542.3 | 48.9% | 0 | -73.1 s [-92.0, -54.1] | 3.6 / 7.4 / 54.9 |
+| 5 | 150 | cpsat-fair | 87.0% | 178.2 | 247.0 | 416.5 | 458.4 | 47.8% | 0 | -97.1 s [-123.4, -70.8] | 42.1 / 120.7 / 600.2 |
+| 10 | 200 | greedy | 59.8% | 47.8 | 117.5 | 169.9 | 220.2 | 46.3% | 0 | baseline | 2.5 / 4.4 / 48.0 |
+| 10 | 200 | insertion-fair | 57.2% | 43.5 | 113.2 | 157.9 | 204.5 | 43.3% | 0 | -4.3 s [-5.2, -3.4] | 2.0 / 5.7 / 53.5 |
+| 10 | 200 | cpsat-fair | 57.1% | 43.0 | 112.7 | 155.4 | 198.8 | 43.1% | 0 | -4.8 s [-5.9, -3.6] | 4.1 / 16.6 / 75.3 |
+| 10 | 300 | greedy | 88.9% | 300.9 | 371.7 | 616.1 | 683.5 | 51.5% | 0 | baseline | 2.5 / 4.2 / 54.9 |
+| 10 | 300 | insertion-fair | 86.6% | 161.1 | 232.1 | 375.8 | 428.9 | 45.7% | 0 | -139.6 s [-164.1, -115.2] | 3.6 / 8.7 / 61.1 |
+| 10 | 300 | cpsat-fair | 86.4% | 140.9 | 211.9 | 333.9 | 376.1 | 44.4% | 0 | -159.9 s [-189.6, -130.2] | 57.1 / 144.5 / 628.1 |
+| 25 | 500 | greedy | 59.1% | 39.3 | 114.8 | 165.3 | 245.5 | 39.1% | 0 | baseline | 3.3 / 6.3 / 57.9 |
+| 25 | 500 | insertion-fair | 57.1% | 36.9 | 112.6 | 156.9 | 240.8 | 36.5% | 0 | -2.2 s [-3.1, -1.2] | 2.1 / 7.9 / 70.9 |
+| 25 | 500 | cpsat-fair | 57.1% | 37.1 | 112.7 | 157.2 | 239.3 | 36.6% | 0 | -2.1 s [-3.0, -1.2] | 8.7 / 37.0 / 253.3 |
+| 25 | 750 | greedy | 87.0% | 454.4 | 532.4 | 961.1 | 1049.7 | 49.8% | 0 | baseline | 3.4 / 6.5 / 80.0 |
+| 25 | 750 | insertion-fair | 86.2% | 209.7 | 289.5 | 463.8 | 537.6 | 40.7% | 0 | -242.9 s [-259.3, -226.5] | 4.6 / 11.8 / 65.8 |
+| 25 | 750 | cpsat-fair | 86.2% | 187.1 | 267.0 | 419.4 | 495.6 | 39.6% | 0 | -265.4 s [-285.5, -245.4] | 127.5 / 265.0 / 960.7 |
+
+Per-run results written to docs/results/scaling.csv.
+
+480 runs in 505.6 s.
+Every order was delivered in every run, with no conflicts.
+```
+
+### Reading the results
+
+- **Every run is complete and collision-free:** all 480 runs deliver every order with zero conflicts.
+  The 5- and 10-robot rows reproduce the traffic comparison of M4 exactly.
+- **At moderate load, all policies cope.** The planners are 2 to 8.5 s ahead of greedy, with intervals
+  that exclude zero.
+- **At high load, planning matters more as the fleet grows.** `cpsat-fair` beats greedy by:
+  - 91.0 s with 3 robots;
+  - 97.1 s with 5;
+  - 159.9 s with 10;
+  - 265.4 s [245.4, 285.5] with 25.
+
+  At 25 robots, greedy's mean completion is 532.4 s and its worst case 1,049.7 s. For `cpsat-fair`
+  they are 267.0 s and 495.6 s. Greedy's oldest-first choice sends robots on long empty trips: 49.8%
+  of its driving is empty, against 39.6% for `cpsat-fair`. With 25 robots sharing the aisles, every
+  extra trip also delays others.
+- **Most of the gain comes from the planning model.** At high load, `insertion-fair` achieves 69 to
+  243 s of the gain. `cpsat-fair`'s estimates are a further 20 to 24 s better in every fleet size;
+  that is the difference of two paired estimates, not a separately tested comparison.
+- **Small fleets run hotter at the same load per robot.** With 3 robots, each robot covers the whole
+  map, so trips are longer, and 20 orders per robot per hour already means 64–67% utilization.
+- **Decision latency.**
+  - Greedy and `insertion-fair`: 2 to 5 ms on average, at most 12 ms at the P95, and 80 ms in the
+    worst case.
+  - `cpsat-fair`: 4 to 9 ms on average at moderate load, and 35 to 128 ms at high load. The P95 is
+    up to 265 ms, and the worst case 961 ms, at 25 robots and high load.
+
+  The deterministic limit bounds each solve's work, not its wall time, and the time grows with the
+  fleet and the queue. Every decision took under one second, measured on a laptop with 8 processes
+  sharing the CPU.
+
+### What this does not show
+
+- **One map.** Its 6 stations and 221 endpoints were enough for 25 robots. Larger fleets, other layouts
+  and clustered demand are untested.
+- **Latency comes from one machine** under parallel load. It is not a real-time guarantee, and a
+  production system would need a wall-clock limit, at the cost of reproducible plans.
+- **The limits of the M4 traffic model still apply:** conservative corridors, prioritized planning,
+  exact execution without delays, and free-flow estimates inside the planners.
+- **20 seeds per configuration.** The intervals show the remaining uncertainty.
+- Windows only.

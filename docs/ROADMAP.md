@@ -238,7 +238,7 @@ dispatch policies are then compared again, with and without traffic, to measure 
 Every number and every figure comes from a committed script.
 
 **Increments:**
-1. **Scaling benchmark with traffic.**
+1. **Scaling benchmark with traffic.** Done 2026-11-05 ([benchmarks.md](benchmarks.md)).
    - Fleets of 3, 5, 10 and 25 robots on the large map.
    - Two loads per fleet: 20 and 30 orders per robot per hour, roughly moderate and high
      utilization.
@@ -246,7 +246,7 @@ Every number and every figure comes from a committed script.
    - It also measures **decision latency**: the wall time of each dispatch decision, the policy plus
      the traffic planning that executes it.
    - Per-run results are also written as CSV, for the figures.
-2. **Visualization** (`viz/`, matplotlib):
+2. **Visualization** (`viz/`, matplotlib). Done 2026-11-05:
    - the map with robot trajectories;
    - a chart of the scaling results, drawn from the CSV;
    - a short animation of a run with traffic.
