@@ -5,12 +5,14 @@ assignments. It owns no time and changes no state; the simulator validates the d
 and executes it (see ARCHITECTURE.md, "Planners are pure functions").
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Protocol
 
 from amr_optimizer.domain import OrderId, RobotId, RobotState, TransportOrder
 from amr_optimizer.sim.planner import TravelPlanner
+from amr_optimizer.warehouse import NodeId
 
 
 class InvalidAssignmentError(ValueError):
@@ -30,10 +32,13 @@ class DispatchSnapshot:
     """What a policy may look at when it decides.
 
     ``robots`` holds every robot's current state, in scenario order. ``pending_orders``
-    holds the released orders that no robot has taken yet, in release order. ``planner``
-    answers route and travel-time questions; it caches answers, which does not change them.
-    ``load_ticks`` and ``unload_ticks`` are the scenario's handling times, so a policy can
-    predict when a busy robot will finish (D18).
+    holds the released orders that can be assigned now, in release order: without traffic,
+    every order that no robot has taken yet; with traffic, only those whose pickup is not
+    reserved by another robot (D24). ``planner`` answers route and travel-time questions; it
+    caches answers, which does not change them. ``load_ticks`` and ``unload_ticks`` are the
+    scenario's handling times, so a policy can predict when a busy robot will finish (D18).
+    ``planned_ready`` gives, with traffic, the tick and node at which each busy robot will
+    become idle, as planned; it is empty without traffic.
     """
 
     tick: int
@@ -42,6 +47,7 @@ class DispatchSnapshot:
     planner: TravelPlanner
     load_ticks: int
     unload_ticks: int
+    planned_ready: Mapping[RobotId, tuple[int, NodeId]] = MappingProxyType({})
 
     def __post_init__(self) -> None:
         if self.load_ticks < 0 or self.unload_ticks < 0:

@@ -180,9 +180,9 @@ dispatch policies are then compared again, with and without traffic, to measure 
 2. **SIPP itinerary planner.** Done 2026-11-05: earliest-arrival timed paths through stops with service
    times, ending in a hold. They match a brute-force search over (node, tick) states on 300 random
    small instances.
-3. **Traffic-aware simulator.** Itineraries planned at assignment, holding spots, moves off needed
-   endpoints, executed trajectories recorded. Every run is checked for conflicts by the independent
-   checker.
+3. **Traffic-aware simulator.** Done 2026-11-05: itineraries planned at assignment, holding spots,
+   moves off needed endpoints, cycle breaking, and trajectories recorded in both modes. Every
+   generated test run with traffic has zero conflicts by the independent checker.
 4. **Comparison.** Every policy with and without traffic, on paired seeds. The planning policies use
    the planned availability of busy robots.
 5. **Stretch, else Phase 2.** Mutex zones (groups of nodes and corridors with capacity 1), and random

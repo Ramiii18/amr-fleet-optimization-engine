@@ -18,7 +18,8 @@ src/amr_optimizer/
                robots.py     RobotState and the robot state machine (ALLOWED_TRANSITIONS)
   scenario/    model.py      Scenario: validated input of one simulation run
                generator.py  seeded order stream (Bernoulli arrivals), fleet placement
-  sim/         simulator.py  discrete-event loop, executor, invariant checks
+  sim/         simulator.py  discrete-event loop, executor, invariant checks; free flow or traffic
+               traffic_control.py  plans jobs and moves against the reservation table (M4)
                policy.py     dispatch interface: DispatchSnapshot, Assignment, DispatchPolicy
                planner.py    TravelPlanner: cached shortest routes and travel ticks
                log.py        event log (six steps per order)
@@ -41,8 +42,9 @@ scenarios/maps small.json (45 nodes), medium.json (179), large.json (461)
 tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkable graphs)
 ```
 
-**Dependency direction:** `dispatch` → `sim` → `scenario` → `domain` → `routing` → `warehouse`. Dispatch
-policies implement the interface in `sim/policy.py`; the simulator never imports a policy.
+**Dependency direction:** `dispatch` → `sim` → `traffic`, `scenario` → `domain` → `routing` →
+`warehouse`. Dispatch policies implement the interface in `sim/policy.py`; the simulator never imports a
+policy. `traffic` knows nothing about the simulator.
 
 **Runtime dependencies:** numpy and scipy, for optimal assignment (D16), and OR-Tools, for the CP-SAT
 planner (D20). Everything else is the standard library.
@@ -89,7 +91,9 @@ Each package is created only when it has real code.
   penalties are a known future extension.
 - **Robot footprint and safety separation.** In M4, one robot per node and per corridor stands in for
   them.
-- **Other robots, occupancy and capacity.** These arrive with traffic management in M4.
+- **Other robots, occupancy and capacity**, in the default free-flow mode. With traffic (M4), each node
+  and each corridor holds one robot at a time (D23); finer capacity, such as two robots following each
+  other closely along one corridor, is not modelled.
 - **Per-edge speed limits and floor conditions.**
 - **Certified safety functions.** Safety scanners, protective fields and emergency stops are out of
   scope. This is a planning and simulation abstraction, not a safety system.

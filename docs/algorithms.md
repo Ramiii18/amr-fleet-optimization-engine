@@ -371,9 +371,9 @@ invariant checks and the route computations included.
   - every robot does one job at a time, and starts each job where the last one ended (no teleporting).
 
 **Limitations (M2).**
-- Robots don't interact: there are no collisions, no blocking and no waiting for each other. This is
-  the documented MVP simplification; traffic arrives in M4, and the difference in KPIs will measure the
-  cost of congestion.
+- In the default free-flow mode, robots don't interact: there are no collisions, no blocking and no
+  waiting for each other. That was the MVP simplification. Since M4, `traffic=True` makes robots plan
+  around each other (section 13.3), and the difference in KPIs measures the cost of congestion.
 - The policy is only called when something changes, or, with decision rounds, at each round (D16).
 - No faults, blocked edges or replanning (Phase 2).
 
@@ -838,6 +838,58 @@ expanding 156 states on average.
   - 126 of the itineraries needed a wait away from any stop;
   - every planned path drives real edges in their exact travel times, and the independent checker
     finds no conflict with the reservations.
+
+### 13.3 The simulator with traffic (`sim/traffic_control.py`, D24)
+
+**What changes with `traffic=True`.**
+- **A job is planned whole at assignment.** One SIPP itinerary covers: to the pickup and load, to the
+  drop-off and unload, then to a holding spot, held. It is reserved against every robot planned
+  before. The robot's phases then end exactly at the planned ticks; waits are part of its drive
+  phases.
+- **Holding spots.** After unloading, the robot drives to the nearest free endpoint (storage,
+  charger or parking, never a station) that no one holds or plans to visit. Pickups of pending
+  orders are avoided where possible. For this, the robot state machine gained the phase
+  REPOSITIONING, entered after unloading or when a robot moves out of the way.
+- **What the policy sees.** An order whose pickup is reserved by a robot that is not idle there is
+  hidden until the reservation ends. A wake-up event at that tick lets the policy decide at once.
+  Among orders sharing a pickup, only the oldest is offered, so one decision never sends two robots to
+  one pickup.
+- **Moving out of the way.** When a robot is assigned an order whose pickup holds another idle robot,
+  that robot is first moved to a free holding spot, and the assigned robot is planned after it. If the
+  idle robot is assigned too, its own job is planned first.
+- **Cycles.** Two idle robots may each be assigned the order on the other's spot. Neither can be
+  planned first, because each goal is held by the other. The cycle is broken by postponing one
+  assignment. That robot moves out of the way, and its order stays pending for a later decision. The
+  count is reported (`deferred_assignments`).
+- **Planned availability.** The snapshot tells planning policies when and where each busy robot will
+  become idle, as planned (`planned_ready`). The free-flow prediction of section 11.1 would no longer
+  be exact.
+
+**Trajectories.** In both modes, the simulator records every robot's movement as one timed path. In
+free flow it records the shortest routes at free-flow times; with traffic, the planned itineraries.
+The independent checker of section 13.1 can therefore count conflicts in any run.
+- In free flow, conflicts are expected, because robots pass through each other.
+- With traffic, there must be none.
+
+**Invariants added.**
+- Every idle robot holds its own node in the reservation table.
+- Every drive phase lasts exactly as planned, and never less than free flow.
+- A planning failure, which D24 rules out, raises an error.
+
+**Testing.**
+- **Head-on.** On a hand-built map, two robots start crossing the same two-way corridor in opposite
+  directions. In free flow the checker finds the head-on conflict. With traffic, the second robot
+  waits at its parking spot until tick 21, so it enters the corridor just after the first robot has
+  cleared it. Both trajectories match the hand-derived timelines tick for tick.
+- **Moving out of the way.** The idle robot on the pickup moves to the nearest free parking spot first,
+  and the assigned robot is planned around it. The timelines are exact.
+- **Cycle.** Two robots on each other's pickups. One assignment is postponed and that robot moves
+  away. Everything is delivered without conflicts.
+- **Generated runs.** 36 runs: small and medium maps, 1, 3 and 6 robots, 3 seeds, greedy and
+  `insertion-fair`. Each delivers every order with zero conflicts, every trajectory drives real edges
+  in exact times, every log entry agrees with the trajectories on where the robot was, and a second run
+  is identical.
+- **Free flow is unchanged.** The M2 comparison table reproduces exactly.
 
 ---
 

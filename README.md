@@ -24,8 +24,11 @@ reproducible simulation.
 - **Scenarios (M2):** seeded, reproducible order streams and fleet start positions; the same seed gives
   the same scenario on Windows and Linux.
 - **Simulator (M2):** a deterministic discrete-event simulator with a pure-function dispatch interface,
-  invariant checks after every tick, and a per-order event log. Robots don't interact yet (no
-  collisions or congestion); that comes with traffic management in M4.
+  invariant checks after every tick, a per-order event log and every robot's trajectory.
+- **Traffic (M4, `--traffic`):** robots reserve nodes and corridors and plan each whole job as one
+  timed path around all others (safe-interval path planning). They wait where needed, never collide,
+  and park on free dead-end spots. Without it, robots drive in free flow and pass through each other.
+  An independent checker counts the collisions in either mode.
 - **Dispatch (M2):** greedy (oldest order, nearest robot) and optimal assignment (Hungarian problem,
   solved with scipy), with optional decision rounds.
 - **KPIs and comparison (M2):** waiting, completion (mean, P95 and maximum), utilization and empty

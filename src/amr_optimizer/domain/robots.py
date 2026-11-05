@@ -7,6 +7,14 @@ One transport job takes a robot through these phases (D13):
       +--assign, robot already at pickup------+                         arrive
       ^                                                                    v
       +-------------------------finish_unloading-------------------- UNLOADING
+      |                                                                    |
+      +--finish_repositioning-- REPOSITIONING <--reposition----------------+
+      |                               ^
+      +----------reposition-----------+
+
+REPOSITIONING exists for traffic (D24): after unloading, a robot drives to a holding spot
+instead of staying at the station, and an idle robot standing on a pickup that another
+robot needs drives away. Without traffic, robots go straight from UNLOADING to IDLE.
 
 `ALLOWED_TRANSITIONS` lists exactly these phase changes. A `RobotState` never changes:
 every transition method returns a new state and refuses anything outside the table.
@@ -49,19 +57,23 @@ class RobotPhase(Enum):
     LOADING = "loading"  # at the pickup, taking the load on
     TO_DROPOFF = "to_dropoff"  # driving ``route`` to the order's drop-off, loaded
     UNLOADING = "unloading"  # at the drop-off, handing the load over
+    REPOSITIONING = "repositioning"  # no order; driving ``route`` to a holding spot (D24)
 
     @property
     def is_travelling(self) -> bool:
-        return self is RobotPhase.TO_PICKUP or self is RobotPhase.TO_DROPOFF
+        return self in (RobotPhase.TO_PICKUP, RobotPhase.TO_DROPOFF, RobotPhase.REPOSITIONING)
 
 
 ALLOWED_TRANSITIONS: Mapping[RobotPhase, frozenset[RobotPhase]] = MappingProxyType(
     {
-        RobotPhase.IDLE: frozenset({RobotPhase.TO_PICKUP, RobotPhase.LOADING}),
+        RobotPhase.IDLE: frozenset(
+            {RobotPhase.TO_PICKUP, RobotPhase.LOADING, RobotPhase.REPOSITIONING}
+        ),
         RobotPhase.TO_PICKUP: frozenset({RobotPhase.LOADING}),
         RobotPhase.LOADING: frozenset({RobotPhase.TO_DROPOFF}),
         RobotPhase.TO_DROPOFF: frozenset({RobotPhase.UNLOADING}),
-        RobotPhase.UNLOADING: frozenset({RobotPhase.IDLE}),
+        RobotPhase.UNLOADING: frozenset({RobotPhase.IDLE, RobotPhase.REPOSITIONING}),
+        RobotPhase.REPOSITIONING: frozenset({RobotPhase.IDLE}),
     }
 )
 """Every phase change the state machine allows, from each phase."""
@@ -97,6 +109,13 @@ class RobotState:
             return
 
         phase = self.phase.name
+        if self.phase is RobotPhase.REPOSITIONING:
+            if self.order is not None:
+                raise RobotStateError(f"robot {name}: a repositioning robot has no order")
+            if self.until_tick is None:
+                raise RobotStateError(f"robot {name}: {phase} needs an end tick")
+            self._check_route(self.route, None)
+            return
         if self.order is None or self.until_tick is None:
             raise RobotStateError(f"robot {name}: {phase} needs an order and an end tick")
         if self.until_tick < self.since_tick:
@@ -111,13 +130,19 @@ class RobotState:
             return
 
         target = self.order.pickup if self.phase is RobotPhase.TO_PICKUP else self.order.dropoff
-        if self.route is None or len(self.route.nodes) < 2:
+        self._check_route(self.route, target)
+
+    def _check_route(self, route: Route | None, target: NodeId | None) -> None:
+        """A travelling robot drives at least one edge, from where it is, for at least a tick."""
+        name, phase = repr(self.robot_id), self.phase.name
+        if route is None or len(route.nodes) < 2:
             raise RobotStateError(f"robot {name}: {phase} needs a route of at least one edge")
-        if self.route.source != self.node:
+        if route.source != self.node:
             raise RobotStateError(f"robot {name}: route must start at {self.node!r}")
-        if self.route.target != target:
+        if target is not None and route.target != target:
             raise RobotStateError(f"robot {name}: {phase} route must end at {target!r}")
-        if self.until_tick == self.since_tick:
+        assert self.until_tick is not None  # checked by the caller
+        if self.until_tick <= self.since_tick:
             raise RobotStateError(f"robot {name}: travel takes at least one tick")
 
     @classmethod
@@ -184,8 +209,34 @@ class RobotState:
 
     def finish_unloading(self, *, tick: int) -> "RobotState":
         """Hand the load over at ``tick``: the order is delivered and the robot is idle."""
+        self._check_source("finish unloading", RobotPhase.UNLOADING)
         self._check_transition("finish unloading", RobotPhase.IDLE, tick)
         return RobotState(self.robot_id, RobotPhase.IDLE, self.node, tick)
+
+    def reposition(self, route: Route, *, tick: int, until_tick: int) -> "RobotState":
+        """Start driving ``route`` to a holding spot, with no order (D24).
+
+        From IDLE, the robot moves out of another robot's way. From UNLOADING, the load has
+        been handed over at ``tick``: the order is delivered and the robot leaves the station.
+        """
+        self._check_transition("reposition", RobotPhase.REPOSITIONING, tick)
+        return RobotState(
+            self.robot_id, RobotPhase.REPOSITIONING, self.node, tick, until_tick, None, route
+        )
+
+    def finish_repositioning(self, *, tick: int) -> "RobotState":
+        """Reach the holding spot at ``tick`` and become idle there."""
+        self._check_source("finish repositioning", RobotPhase.REPOSITIONING)
+        self._check_transition("finish repositioning", RobotPhase.IDLE, tick)
+        assert self.route is not None  # guaranteed by the travelling-phase invariant
+        return RobotState(self.robot_id, RobotPhase.IDLE, self.route.target, tick)
+
+    def _check_source(self, action: str, source: RobotPhase) -> None:
+        """Two actions lead to IDLE, so the table alone cannot tell them apart."""
+        if self.phase is not source:
+            raise InvalidTransitionError(
+                f"robot {self.robot_id!r}: cannot {action} while {self.phase.name}"
+            )
 
     def _check_transition(self, action: str, phase: RobotPhase, tick: int) -> None:
         """Refuse a phase change outside the table, or one at the wrong tick."""

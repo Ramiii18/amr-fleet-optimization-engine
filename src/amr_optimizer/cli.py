@@ -37,6 +37,11 @@ def _parser() -> argparse.ArgumentParser:
         default=0.0,
         help="decision rounds every N seconds; 0 (default) decides at every event",
     )
+    parser.add_argument(
+        "--traffic",
+        action="store_true",
+        help="robots plan around each other's reservations (M4); default is free flow",
+    )
     parser.add_argument("--json", action="store_true", help="print the KPIs as JSON")
     return parser
 
@@ -72,7 +77,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     interval = scenario.time_model.to_ticks(args.round_s) or None
 
     started = time.perf_counter()
-    result = simulate(scenario, POLICIES[args.policy](), decision_interval_ticks=interval)
+    result = simulate(
+        scenario, POLICIES[args.policy](), decision_interval_ticks=interval, traffic=args.traffic
+    )
     elapsed = time.perf_counter() - started
     kpis = compute_kpis(result)
 
@@ -85,7 +92,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{args.orders_per_hour:g} orders/h for {args.duration_s:g} s, seed {args.seed}: "
         f"{kpis.orders} orders"
     )
-    print(f"Policy:   {kpis.policy}, {rounds}")
+    mode = "with traffic (reservations)" if args.traffic else "free flow (no traffic)"
+    print(f"Policy:   {kpis.policy}, {rounds}, {mode}")
     print(
         f"Delivered {kpis.delivered} of {kpis.orders} orders in {kpis.duration_s:.1f} s of "
         f"simulated time (computed in {elapsed:.2f} s)"

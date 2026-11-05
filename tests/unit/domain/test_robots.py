@@ -21,12 +21,14 @@ from amr_optimizer.warehouse import NodeId
 
 IDLE, TO_PICKUP, LOADING = RobotPhase.IDLE, RobotPhase.TO_PICKUP, RobotPhase.LOADING
 TO_DROPOFF, UNLOADING = RobotPhase.TO_DROPOFF, RobotPhase.UNLOADING
+REPOSITIONING = RobotPhase.REPOSITIONING
 
 R1 = RobotId("R1")
 H, X, P, Y, D = (NodeId(name) for name in ("H", "X", "P", "Y", "D"))  # home, ..., pickup, ..., drop
 ORDER = TransportOrder(OrderId("O1"), pickup=P, dropoff=D, release_tick=5)
 TO_PICKUP_ROUTE = Route((H, X, P), 2.0)
 TO_DROPOFF_ROUTE = Route((P, Y, D), 3.0)
+TO_HOLDING_ROUTE = Route((D, Y, H), 3.0)
 
 
 def _job_states() -> list[RobotState]:
@@ -40,7 +42,14 @@ def _job_states() -> list[RobotState]:
     return [idle, to_pickup, loading, to_dropoff, unloading, done]
 
 
-STATE_IN = {state.phase: state for state in _job_states()[:-1]}
+def _traffic_tail() -> list[RobotState]:
+    """With traffic, the robot leaves the station after unloading and becomes idle at H."""
+    unloading = _job_states()[4]
+    repositioning = unloading.reposition(TO_HOLDING_ROUTE, tick=105, until_tick=140)
+    return [unloading, repositioning, repositioning.finish_repositioning(tick=140)]
+
+
+STATE_IN = {state.phase: state for state in _job_states()[:-1] + _traffic_tail()[1:2]}
 
 
 # --- the transition table ----------------------------------------------------------------
@@ -48,11 +57,12 @@ STATE_IN = {state.phase: state for state in _job_states()[:-1]}
 
 def test_transition_table_is_exactly_the_job_cycle() -> None:
     assert dict(ALLOWED_TRANSITIONS) == {
-        IDLE: {TO_PICKUP, LOADING},
+        IDLE: {TO_PICKUP, LOADING, REPOSITIONING},
         TO_PICKUP: {LOADING},
         LOADING: {TO_DROPOFF},
         TO_DROPOFF: {UNLOADING},
-        UNLOADING: {IDLE},
+        UNLOADING: {IDLE, REPOSITIONING},
+        REPOSITIONING: {IDLE},
     }
 
 
@@ -79,8 +89,10 @@ def test_every_allowed_transition_is_exercised_by_the_methods() -> None:
     job = _job_states()
     at_pickup = RobotState.idle(R1, P)
     direct = at_pickup.assign(ORDER, Route((P,), 0.0), tick=5, until_tick=35)
+    evicted = RobotState.idle(R1, H).reposition(Route((H, X), 1.0), tick=5, until_tick=15)
     exercised = {(a.phase, b.phase) for a, b in itertools.pairwise(job)}
-    exercised.add((at_pickup.phase, direct.phase))
+    exercised |= {(a.phase, b.phase) for a, b in itertools.pairwise(_traffic_tail())}
+    exercised |= {(at_pickup.phase, direct.phase), (IDLE, evicted.phase)}
 
     assert exercised == {(a, b) for a, targets in ALLOWED_TRANSITIONS.items() for b in targets}
 
@@ -124,7 +136,30 @@ def test_loading_may_take_zero_ticks() -> None:
 
 
 def test_travel_phases_are_flagged() -> None:
-    assert {phase for phase in RobotPhase if phase.is_travelling} == {TO_PICKUP, TO_DROPOFF}
+    travelling = {phase for phase in RobotPhase if phase.is_travelling}
+
+    assert travelling == {TO_PICKUP, TO_DROPOFF, REPOSITIONING}
+
+
+def test_repositioning_after_delivery_drops_the_order_and_ends_idle_elsewhere() -> None:
+    unloading, repositioning, idle = _traffic_tail()
+
+    assert (repositioning.phase, repositioning.node, repositioning.order) == (
+        REPOSITIONING,
+        D,
+        None,
+    )
+    assert (repositioning.since_tick, repositioning.until_tick) == (105, 140)
+    assert repositioning.route == TO_HOLDING_ROUTE
+    assert (idle.phase, idle.node, idle.since_tick) == (IDLE, H, 140)
+    assert unloading.order == ORDER
+
+
+def test_an_idle_robot_can_be_moved_out_of_the_way() -> None:
+    moving = RobotState.idle(R1, P, tick=3).reposition(Route((P, X), 1.0), tick=7, until_tick=17)
+
+    assert (moving.phase, moving.node, moving.until_tick) == (REPOSITIONING, P, 17)
+    assert moving.finish_repositioning(tick=17) == RobotState.idle(R1, X, tick=17)
 
 
 def test_robot_state_is_immutable() -> None:
@@ -149,6 +184,10 @@ ACTIONS: dict[str, Callable[[RobotState], RobotState]] = {
         TO_DROPOFF_ROUTE, tick=_now(s), until_tick=_now(s) + 30
     ),
     "finish_unloading": lambda s: s.finish_unloading(tick=_now(s)),
+    "reposition": lambda s: s.reposition(
+        Route((s.node, Y), 1.0), tick=_now(s), until_tick=_now(s) + 10
+    ),
+    "finish_repositioning": lambda s: s.finish_repositioning(tick=_now(s)),
 }
 LEGAL = {
     (IDLE, "assign"),
@@ -156,6 +195,9 @@ LEGAL = {
     (LOADING, "finish_loading"),
     (TO_DROPOFF, "arrive"),
     (UNLOADING, "finish_unloading"),
+    (IDLE, "reposition"),
+    (UNLOADING, "reposition"),
+    (REPOSITIONING, "finish_repositioning"),
 }
 
 
@@ -242,6 +284,20 @@ def test_travel_takes_at_least_one_tick() -> None:
         (
             lambda: RobotState(R1, TO_PICKUP, P, 0, 5, ORDER, Route((P,), 0.0)),
             "needs a route of at least one edge",
+        ),
+        (
+            lambda: RobotState(R1, REPOSITIONING, D, 0, 5, ORDER, TO_HOLDING_ROUTE),
+            "repositioning robot has no order",
+        ),
+        (lambda: RobotState(R1, REPOSITIONING, D, 0, None, None, TO_HOLDING_ROUTE), "end tick"),
+        (lambda: RobotState(R1, REPOSITIONING, D, 0, 5), "route of at least one edge"),
+        (
+            lambda: RobotState(R1, REPOSITIONING, H, 0, 5, None, TO_HOLDING_ROUTE),
+            "route must start at 'H'",
+        ),
+        (
+            lambda: RobotState(R1, REPOSITIONING, D, 5, 5, None, TO_HOLDING_ROUTE),
+            "at least one tick",
         ),
     ],
 )

@@ -36,6 +36,16 @@ def test_decision_rounds_are_reported(capsys: pytest.CaptureFixture[str]) -> Non
     assert "decision rounds every 10 s" in capsys.readouterr().out
 
 
+def test_traffic_can_be_switched_on(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(SMALL_RUN) == 0
+    assert "free flow (no traffic)" in capsys.readouterr().out
+
+    assert main([*SMALL_RUN, "--traffic", "--policy", "cpsat-fair"]) == 0
+    out = capsys.readouterr().out
+    assert "cpsat-fair, decides at every event, with traffic (reservations)" in out
+    assert "WARNING" not in out
+
+
 def test_map_file_can_be_used(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "map.json"
     save_graph(generate_grid_warehouse(PRESETS["small"]), path)

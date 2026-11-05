@@ -397,3 +397,6 @@ local pass predicts a CI pass.
   robots to one pickup.
 - The simulator executes plans exactly, because it has no disturbances yet. Robustness to delays,
   where plans and execution diverge, is a stretch goal (ROADMAP M4, increment 5).
+- Added in M4.3: two idle robots assigned each other's spots would each wait for the other to be
+  planned first. The simulator breaks such a cycle by postponing one assignment and moving that robot
+  out of the way, and it counts these postponements.

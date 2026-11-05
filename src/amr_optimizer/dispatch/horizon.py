@@ -83,6 +83,13 @@ def availability(robot: RobotState, snapshot: DispatchSnapshot) -> RobotAvailabi
     """
     if robot.is_idle:
         return RobotAvailability(robot.robot_id, robot.node, 0, idle=True)
+    planned = snapshot.planned_ready.get(robot.robot_id)
+    if planned is not None:  # with traffic: when and where its itinerary makes it idle
+        tick, node = planned
+        return RobotAvailability(robot.robot_id, node, max(0, tick - snapshot.tick), False)
+    if robot.phase is RobotPhase.REPOSITIONING and robot.route and robot.until_tick is not None:
+        ready = max(0, robot.until_tick - snapshot.tick)
+        return RobotAvailability(robot.robot_id, robot.route.target, ready, False)
     order, until = robot.order, robot.until_tick
     if order is None or until is None or until < snapshot.tick:
         raise ValueError(f"robot {robot.robot_id!r} is busy without a current job")
