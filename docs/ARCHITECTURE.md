@@ -29,6 +29,9 @@ src/amr_optimizer/
                              plan evaluation and cost (total or worst first), first jobs (M3)
                insertion.py  cheapest-insertion plan; InsertionDispatch (receding horizon)
                cpsat.py      CP-SAT giant-tour model, solve_plan, CpSatDispatch (receding horizon)
+  traffic/     paths.py      TimedPath, Visit, Corridor, Occupancy (closed at nodes, open on corridors)
+               reservations.py  ReservationTable: reservations, holds, safe intervals (M4)
+               conflicts.py  independent conflict checker (vertex, head-on, following)
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile
                compare.py    paired_difference: per-seed differences with a t confidence interval
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
@@ -63,7 +66,7 @@ planner (D20). Everything else is the standard library.
 | `sim` | Discrete-event kernel, plan executor, invariant checks, event log | **Exists** (M2) |
 | `dispatch` | Greedy, Hungarian, bounded-horizon planning (insertion, CP-SAT); later local search | **Exists** (M2: greedy, Hungarian; M3: planning model, insertion, CP-SAT) |
 | `metrics` | KPI computation | **Exists** (M2) |
-| `traffic` | Reservations, mutex zones, conflict and deadlock detection | Planned (M4) |
+| `traffic` | Timed paths, reservations, conflict checking; next: SIPP planning (M4) | **Exists** (M4, in progress) |
 | `energy`, `api`, `viz` | Battery model, FastAPI service, visualization | Phase 2 / M5 |
 
 Each package is created only when it has real code.

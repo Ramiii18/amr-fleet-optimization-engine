@@ -174,8 +174,9 @@ dispatch policies are then compared again, with and without traffic, to measure 
   It searches over intervals in which a node is free, so it doesn't step through every 0.1 s tick.
 
 **Increments:**
-1. **Reservations and conflict checking.** Timed paths, a reservation table for nodes and corridors
-   (including open-ended holds), and an independent checker that finds every conflict between paths.
+1. **Reservations and conflict checking.** Done 2026-11-05: timed paths, a reservation table for nodes
+   and corridors (including open-ended holds), and an independent checker that finds every conflict
+   between paths.
 2. **SIPP itinerary planner.** Earliest-arrival timed paths through waypoints with service times,
    ending in a hold. Checked against a brute-force search over (node, tick) states on small graphs.
 3. **Traffic-aware simulator.** Itineraries planned at assignment, holding spots, moves off needed

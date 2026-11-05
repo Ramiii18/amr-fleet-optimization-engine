@@ -740,7 +740,54 @@ search.
 
 ---
 
-## 13. Interview notes
+## 13. Traffic (`traffic/`, M4)
+
+### 13.1 Occupancy, conflicts and reservations (D23)
+
+**Problem.** Section 12 lists the ways robots can collide. Before planning around each other, robots
+need a precise definition of "being somewhere", and a way to check that no two of them ever are at
+once.
+
+**Timed paths.** A `TimedPath` is a sequence of visits (node, arrival tick, departure tick). Between two
+visits the robot drives the edge that joins them, in exactly that edge's travel time. Waiting is
+simply a longer visit. A path may end in a **hold**: the robot stays at its last node, with no planned
+departure.
+
+**Occupancy.**
+- At a node, a robot occupies the *closed* interval [arrival, departure].
+- On a corridor, the undirected connection {u, v}, it occupies the *open* interval (departure,
+  arrival).
+- One robot per node and one robot per corridor. A corridor is one resource in both directions, so a
+  single rule covers head-on and swap conflicts, and a robot catching up with another.
+- With integer ticks every comparison is exact. A node vacated at tick t can be entered at t + 1, but
+  a corridor left at tick t can be entered at t.
+
+**The independent checker** (`find_conflicts`). It groups occupancies by resource, sorts them by
+start, and compares each with the following ones until one starts after it ends. It reports each
+conflict as vertex, head-on or following. It is the reference for the reservation table, the planner
+and the simulator, so it shares nothing with them except the definition of an occupancy.
+
+**The reservation table.**
+- Per resource, it keeps a list of reservations, sorted by start and never overlapping one another. A
+  new reservation can therefore only overlap its neighbours in that order, so checking costs O(log k)
+  for k reservations on a resource.
+- A path is reserved entirely or not at all. Any overlap with another robot's reservation raises an
+  error, so a planning bug shows up at the moment it happens.
+- A hold reserves its node until `FOREVER`. `end_hold` cuts it short when the robot's next path takes
+  over, and `prune` forgets reservations that have ended.
+- **Safe intervals** (`safe_intervals`) are the gaps between a node's reservations: maximal closed
+  intervals in which the node is free. These are what the path planner searches over (section 13.2).
+
+**Testing.**
+- Hand cases for every conflict kind: head-on, swap, following, a crossing at an intersection, a node
+  vacated and entered at the same tick, a hold, and the legal corridor hand-off.
+- Safe intervals, holds, pruning, and refusal without side effects, all checked by hand.
+- On 300 random scenarios of four random paths each, the table accepts a path exactly when the
+  independent checker finds it conflict-free.
+
+---
+
+## 14. Interview notes
 
 **Why does Dijkstra need non-negative edge lengths?**
 The proof that a popped node's distance is final assumes edges only add length. With a negative edge, a
