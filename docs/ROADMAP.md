@@ -439,7 +439,7 @@ another, and the two then wait for each other forever. Replanning therefore re-t
 1. **Re-timing.** Done 2026-11-05. `retime` in `traffic/execution.py`: the earliest schedule of
    the remaining plans from a state reached mid-run. Oracle: cutting an ordered execution at any tick and
    re-timing the rest reproduces it.
-2. **Breakdowns in the simulator.** A seeded breakdown model (a share of edge traversals, a
+2. **Breakdowns in the simulator.** Done 2026-11-05. A seeded breakdown model (a share of edge traversals, a
    repair time range); `wait` and `retime`. With every job assigned at the start, `retime` must
    reproduce `wait` exactly: re-timing alone moves no robot.
 3. **Replanning.** `replan`: robots in a corridor are committed to its end, so each delayed robot

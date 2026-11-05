@@ -47,6 +47,7 @@ After every tick the simulator checks its invariants and raises
 `SimulationInvariantError` if one is broken. That would be a bug in the simulator.
 """
 
+import dataclasses
 import heapq
 import itertools
 import random
@@ -83,10 +84,13 @@ from amr_optimizer.traffic import (
     Corridor,
     DelayModel,
     ExecutionPolicy,
+    Progress,
+    Recovery,
     Resource,
     ResourceOrder,
     TimedPath,
     Visit,
+    retime,
 )
 from amr_optimizer.warehouse import NodeId, NodeKind
 
@@ -117,6 +121,8 @@ class SimulationResult:
     traffic: bool = False
     moves_out_of_the_way: int = 0  # idle robots moved off an assigned pickup (traffic)
     deferred_assignments: int = 0  # assignments postponed to break a cycle (traffic)
+    breakdowns: int = 0  # breakdowns while driving (D28)
+    breakdown_ticks: int = 0  # robot-ticks of repairs
     decision_seconds: tuple[float, ...] = ()  # wall time of each decision; see below
     battery: bool = False
     charging_trips: int = 0  # drives to a charger by robots below the low threshold
@@ -149,6 +155,9 @@ def simulate(
     battery: BatterySpec | None = None,
     battery_seed: int = 0,
     charging: ChargingPolicy = ChargingPolicy.WHEN_LOW,
+    breakdowns: DelayModel = NO_DELAYS,
+    breakdown_seed: int = 0,
+    recovery: Recovery = Recovery.WAIT,
 ) -> SimulationResult:
     """Run ``scenario`` under ``policy`` until no events remain, or past ``max_tick``.
 
@@ -160,7 +169,10 @@ def simulate(
     ``delay_seed`` and ``execution`` then set how plans are executed (D25). Each robot draws
     its delays from its own stream, named after ``delay_seed`` and the robot. With ``battery``
     (and traffic), robots drain and charge batteries (D26); start levels come from a stream
-    named after ``battery_seed``, and ``charging`` sets when robots charge (D27).
+    named after ``battery_seed``, and ``charging`` sets when robots charge (D27). With
+    ``breakdowns`` (traffic and ordered execution), a robot entering a corridor can break down
+    there for a repair time, drawn like a delay from its own stream named after
+    ``breakdown_seed``; breakdowns are announced, and ``recovery`` sets the response (D28).
     """
     if max_tick is not None and max_tick < 0:
         raise ValueError(f"max_tick must be non-negative, got {max_tick}")
@@ -174,6 +186,10 @@ def simulate(
         raise ValueError("batteries need traffic=True: chargers are shared resources")
     if battery is None and charging is not ChargingPolicy.WHEN_LOW:
         raise ValueError("a charging policy needs a battery")
+    if breakdowns.probability > 0 and (not traffic or execution is not ExecutionPolicy.ORDERED):
+        raise ValueError("breakdowns need traffic=True and ordered execution")
+    if breakdowns.probability == 0 and recovery is not Recovery.WAIT:
+        raise ValueError("a recovery policy needs breakdowns")
     return _Simulation(
         scenario,
         policy,
@@ -186,6 +202,9 @@ def simulate(
         battery,
         battery_seed,
         charging,
+        breakdowns=breakdowns,
+        breakdown_seed=breakdown_seed,
+        recovery=recovery,
     ).run()
 
 
@@ -232,6 +251,7 @@ class _Cursor:
     stops: tuple[int, ...]  # visits where the robot serves, or holds (the last)
     index: int = 0  # the visit it is at, or the one it left while in the corridor after it
     in_corridor: bool = False
+    known_reach: int = 0  # in the corridor: when it reaches the end, as far as anyone knows
 
 
 _Event = _Release | _PhaseEnd | _DecisionRound | _Wake | _Depart | _Reach
@@ -253,6 +273,10 @@ class _Simulation:
         battery: BatterySpec | None = None,
         battery_seed: int = 0,
         charging: ChargingPolicy = ChargingPolicy.WHEN_LOW,
+        *,
+        breakdowns: DelayModel = NO_DELAYS,
+        breakdown_seed: int = 0,
+        recovery: Recovery = Recovery.WAIT,
     ) -> None:
         self.scenario = scenario
         self.policy = policy
@@ -298,6 +322,12 @@ class _Simulation:
             r.robot_id: random.Random(f"{delay_seed}:delays:{r.robot_id}") for r in scenario.robots
         }
         self._order = ResourceOrder() if traffic and execution is ExecutionPolicy.ORDERED else None
+        self._breakdowns, self._recovery = breakdowns, recovery
+        self._breakdown_streams = {
+            r.robot_id: random.Random(f"{breakdown_seed}:breakdowns:{r.robot_id}")
+            for r in scenario.robots
+        }
+        self._breakdown_count = self._breakdown_ticks = 0
         self._waiting: dict[RobotId, Resource] = {}  # robots waiting for a resource to free up
         self._decide = False  # did something happen this tick that the policy should see?
         self._last_prune = 0
@@ -455,8 +485,18 @@ class _Simulation:
         track = self._tracks[robot_id]
         track[-1] = Visit(track[-1].node, track[-1].arrive, self.now)
         cursor.in_corridor = True
+        ticks = self.travel_times.edge_ticks(here, there)
         extra = self._delays.draw(self._delay_streams[robot_id])
-        self._push(self.now + self.travel_times.edge_ticks(here, there) + extra, _Reach(robot_id))
+        repair = 0
+        if self._breakdowns.probability > 0:
+            repair = self._breakdowns.draw(self._breakdown_streams[robot_id])
+        cursor.known_reach = self.now + ticks + repair  # a delay is not announced; a repair is
+        self._push(self.now + ticks + extra + repair, _Reach(robot_id))
+        if repair:
+            self._breakdown_count += 1
+            self._breakdown_ticks += repair
+            if self._recovery is not Recovery.WAIT:
+                self._retime_all()
 
     def _reach(self, robot_id: RobotId) -> None:
         """Enter the node at the end of the corridor, if it is free in the planned order;
@@ -707,6 +747,81 @@ class _Simulation:
             self._order.add(robot_id, path, include_start=False)
         self._wake_at(releases)
 
+    # --- recovery from breakdowns (D28) ---------------------------------------------------------
+
+    def _retime_all(self) -> None:
+        """Re-time every robot's remaining plan from the current state (D28), and rebuild the
+        reservation table, the planned order and the predicted times from the result."""
+        assert self.traffic is not None and self._order is not None
+        moving = [robot_id for robot_id in self.robots if robot_id in self._cursors]
+        plans, progress, dwell = {}, {}, {}
+        for robot_id in moving:
+            cursor = self._cursors[robot_id]
+            here = self._tracks[robot_id][-1]  # the visit it is at, or the one it just left
+            plans[robot_id] = TimedPath(cursor.path.visits[cursor.index :])
+            if cursor.in_corridor:
+                progress[robot_id] = Progress(here.arrive, here.depart, cursor.known_reach)
+            else:
+                robot = self.robots[robot_id]
+                serving = robot.phase in (RobotPhase.LOADING, RobotPhase.UNLOADING)
+                ready = robot.until_tick if serving and robot.until_tick is not None else 0
+                progress[robot_id] = Progress(here.arrive, ready=ready)
+            dwell[robot_id] = {
+                i - cursor.index: ticks
+                for i, ticks in self._services(robot_id).items()
+                if i > cursor.index
+            }
+        retimed = retime(
+            plans,
+            progress,
+            self.travel_times,
+            now=self.now,
+            left_at=self._order.left_at,
+            min_dwell=dwell,
+        )
+        table = self.traffic.table
+        for robot_id in moving:
+            table.release(robot_id)
+        table.prune(self.now)
+        for robot_id in moving:
+            self._adopt(robot_id, retimed[robot_id])
+
+    def _services(self, robot_id: RobotId) -> dict[int, int]:
+        """The service time at each stop visit of the robot's plan."""
+        plan = self._plans[robot_id]
+        if isinstance(plan, PlannedJob):
+            pickup, dropoff, _ = plan.stop_visits
+            return {pickup: self.scenario.load_ticks, dropoff: self.scenario.unload_ticks}
+        return {}
+
+    def _adopt(self, robot_id: RobotId, remaining: TimedPath) -> None:
+        """Make ``remaining`` the robot's plan from its current visit on: reserve it, queue it,
+        and update every time predicted from the plan. Its route is the same as before."""
+        assert self.traffic is not None and self._order is not None
+        cursor = self._cursors[robot_id]
+        path = TimedPath(cursor.path.visits[: cursor.index] + remaining.visits)
+        cursor.path = path
+        self.traffic.table.reserve(robot_id, remaining)
+        self._order.requeue(robot_id, remaining, in_corridor=cursor.in_corridor)
+        plan = self._plans[robot_id]
+        at = [path.visits[i].arrive for i in cursor.stops]
+        if isinstance(plan, PlannedJob):
+            plan = dataclasses.replace(
+                plan, path=path, pickup_tick=at[0], dropoff_tick=at[1], holding_tick=at[2]
+            )
+        else:
+            plan = dataclasses.replace(plan, path=path, holding_tick=at[0])
+        self._plans[robot_id] = plan
+        self.traffic.ready[robot_id] = (plan.holding_tick, path.end.node)
+        robot = self.robots[robot_id]
+        if robot.phase.is_travelling and robot.until_tick is not None:
+            stop = {RobotPhase.TO_PICKUP: 0, RobotPhase.TO_DROPOFF: 1}.get(robot.phase, -1)
+            arrival = at[stop]
+            if arrival > robot.until_tick:
+                self._set(robot.postpone(arrival))
+        pickups = {order.pickup for order in self.pending.values()}
+        self._wake_at([v.depart + 1 for v in remaining.visits if v.node in pickups])
+
     # --- batteries (D26) ----------------------------------------------------------------------
 
     def _is_charger(self, node: NodeId) -> bool:
@@ -953,6 +1068,8 @@ class _Simulation:
             moves_out_of_the_way=self.moves,
             deferred_assignments=self.deferred,
             decision_seconds=tuple(self._decision_seconds),
+            breakdowns=self._breakdown_count,
+            breakdown_ticks=self._breakdown_ticks,
             battery=self._energy_model is not None,
             charging_trips=self._charging_trips,
             top_up_trips=self._top_ups,

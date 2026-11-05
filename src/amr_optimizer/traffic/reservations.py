@@ -82,6 +82,14 @@ class ReservationTable:
             bisect.insort(entries, Reservation(hold.start, tick - 1, robot))
         return node
 
+    def release(self, robot: RobotId) -> None:
+        """Remove every reservation of ``robot``, its hold included, so that its plan can be
+        reserved again with new times (re-timing, D28)."""
+        self._holds.pop(robot, None)
+        for resource, entries in self._by_resource.items():
+            if any(entry.robot == robot for entry in entries):
+                self._by_resource[resource] = [e for e in entries if e.robot != robot]
+
     def prune(self, before: int) -> None:
         """Forget reservations that ended before tick ``before``. They cannot affect any plan
         that starts at ``before`` or later."""

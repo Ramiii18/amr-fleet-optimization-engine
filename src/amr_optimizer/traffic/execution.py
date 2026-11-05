@@ -53,6 +53,14 @@ class ExecutionPolicy(Enum):
     ORDERED = "ordered"  # keep the planned order of robots at every node and corridor
 
 
+class Recovery(Enum):
+    """What the fleet does when a breakdown is announced (D28)."""
+
+    WAIT = "wait"  # nothing: robots behind the broken one wait (ordered execution)
+    RETIME = "retime"  # re-time every plan, so that new plans know about the breakdown
+    REPLAN = "replan"  # re-time, then replan every delayed robot
+
+
 @dataclass(frozen=True, slots=True)
 class DelayModel:
     """Each time a robot drives an edge, with probability ``probability`` it takes extra time,
@@ -306,6 +314,23 @@ class ResourceOrder:
         for before, after in itertools.pairwise(visits):
             self._insert(Corridor.between(before.node, after.node), before.depart, robot)
             self._insert(after.node, after.arrive, robot)
+
+    def requeue(self, robot: RobotId, path: TimedPath, *, in_corridor: bool) -> None:
+        """Replace ``robot``'s queued uses by those of ``path``, its remaining plan with new
+        times: from the node it stands on, or from the corridor after that node if it is in it.
+
+        The new times must keep the order of robots at every resource (re-timing does, D28) or
+        come from a plan reserved against all others (replanning).
+        """
+        for resource, queue in self._queues.items():
+            if any(entry[2] == robot for entry in queue):
+                self._queues[resource] = [entry for entry in queue if entry[2] != robot]
+        self.add(robot, path, include_start=not in_corridor)
+
+    @property
+    def left_at(self) -> Mapping[Resource, int]:
+        """The tick each resource was last left."""
+        return self._left_at
 
     def next_user(self, resource: Resource) -> RobotId | None:
         queue = self._queues.get(resource)

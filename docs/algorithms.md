@@ -1168,6 +1168,42 @@ state, in the planned order, assuming no further delays.
 - **Mutations.** Removing the node order or the corridor order from `retime` makes the oracle fail.
   Removing the clearance after robots that have left fails a hand case.
 
+**Breakdowns in the simulator (P3.2).** `simulate(..., breakdowns=..., recovery=...)` needs traffic
+and ordered execution.
+- **When a breakdown happens.** When a robot enters a corridor, it draws a repair time from its own
+  seeded stream, with the same model as delays: a share of edge traversals, and a uniform range of
+  ticks. A broken robot stays in its corridor for the repair, and holds it in both directions.
+- **What is announced.** The repair is announced at once; a delay on the same edge is not. The
+  simulator records, for each robot in a corridor, when it is *known* to reach the end: the planned
+  travel time plus any repair, without the delay.
+- **`wait`.** Nothing else happens. Robots planned after the broken one, on its corridor and beyond,
+  wait (13.5). New plans are made against the old times, as if it had left on time.
+- **`retime`.** At every breakdown, every moving robot's remaining plan is re-timed from the state
+  of the simulation:
+  - where it stands or which corridor it is in;
+  - when it arrived;
+  - any service in progress;
+  - when each resource was last left.
+
+  Then the reservation table, the queues and every predicted time are rebuilt from the result:
+  phase ends, the planned ready times dispatch sees, and wake-ups for pickups that become free.
+  Stale reservations of robots that are now idle are pruned first.
+- **Why re-timing moves no robot by itself.** A re-timed departure is never later than when the robot
+  could actually leave: each term of it (planned time, arrival plus service, predecessors leaving
+  the corridor) is a lower bound on the real one, because delays only add. Only *new* plans, made
+  against the re-timed table, differ.
+- **Testing.**
+  - A ring map with scripted breakdowns: one robot breaks down for 30 s in the top corridor, and a
+    second robot is then sent the short way round, through that corridor.
+    - Under `wait`, the second robot's plan uses the broken robot's corridor and waits behind it:
+      pickup at tick 360.
+    - Under `retime`, its plan goes the long way round: pickup at tick 75.
+  - With every plan made at tick 0, `retime` reproduces `wait` exactly, trajectories and event log,
+    on 6 generated scenarios with breakdowns.
+  - Generated runs on two maps under both policies deliver every order with zero conflicts and are
+    reproducible. Breakdowns combine with batteries.
+  - Without breakdowns, the 72 committed M5 scaling runs reproduce exactly.
+
 ---
 
 ## 14. Interview notes

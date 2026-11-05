@@ -21,7 +21,8 @@ src/amr_optimizer/
   scenario/    model.py      Scenario: validated input of one simulation run
                generator.py  seeded order stream (Bernoulli arrivals), fleet placement
   sim/         simulator.py  discrete-event loop, executor, invariant checks; free flow or traffic;
-                             batteries and charging when low (Phase 2)
+                             batteries and charging; breakdowns, re-timing and recovery
+                             (Phase 2)
                traffic_control.py  plans jobs and moves against the reservation table (M4)
                policy.py     dispatch interface: DispatchSnapshot, Assignment, DispatchPolicy
                planner.py    TravelPlanner: cached shortest routes and travel ticks
