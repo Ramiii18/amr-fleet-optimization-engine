@@ -894,6 +894,17 @@ The independent checker of section 13.1 can therefore count conflicts in any run
   is identical.
 - **Free flow is unchanged.** The M2 comparison table reproduces exactly.
 
+### 13.4 Results: the cost of congestion
+
+See [benchmarks.md](benchmarks.md), "Traffic". In short:
+- **Safety.** With traffic, zero conflicts in 240 runs. In free flow, robots run into each other 61 to
+  554 times per run.
+- **Moderate load.** Traffic costs 5 to 12 s of mean completion time.
+- **High load.** It costs 132 s and 189 s for greedy, but 67 s for `cpsat-fair`.
+- **Planning matters more with traffic.** With traffic, `cpsat-fair` beats greedy by 97 s and 160 s
+  at high load, against 32 s and 38 s in free flow. Less empty driving means fewer robots in the
+  aisles, so fewer waits.
+
 ---
 
 ## 14. Interview notes
@@ -1041,6 +1052,29 @@ route or its goal, and prioritized planning has no way to undo that. Here, robot
 dead-end endpoints, and goals are endpoints that no one else holds or plans to visit. So no hold
 blocks a route or a goal, and every other reservation eventually ends. A plan therefore always
 exists. This is the well-formed infrastructure argument of Čáp et al. (ICAPS 2015).
+
+**What did adding traffic change in your conclusions?**
+Two things.
+- **Free-flow results were optimistic.** At high load, mean completion grew by about 40% (37% and 46%)
+  for the best planner, and up to double for greedy.
+- **The value of planning was understated.** In free flow, the best planner beat greedy by 38 s at 10
+  robots and 300 orders/h; with traffic, by 160 s.
+
+Less empty driving matters far more when every extra trip occupies aisles that others need. That is
+why the portfolio benchmarks run with traffic.
+
+**How do you know the traffic simulation is collision-free?**
+- Every run records each robot's full trajectory.
+- An independent checker, which shares nothing with the planner except the definition of
+  occupancy, compares every pair of robots on every node and corridor.
+- It found zero conflicts in all 276 runs with traffic: 36 test runs and 240 benchmark runs.
+- The same checker finds hundreds of conflicts per run in free flow, so it is not trivially silent.
+
+**Why prioritized planning rather than a fleet-wide optimum?**
+It is fast (milliseconds per job here) and, on well-formed layouts, never fails. Its weakness is
+first come, first served: a robot planned early can force long waits on later ones. Conflict-based
+search or priority-swapping schemes can do better, at a much higher cost per decision. They are in
+the Phase 2 backlog, to be compared against this baseline.
 
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and

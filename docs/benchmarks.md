@@ -357,3 +357,110 @@ The same limits as the M3.4 section apply: no congestion, availability predicted
 uniform demand, 20 seeds, and Windows only. In addition, the worst-first objective protects only the
 single order that has waited longest at each decision. Its effect on the tail beyond the maximum and
 the P95 is not measured.
+
+## Traffic: the cost of congestion (M4, 2026-11-05)
+
+**Command:** `.venv\Scripts\python.exe scripts\compare_traffic.py --jobs 8` with the defaults: 20 seeds,
+orders released for one hour.
+
+**Setup.**
+- The same map, robots, handling times, configurations and seeds as the M2 and M3 comparisons.
+- Each policy runs twice on each scenario:
+  - in free flow, where robots pass through each other, as in M2 and M3;
+  - with traffic, where every job is a timed itinerary that avoids every other robot's reservations,
+    ending at a free holding spot (D23, D24).
+- Policies: greedy, and the two worst-first planners of M3.
+- **"Conflicts per run"** counts pairs of robots in the same node or corridor at the same time, found
+  by the independent checker in the recorded trajectories.
+- **"Cost of traffic"** is the paired difference in mean completion time, with traffic minus free
+  flow, for the same policy.
+- **"vs greedy"** compares each policy with greedy in the same mode.
+
+```text
+Traffic comparison, 2026-11-05
+Environment: Python 3.13.1, Windows-11-10.0.26200-SP0, ortools 9.15.6755, amr-fleet-optimization-engine 0.0.1 (commit e0b2b91), 8 worker processes
+Settings: map large, orders released for 3600 s, seeds 0-19, 1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading
+
+| Robots | Orders/h | Policy | Mode | Utilization | Waiting s | Completion s | Completion P95 s | Completion max s | Empty share | Conflicts per run | Cost of traffic (95% CI) | vs greedy, same mode (95% CI) |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 5 | 100 | greedy | free flow | 60.9% | 51.6 | 119.5 | 180.7 | 216.0 | 47.3% | 75.9 |  | baseline |
+| 5 | 100 | greedy | traffic | 63.4% | 62.8 | 131.8 | 210.6 | 251.2 | 49.4% | 0.0 | +12.3 s [+9.8, +14.7] | baseline |
+| 5 | 100 | insertion-fair | free flow | 60.0% | 50.4 | 118.3 | 175.0 | 209.6 | 46.3% | 61.3 |  | -1.2 s [-1.9, -0.6] |
+| 5 | 100 | insertion-fair | traffic | 61.8% | 59.2 | 128.1 | 200.4 | 238.8 | 47.7% | 0.0 | +9.9 s [+7.8, +11.9] | -3.6 s [-5.5, -1.8] |
+| 5 | 100 | cpsat-fair | free flow | 59.9% | 50.6 | 118.5 | 176.7 | 202.3 | 46.2% | 61.1 |  | -1.0 s [-1.7, -0.3] |
+| 5 | 100 | cpsat-fair | traffic | 61.6% | 59.0 | 128.0 | 199.6 | 232.7 | 47.4% | 0.0 | +9.6 s [+7.5, +11.7] | -3.7 s [-5.3, -2.2] |
+| 5 | 150 | greedy | free flow | 89.5% | 144.5 | 212.0 | 357.4 | 414.9 | 49.4% | 126.3 |  | baseline |
+| 5 | 150 | greedy | traffic | 88.7% | 275.4 | 344.1 | 588.6 | 656.3 | 52.4% | 0.0 | +132.1 s [+100.0, +164.2] | baseline |
+| 5 | 150 | insertion-fair | free flow | 88.1% | 122.2 | 189.7 | 321.6 | 378.9 | 47.7% | 120.0 |  | -22.3 s [-30.4, -14.1] |
+| 5 | 150 | insertion-fair | traffic | 87.2% | 202.2 | 271.0 | 474.9 | 542.3 | 48.9% | 0.0 | +81.3 s [+59.9, +102.8] | -73.1 s [-92.0, -54.1] |
+| 5 | 150 | cpsat-fair | free flow | 87.7% | 112.9 | 180.4 | 304.2 | 334.6 | 47.0% | 95.3 |  | -31.6 s [-46.0, -17.1] |
+| 5 | 150 | cpsat-fair | traffic | 87.0% | 178.2 | 247.0 | 416.5 | 458.4 | 47.8% | 0.0 | +66.6 s [+47.8, +85.4] | -97.1 s [-123.4, -70.8] |
+| 10 | 200 | greedy | free flow | 57.7% | 41.6 | 108.9 | 150.5 | 190.2 | 45.7% | 304.9 |  | baseline |
+| 10 | 200 | greedy | traffic | 59.8% | 47.8 | 117.5 | 169.9 | 220.2 | 46.3% | 0.0 | +8.6 s [+7.1, +10.1] | baseline |
+| 10 | 200 | insertion-fair | free flow | 56.7% | 40.4 | 107.7 | 147.7 | 180.0 | 44.5% | 274.4 |  | -1.2 s [-1.6, -0.8] |
+| 10 | 200 | insertion-fair | traffic | 57.2% | 43.5 | 113.2 | 157.9 | 204.5 | 43.3% | 0.0 | +5.5 s [+4.2, +6.8] | -4.3 s [-5.2, -3.4] |
+| 10 | 200 | cpsat-fair | free flow | 56.7% | 40.4 | 107.7 | 147.0 | 173.5 | 44.5% | 279.1 |  | -1.2 s [-1.6, -0.8] |
+| 10 | 200 | cpsat-fair | traffic | 57.1% | 43.0 | 112.7 | 155.4 | 198.8 | 43.1% | 0.0 | +5.0 s [+4.1, +5.9] | -4.8 s [-5.9, -3.6] |
+| 10 | 300 | greedy | free flow | 90.8% | 114.8 | 182.4 | 285.0 | 342.4 | 49.3% | 553.6 |  | baseline |
+| 10 | 300 | greedy | traffic | 88.9% | 300.9 | 371.7 | 616.1 | 683.5 | 51.5% | 0.0 | +189.3 s [+155.2, +223.5] | baseline |
+| 10 | 300 | insertion-fair | free flow | 88.0% | 82.0 | 149.7 | 232.0 | 284.5 | 46.4% | 459.8 |  | -32.8 s [-44.7, -20.9] |
+| 10 | 300 | insertion-fair | traffic | 86.6% | 161.1 | 232.1 | 375.8 | 428.9 | 45.7% | 0.0 | +82.4 s [+61.8, +103.1] | -139.6 s [-164.1, -115.2] |
+| 10 | 300 | cpsat-fair | free flow | 87.6% | 77.1 | 144.7 | 215.8 | 242.4 | 45.8% | 458.8 |  | -37.7 s [-51.4, -24.0] |
+| 10 | 300 | cpsat-fair | traffic | 86.4% | 140.9 | 211.9 | 333.9 | 376.1 | 44.4% | 0.0 | +67.2 s [+49.5, +84.8] | -159.9 s [-189.6, -130.2] |
+
+With traffic: 0 conflicts in 240 runs; 0 robots moved out of the way; 0 assignments postponed to break a cycle.
+480 runs in 147.3 s.
+Every order was delivered in every run.
+```
+
+### Reading the results
+
+- **Traffic management works.** The 240 runs with traffic have zero conflicts, as checked by the
+  independent checker, and deliver every order. The free-flow rows reproduce the M2 and M3 tables
+  exactly.
+- **Free flow is far from collision-free.** It averages 61 to 76 conflicts per run with 5 robots at
+  100 orders/h, and 459 to 554 with 10 robots at 300 orders/h. This table counts conflicts without
+  their kinds. In eight single-seed probe runs during development, robots following each other along a
+  corridor were the most common kind in six, and robots sharing a node in the other two.
+- **The cost of congestion depends on load:**
+  - at moderate load (about 60% utilization), traffic adds 5 to 12 s of mean completion time;
+  - at high load it adds 132 s (5 robots) and 189 s (10 robots) for greedy, but only 67 s for
+    `cpsat-fair` in both configurations. Waits multiply when the fleet is nearly saturated, because
+    every wait also delays the queue behind it.
+- **Planning matters much more with traffic.** At high load, `cpsat-fair` beats greedy by:
+  - 97.1 s [70.8, 123.4] at 5 robots and 150 orders/h, against 31.6 s in free flow;
+  - 159.9 s [130.2, 189.6] at 10 robots and 300 orders/h, against 37.7 s in free flow.
+
+  Greedy's mean completion with traffic at 10 robots and 300 orders/h is 371.7 s, double its
+  free-flow value. Its worst case is 683.5 s. `insertion-fair` gets most of the way. CP-SAT's
+  estimates against greedy are another 20 to 24 s better; that is the difference of two paired
+  estimates, not a separately tested comparison. Less empty travel means fewer robots in the aisles,
+  so fewer waits for everyone.
+- **Ordering of policies is unchanged at moderate load**: the planners stay a few seconds ahead of
+  greedy (3.6 to 4.8 s with traffic).
+- **Moving robots out of the way and breaking cycles never happened** in these 240 runs. Holding spots
+  avoid pending pickups, so the rule is rarely needed. It is exercised by the hand tests instead.
+
+### What this means
+
+The free-flow numbers of M2 and M3 were optimistic, and their ranking of policies understated the
+value of planning. With realistic contention for aisles and stations, the choice of dispatch policy
+decides whether the fleet copes with high load: greedy's mean completion doubles, while
+`cpsat-fair`'s grows by about 40%.
+
+### What this does not show
+
+- **The cost of traffic bundles two effects:**
+  - waiting for other robots;
+  - the short drive to a holding spot after every delivery, which free flow doesn't make.
+
+  They are not separated here.
+- **The traffic model is conservative (D23).** A corridor holds one robot even when two could follow
+  each other safely, so some of the cost is a modelling choice.
+- **Prioritized planning is first come, first served.** A fleet-wide optimiser, such as conflict-based
+  search, or a smarter priority order could reduce waits further. Not tried.
+- **Execution is exact.** Robots are never delayed, so plans never break. Real delays would need an
+  execution policy that keeps the planned order at each resource (Phase 2).
+- **The planners still estimate future trips in free flow.** Only the availability of busy robots
+  comes from their planned itineraries. Traffic-aware cost estimates could improve them.
+- **Scope.** One map, uniform demand, 20 seeds, Windows only.

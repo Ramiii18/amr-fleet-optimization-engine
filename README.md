@@ -6,8 +6,9 @@ A Python engine for dispatching transport orders to a fleet of autonomous mobile
 planning routes on a warehouse graph, and managing traffic between robots, evaluated in a
 reproducible simulation.
 
-> **Status:** milestones M1 (routing library), M2 (simulator, dispatch policies, KPIs) and M3
-> (look-ahead and multi-order planning with CP-SAT) are complete. Next is M4: traffic management.
+> **Status:** milestones M1 (routing library), M2 (simulator, dispatch policies, KPIs), M3
+> (look-ahead and multi-order planning with CP-SAT) and M4 (traffic management) are complete. Next is
+> M5: portfolio benchmarks and visualization.
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning
 > project. It does not control physical robots and has not been deployed in any real fleet.
 
@@ -28,7 +29,9 @@ reproducible simulation.
 - **Traffic (M4, `--traffic`):** robots reserve nodes and corridors and plan each whole job as one
   timed path around all others (safe-interval path planning). They wait where needed, never collide,
   and park on free dead-end spots. Without it, robots drive in free flow and pass through each other.
-  An independent checker counts the collisions in either mode.
+  An independent checker counts the collisions in either mode: hundreds per hour in free flow at high
+  load, none with traffic. Traffic made the best planner's lead over greedy grow from 38 s to 160 s
+  at high load; see [benchmarks.md](docs/benchmarks.md).
 - **Dispatch (M2):** greedy (oldest order, nearest robot) and optimal assignment (Hungarian problem,
   solved with scipy), with optional decision rounds.
 - **KPIs and comparison (M2):** waiting, completion (mean, P95 and maximum), utilization and empty

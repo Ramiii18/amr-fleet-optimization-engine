@@ -10,7 +10,7 @@ quality dropping.
 | **M1** Routing library | Warehouse graph, Dijkstra, A*, map generator, JSON maps, tests, comparison | **Done** (2026-11-03) |
 | **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | **Done** (2026-11-04) |
 | **M3** Optimization | Look-ahead and multi-order sequencing over a bounded horizon: insertion heuristic and CP-SAT, compared in simulation | **Done** (2026-11-05) |
-| **M4** Traffic v0.2 | Reservation table, safe-interval path planning (SIPP), prioritized planning, conflict checking, holding spots, measured cost of congestion | In progress (planned 2026-11-05) |
+| **M4** Traffic v0.2 | Reservation table, safe-interval path planning (SIPP), prioritized planning, conflict checking, holding spots, measured cost of congestion | **Done** (2026-11-05) |
 | **M5** Portfolio v1 | Benchmarks at 3–5, 10 and 25 robots, documentation, visualization, honest limitations | Not started |
 
 **MVP definition (M2):** the engine takes a synthetic warehouse map and a seeded stream of transport orders
@@ -183,10 +183,13 @@ dispatch policies are then compared again, with and without traffic, to measure 
 3. **Traffic-aware simulator.** Done 2026-11-05: itineraries planned at assignment, holding spots,
    moves off needed endpoints, cycle breaking, and trajectories recorded in both modes. Every
    generated test run with traffic has zero conflicts by the independent checker.
-4. **Comparison.** Every policy with and without traffic, on paired seeds. The planning policies use
-   the planned availability of busy robots.
+4. **Comparison.** Done 2026-11-05: every policy with and without traffic, on paired seeds
+   ([benchmarks.md](benchmarks.md)). The planning policies use the planned availability of busy
+   robots.
 5. **Stretch, else Phase 2.** Mutex zones (groups of nodes and corridors with capacity 1), and random
-   delays with an execution policy that keeps the planned order of robots at each resource.
+   delays with an execution policy that keeps the planned order of robots at each resource. **Moved to
+   Phase 2** (see the backlog): the core increments answered M4's question, and these two are
+   extensions of it.
 
 **Acceptance criteria:**
 - SIPP's arrival time equals the brute-force optimum on at least 200 small random instances, and its
@@ -197,7 +200,39 @@ dispatch policies are then compared again, with and without traffic, to measure 
 - The comparison reports each policy's cost of congestion with paired confidence intervals. A planning
   failure, which the design rules out, would stop the run with an error rather than be hidden.
 
+## M4 acceptance
+
+- **SIPP equals the brute-force optimum on at least 200 small instances, and never conflicts with the
+  reservations:** met. 300 random grids: 288 possible itineraries with equal arrival times, and 12
+  impossible ones on which both agree.
+- **Head-on, swap, intersection and station contention tested by hand:**
+  - met for the conflict checker (head-on, swap, following, intersection crossing, holds);
+  - met for the simulator with traffic: crossing robots, station contention, moving out of the way,
+    and a cycle. Each matches a hand-derived timeline tick for tick, except the cycle, which is
+    checked for its outcome.
+- **With traffic, every run delivers every order, is reproducible and has zero conflicts:** met. 36
+  generated test runs, and the 240 runs with traffic of the comparison.
+- **Cost of congestion with paired intervals; planning failures stop the run:** met. Planning
+  failures raise an error, and none occurred.
+- **Stretch goals (mutex zones, delays):** not done, moved to Phase 2.
+
+**Finding:**
+- The cost of traffic is 5–12 s at moderate load, and 67–189 s at high load.
+- Planning policies cut it by half or more at high load. At 10 robots and 300 orders/h, `cpsat-fair`
+  beats greedy by 160 s with traffic, against 38 s in free flow.
+
+**What shapes M5:**
+- The portfolio benchmarks should use traffic mode, because free flow overstates performance and
+  understates the value of planning.
+- The 25-robot benchmark of the original plan will test whether prioritized planning and the station
+  layout still cope.
+
 ## Phase 2 backlog (after M5, or earlier if time allows)
+
+- **From M4:** mutex zones (groups of nodes and corridors with capacity 1); random delays with an
+  execution policy that keeps the planned order of robots at each resource (an action dependency
+  graph); traffic-aware cost estimates for the planners; a fleet-wide path planner (for example
+  conflict-based search) instead of prioritized planning.
 
 - Battery model, charging policy, charger queueing
 - Robot faults, blocked corridors, event-driven replanning

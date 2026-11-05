@@ -2,7 +2,7 @@
 
 This is a living document. It describes what exists **now** and marks everything else as planned.
 
-## Current state (M1, M2 and M3 complete, 2026-11-05)
+## Current state (M1 to M4 complete, 2026-11-05)
 
 ```text
 src/amr_optimizer/
@@ -70,7 +70,7 @@ planner (D20). Everything else is the standard library.
 | `sim` | Discrete-event kernel, plan executor, invariant checks, event log | **Exists** (M2) |
 | `dispatch` | Greedy, Hungarian, bounded-horizon planning (insertion, CP-SAT); later local search | **Exists** (M2: greedy, Hungarian; M3: planning model, insertion, CP-SAT) |
 | `metrics` | KPI computation | **Exists** (M2) |
-| `traffic` | Timed paths, reservations, conflict checking; next: SIPP planning (M4) | **Exists** (M4, in progress) |
+| `traffic` | Timed paths, reservations, conflict checking, SIPP itinerary planning | **Exists** (M4); mutex zones and delays in Phase 2 |
 | `energy`, `api`, `viz` | Battery model, FastAPI service, visualization | Phase 2 / M5 |
 
 Each package is created only when it has real code.
