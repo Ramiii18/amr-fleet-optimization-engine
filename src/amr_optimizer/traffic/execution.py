@@ -206,7 +206,7 @@ def retime(
     ``plans[r]`` is robot r's remaining plan, from the visit given by ``progress[r]``. Its planned
     times give the order of robots at every node and corridor; they must therefore come from
     plans that are mutually conflict-free, as every plan reserved in one table is. No pending
-    event happens before ``now``, no robot leaves a visit before its planned time, and
+    event happens before ``now``, no robot reaches or leaves a visit before its planned time, and
     ``min_dwell[r][i]`` is the service at robot r's later visit i. ``left_at`` gives when each
     resource was last left by a robot that is done with it: a node needs one tick of clearance.
 
@@ -259,7 +259,7 @@ def retime(
             tick = depart[robot, i - 1] + travel_times.edge_ticks(before.node, visit.node)
             if i == 1 and state.departed is not None:
                 tick = max(tick, state.ready)
-            tick = max(tick, now, left_at.get(visit.node, -1) + 1)
+            tick = max(tick, visit.arrive, now, left_at.get(visit.node, -1) + 1)
             for _, other, j in node_users[visit.node][: node_rank[robot, i]]:
                 tick = max(tick, depart[other, j] + 1)
             arrive[robot, i] = tick

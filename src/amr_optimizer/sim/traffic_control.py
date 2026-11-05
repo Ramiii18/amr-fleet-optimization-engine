@@ -140,11 +140,11 @@ class TrafficControl:
             Stop(holding),
         ]
         itinerary = self._plan(robot.robot_id, start, now, stops)
-        cuts = self._stop_visits(itinerary, stops)
+        cuts = self.stop_visits(itinerary, stops)
         visits = itinerary.path.visits
-        to_pickup = self._route(visits[: cuts[0] + 1])
-        to_dropoff = self._route(visits[cuts[0] : cuts[1] + 1])
-        to_holding = self._route(visits[cuts[1] : cuts[2] + 1])
+        to_pickup = self.route_of(visits[: cuts[0] + 1])
+        to_dropoff = self.route_of(visits[cuts[0] : cuts[1] + 1])
+        to_holding = self.route_of(visits[cuts[1] : cuts[2] + 1])
         pickup_tick, dropoff_tick, holding_tick = itinerary.stop_ticks
         self.ready[robot.robot_id] = (holding_tick, holding)
         return PlannedJob(
@@ -174,7 +174,7 @@ class TrafficControl:
         self.ready[robot.robot_id] = (itinerary.stop_ticks[0], holding)
         return PlannedMove(
             itinerary.path,
-            self._route(itinerary.path.visits),
+            self.route_of(itinerary.path.visits),
             itinerary.stop_ticks[0],
             _releases(itinerary.path, (start,)),
             (len(itinerary.path.visits) - 1,),
@@ -237,7 +237,7 @@ class TrafficControl:
         return self._distances[source]
 
     @staticmethod
-    def _stop_visits(itinerary: Itinerary, stops: Sequence[Stop]) -> list[int]:
+    def stop_visits(itinerary: Itinerary, stops: Sequence[Stop]) -> list[int]:
         """The index of the visit at each stop: where the robot is when its service begins."""
         visits = itinerary.path.visits
         cuts, index = [], 0
@@ -250,7 +250,7 @@ class TrafficControl:
             cuts.append(index)
         return cuts
 
-    def _route(self, visits: Sequence[Visit]) -> Route:
+    def route_of(self, visits: Sequence[Visit]) -> Route:
         nodes = tuple(visit.node for visit in visits)
         length = sum(self._edge_length(u, v) for u, v in itertools.pairwise(nodes))
         return Route(nodes, length)

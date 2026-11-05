@@ -88,6 +88,7 @@ from amr_optimizer.traffic import (
     Recovery,
     Resource,
     ResourceOrder,
+    Stop,
     TimedPath,
     Visit,
     retime,
@@ -123,6 +124,7 @@ class SimulationResult:
     deferred_assignments: int = 0  # assignments postponed to break a cycle (traffic)
     breakdowns: int = 0  # breakdowns while driving (D28)
     breakdown_ticks: int = 0  # robot-ticks of repairs
+    replans: int = 0  # new plans adopted for robots already executing one (D28)
     decision_seconds: tuple[float, ...] = ()  # wall time of each decision; see below
     battery: bool = False
     charging_trips: int = 0  # drives to a charger by robots below the low threshold
@@ -231,9 +233,11 @@ class _Wake:
 
 @dataclass(frozen=True, slots=True)
 class _Depart:
-    """A robot tries to leave its node for the next one on its path (traffic only)."""
+    """A robot tries to leave its node for the next one on its path (traffic only). Replanning
+    cancels a pending departure by moving the robot to a new epoch (D28)."""
 
     robot_id: RobotId
+    epoch: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,7 +331,8 @@ class _Simulation:
             r.robot_id: random.Random(f"{breakdown_seed}:breakdowns:{r.robot_id}")
             for r in scenario.robots
         }
-        self._breakdown_count = self._breakdown_ticks = 0
+        self._breakdown_count = self._breakdown_ticks = self._replans = 0
+        self._epochs: dict[RobotId, int] = {}  # see `_Depart`
         self._waiting: dict[RobotId, Resource] = {}  # robots waiting for a resource to free up
         self._decide = False  # did something happen this tick that the policy should see?
         self._last_prune = 0
@@ -391,7 +396,8 @@ class _Simulation:
 
     def _handle(self, event: _Event) -> None:
         if isinstance(event, _Depart):
-            self._depart(event.robot_id)
+            if event.epoch == self._epochs.get(event.robot_id, 0):
+                self._depart(event.robot_id)
             return
         if isinstance(event, _Reach):
             self._reach(event.robot_id)
@@ -472,6 +478,12 @@ class _Simulation:
         visits = cursor.path.visits
         if cursor.in_corridor or cursor.index + 1 >= len(visits):
             raise SimulationInvariantError(f"robot {robot_id!r}: nowhere to depart to")
+        if self.now < visits[cursor.index].depart:
+            # Never before the planned time, even if this departure was scheduled before the
+            # plan was re-timed later (D28): robots are never early, so a robot standing on a
+            # resource is never queued behind one planned after it.
+            self._push(visits[cursor.index].depart, self._departure(robot_id))
+            return
         here, there = visits[cursor.index].node, visits[cursor.index + 1].node
         if self._order is not None and not self._order.may_enter_corridor(here, there, robot_id):
             self._waiting[robot_id] = Corridor.between(here, there)
@@ -496,7 +508,7 @@ class _Simulation:
             self._breakdown_count += 1
             self._breakdown_ticks += repair
             if self._recovery is not Recovery.WAIT:
-                self._retime_all()
+                self._recover()
 
     def _reach(self, robot_id: RobotId) -> None:
         """Enter the node at the end of the corridor, if it is free in the planned order;
@@ -509,7 +521,10 @@ class _Simulation:
             if earliest is None:  # a robot planned earlier still has to pass
                 self._waiting[robot_id] = there
                 return
-            if earliest > self.now:  # the node was left this tick: one tick of clearance
+            # One tick of clearance after the robot ahead; and never before the planned time
+            # (re-timed plans can plan a wait at the end of a corridor, D28).
+            earliest = max(earliest, visits[cursor.index + 1].arrive)
+            if earliest > self.now:
                 self._push(earliest, _Reach(robot_id))
                 return
             corridor = Corridor.between(here, there)
@@ -526,7 +541,7 @@ class _Simulation:
             self._decide = True
             self._arrive_at_stop(robot_id)
         else:
-            self._push(max(self.now, visits[cursor.index].depart), _Depart(robot_id))
+            self._push(max(self.now, visits[cursor.index].depart), self._departure(robot_id))
 
     def _let_next_in(self, resource: Resource, robot_id: RobotId | None) -> None:
         """Wake the robot that is next in line for ``resource``, if it is waiting for it."""
@@ -534,7 +549,7 @@ class _Simulation:
             return
         del self._waiting[robot_id]
         if isinstance(resource, Corridor):
-            self._push(self.now, _Depart(robot_id))
+            self._push(self.now, self._departure(robot_id))
         else:
             self._push(self.now + 1, _Reach(robot_id))
 
@@ -570,7 +585,9 @@ class _Simulation:
     def _depart_after_service(self, robot_id: RobotId) -> None:
         """After loading or unloading, leave no earlier than planned."""
         cursor = self._cursors[robot_id]
-        self._push(max(self.now, cursor.path.visits[cursor.index].depart), _Depart(robot_id))
+        self._push(
+            max(self.now, cursor.path.visits[cursor.index].depart), self._departure(robot_id)
+        )
 
     def _route(self, source: NodeId, target: NodeId) -> tuple[Route, int]:
         route, ticks = self.planner.route(source, target), self.planner.ticks(source, target)
@@ -715,7 +732,9 @@ class _Simulation:
             route = job.to_pickup
             until = job.pickup_tick if len(route.nodes) > 1 else self.now + self.scenario.load_ticks
             if len(route.nodes) > 1:
-                self._push(max(self.now, job.path.visits[0].depart), _Depart(robot.robot_id))
+                self._push(
+                    max(self.now, job.path.visits[0].depart), self._departure(robot.robot_id)
+                )
         new = robot.assign(order, route, tick=self.now, until_tick=until)
         self._log(EventKind.ASSIGNED, order, robot.node, robot.robot_id, route.length_m)
         if new.phase is RobotPhase.LOADING:
@@ -729,7 +748,7 @@ class _Simulation:
         self._follow(robot_id, move, move.path, move.stop_visits, move.releases)
         self.moves += 1
         self._set(robot.reposition(move.route, tick=self.now, until_tick=move.holding_tick))
-        self._push(max(self.now, move.path.visits[0].depart), _Depart(robot_id))
+        self._push(max(self.now, move.path.visits[0].depart), self._departure(robot_id))
 
     def _follow(
         self,
@@ -748,6 +767,137 @@ class _Simulation:
         self._wake_at(releases)
 
     # --- recovery from breakdowns (D28) ---------------------------------------------------------
+
+    def _recover(self) -> None:
+        """Respond to a breakdown: re-time every plan, then, with `Recovery.REPLAN`, replan
+        every robot that the re-timing made later, in the order of its next event."""
+        before = {robot_id: self._last_stop_arrival(robot_id) for robot_id in self._cursors}
+        self._retime_all()
+        if self._recovery is Recovery.REPLAN:
+            delayed = [
+                robot_id
+                for robot_id in self.robots
+                if robot_id in self._cursors
+                and self._last_stop_arrival(robot_id) > before[robot_id]
+            ]
+            delayed.sort(key=lambda robot_id: self._anchor(robot_id)[1])
+            for robot_id in delayed:
+                self._replan(robot_id)
+        # A replanned robot may have left a queue: the robot behind it, if it is waiting, may
+        # now be first, and nobody else will tell it.
+        assert self._order is not None
+        for robot_id, resource in list(self._waiting.items()):
+            if self._order.next_user(resource) == robot_id:
+                self._let_next_in(resource, robot_id)
+
+    def _last_stop_arrival(self, robot_id: RobotId) -> int:
+        cursor = self._cursors[robot_id]
+        return cursor.path.visits[cursor.stops[-1]].arrive
+
+    def _anchor(self, robot_id: RobotId) -> tuple[int, int]:
+        """Where a new plan for the robot starts: the visit it will next stand on, and the tick
+        from which it can leave from there. A robot in a corridor is committed to its end."""
+        cursor = self._cursors[robot_id]
+        if cursor.in_corridor:
+            index = cursor.index + 1
+            return index, cursor.path.visits[index].arrive
+        robot = self.robots[robot_id]
+        serving = robot.phase in (RobotPhase.LOADING, RobotPhase.UNLOADING)
+        start = robot.until_tick if serving and robot.until_tick is not None else self.now
+        return cursor.index, max(start, self.now)
+
+    def _replan(self, robot_id: RobotId) -> None:
+        """Plan the rest of the robot's itinerary again, from its anchor through its remaining
+        stops, against everyone else's current plans; keep the new plan only if it reaches the
+        remaining stops earlier (D28)."""
+        assert self.traffic is not None and self._order is not None
+        traffic, cursor = self.traffic, self._cursors[robot_id]
+        visits, last = cursor.path.visits, cursor.stops[-1]
+        anchor, start = self._anchor(robot_id)
+        if anchor == last:
+            return  # already heading for its last stop: nothing to choose
+        services = self._services(robot_id)
+        ahead = [i for i in cursor.stops if i > anchor or (i == anchor and cursor.in_corridor)]
+        stops = [Stop(visits[i].node, None if i == last else services[i]) for i in ahead]
+        current = TimedPath(visits[cursor.index :])
+        traffic.table.release(robot_id)
+        itinerary = traffic.planner.plan(traffic.table, visits[anchor].node, start, stops)
+        if itinerary is None or list(itinerary.stop_ticks) >= [visits[i].arrive for i in ahead]:
+            traffic.table.reserve(robot_id, current)  # no better plan: keep the re-timed one
+            return
+        new = list(itinerary.path.visits)
+        new[0] = Visit(new[0].node, visits[anchor].arrive, new[0].depart)
+        path = TimedPath(visits[:anchor] + tuple(new))
+        cuts = traffic.stop_visits(itinerary, stops)
+        cursor.stops = tuple(i for i in cursor.stops if i not in ahead) + tuple(
+            anchor + c for c in cuts
+        )
+        cursor.path = path
+        remaining = TimedPath(path.visits[cursor.index :])
+        traffic.table.reserve(robot_id, remaining)
+        self._order.requeue(robot_id, remaining, in_corridor=cursor.in_corridor)
+        self._rebuild_plan(robot_id)
+        self._replans += 1
+        serving = self.robots[robot_id].phase in (RobotPhase.LOADING, RobotPhase.UNLOADING)
+        if not cursor.in_corridor and not serving:
+            # Standing at a node, about to leave by the old route: leave by the new one instead.
+            self._waiting.pop(robot_id, None)
+            self._epochs[robot_id] = self._epochs.get(robot_id, 0) + 1
+            depart = path.visits[cursor.index].depart
+            self._push(max(self.now, depart), self._departure(robot_id))
+        if robot_id in self._arrival_level and self._energy_model is not None:
+            to_drive = itertools.pairwise(v.node for v in path.visits[cursor.index :])
+            cost = sum(self._energy_model.edge_cost(a, b) for a, b in to_drive)
+            self._arrival_level[robot_id] = self._energy[robot_id] - cost
+        pickups = {order.pickup for order in self.pending.values()}
+        self._wake_at(
+            [v.depart + 1 for v in remaining.visits if v.node in pickups and v.depart < FOREVER]
+        )
+
+    def _rebuild_plan(self, robot_id: RobotId) -> None:
+        """After a replan: the plan's drives, stop times and predicted ready time, and the
+        robot's current drive, from the robot's new path."""
+        assert self.traffic is not None
+        traffic, cursor = self.traffic, self._cursors[robot_id]
+        visits, plan = cursor.path.visits, self._plans[robot_id]
+        at = [visits[i].arrive for i in cursor.stops]
+        if isinstance(plan, PlannedJob):
+            p, d, h = cursor.stops
+            plan = dataclasses.replace(
+                plan,
+                path=cursor.path,
+                to_pickup=traffic.route_of(visits[: p + 1]),
+                to_dropoff=traffic.route_of(visits[p : d + 1]),
+                to_holding=traffic.route_of(visits[d : h + 1]),
+                pickup_tick=at[0],
+                dropoff_tick=at[1],
+                holding_tick=at[2],
+                stop_visits=(p, d, h),
+            )
+            drives = {
+                RobotPhase.TO_PICKUP: (plan.to_pickup, at[0]),
+                RobotPhase.TO_DROPOFF: (plan.to_dropoff, at[1]),
+                RobotPhase.REPOSITIONING: (plan.to_holding, at[2]),
+            }
+        else:
+            route = traffic.route_of(visits)
+            plan = dataclasses.replace(
+                plan,
+                path=cursor.path,
+                route=route,
+                holding_tick=at[0],
+                stop_visits=(cursor.stops[0],),
+            )
+            drives = {RobotPhase.REPOSITIONING: (route, at[0])}
+        self._plans[robot_id] = plan
+        traffic.ready[robot_id] = (plan.holding_tick, cursor.path.end.node)
+        robot = self.robots[robot_id]
+        if robot.phase in drives:
+            route, until = drives[robot.phase]
+            self._set(robot.reroute(route, until_tick=until))
+
+    def _departure(self, robot_id: RobotId) -> _Depart:
+        return _Depart(robot_id, self._epochs.get(robot_id, 0))
 
     def _retime_all(self) -> None:
         """Re-time every robot's remaining plan from the current state (D28), and rebuild the
@@ -820,7 +970,9 @@ class _Simulation:
             if arrival > robot.until_tick:
                 self._set(robot.postpone(arrival))
         pickups = {order.pickup for order in self.pending.values()}
-        self._wake_at([v.depart + 1 for v in remaining.visits if v.node in pickups])
+        self._wake_at(
+            [v.depart + 1 for v in remaining.visits if v.node in pickups and v.depart < FOREVER]
+        )
 
     # --- batteries (D26) ----------------------------------------------------------------------
 
@@ -898,7 +1050,7 @@ class _Simulation:
         move = self.traffic.plan_move(robot, self.now, pickups, target=charger)
         self._follow(robot_id, move, move.path, move.stop_visits, move.releases)
         self._set(robot.reposition(move.route, tick=self.now, until_tick=move.holding_tick))
-        self._push(max(self.now, move.path.visits[0].depart), _Depart(robot_id))
+        self._push(max(self.now, move.path.visits[0].depart), self._departure(robot_id))
         cost = sum(
             self._energy_model.edge_cost(a, b) for a, b in itertools.pairwise(move.route.nodes)
         )
@@ -992,8 +1144,10 @@ class _Simulation:
         result = {}
         for robot_id, track in self._tracks.items():
             last = track[-1]
-            end = Visit(last.node, last.arrive, max(last.arrive, self.now))
-            result[robot_id] = TimedPath((*track[:-1], end))
+            # A robot still at its last node stays there until the end of the run; one that has
+            # left it (in a corridor when a run is cut short) keeps its departure.
+            depart = last.depart if last.depart < FOREVER else max(last.arrive, self.now)
+            result[robot_id] = TimedPath((*track[:-1], Visit(last.node, last.arrive, depart)))
         return result
 
     # --- bookkeeping ---------------------------------------------------------------------------
@@ -1070,6 +1224,7 @@ class _Simulation:
             decision_seconds=tuple(self._decision_seconds),
             breakdowns=self._breakdown_count,
             breakdown_ticks=self._breakdown_ticks,
+            replans=self._replans,
             battery=self._energy_model is not None,
             charging_trips=self._charging_trips,
             top_up_trips=self._top_ups,

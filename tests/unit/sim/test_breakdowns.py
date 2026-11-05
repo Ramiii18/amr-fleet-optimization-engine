@@ -25,7 +25,7 @@ from amr_optimizer.domain import (
 )
 from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario
 from amr_optimizer.sim import SimulationResult, simulate
-from amr_optimizer.traffic import DelayModel, ExecutionPolicy, Recovery, path_conflicts
+from amr_optimizer.traffic import FOREVER, DelayModel, ExecutionPolicy, Recovery, path_conflicts
 from amr_optimizer.warehouse import (
     PRESETS,
     Edge,
@@ -39,7 +39,7 @@ from amr_optimizer.warehouse import (
 A, B, C, D = (NodeId(n) for n in "ABCD")
 P1, P3, X1, X2, X3, S = (NodeId(n) for n in ("P1", "P3", "X1", "X2", "X3", "S"))
 R1, R2 = RobotId("R1"), RobotId("R2")
-WAIT, RETIME = Recovery.WAIT, Recovery.RETIME
+WAIT, RETIME, REPLAN = Recovery.WAIT, Recovery.RETIME, Recovery.REPLAN
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,13 +107,15 @@ def _pickup_reached(result: SimulationResult, order: str) -> int:
 ORDERS = [TransportOrder(OrderId("O1"), X1, S, 0), TransportOrder(OrderId("O2"), X3, S, 15)]
 
 
-def _ring_run(recovery: Recovery) -> SimulationResult:
-    scenario = _scenario({R1: P1, R2: P3}, ORDERS)
+def _ring_run(
+    recovery: Recovery, orders: list[TransportOrder] = ORDERS, script: tuple[int, ...] = (0, 300)
+) -> SimulationResult:
+    scenario = _scenario({R1: P1, R2: P3}, orders)
     return simulate(
         scenario,
         GreedyDispatch(),
         traffic=True,
-        breakdowns=_scripted(0, 300),
+        breakdowns=_scripted(*script),
         recovery=recovery,
     )
 
@@ -136,6 +138,39 @@ def test_re_timing_lets_new_plans_avoid_the_broken_robot() -> None:
 
     assert [v.node for v in result.trajectories[R2].visits[:6]] == [P3, A, C, D, B, X3]
     assert _pickup_reached(result, "O2") == 75
+    assert result.all_delivered and _conflicts(result) == 0
+
+
+# Both orders at tick 0: both plans are made before any breakdown, so re-timing cannot help.
+BOTH_AT_ONCE = [TransportOrder(OrderId("O1"), X1, S, 0), TransportOrder(OrderId("O2"), X3, S, 0)]
+
+
+@pytest.mark.parametrize(("recovery", "pickup"), [(WAIT, 360), (RETIME, 360), (REPLAN, 61)])
+def test_replanning_detours_a_robot_planned_behind_the_broken_one(
+    recovery: Recovery, pickup: int
+) -> None:
+    # Departures: R1 leaves P1 at 0, R2 leaves P3 at 1, R1 leaves A at 10 and breaks down in the
+    # top corridor until 330. R2, planned behind it, waits at A from tick 11 and reaches X3 at
+    # 360. Replanned at the breakdown from A (its anchor: it is in the corridor P3 -> A), it
+    # takes the long way round instead and reaches X3 at 11 + 10 + 20 + 10 + 10 = 61.
+    result = _ring_run(recovery, BOTH_AT_ONCE, (0, 0, 300))
+
+    assert _pickup_reached(result, "O2") == pickup
+    assert result.replans == (1 if recovery is REPLAN else 0)
+    assert result.all_delivered and _conflicts(result) == 0
+
+
+@pytest.mark.parametrize(("recovery", "at_station"), [(WAIT, 352), (REPLAN, 75)])
+def test_replanning_lets_a_robot_go_ahead_of_a_broken_one(
+    recovery: Recovery, at_station: int
+) -> None:
+    # R2's first departure (P3 -> A, tick 1) breaks down until tick 311. R1 was planned to pass B
+    # after R2, on its way from X1 to the station, so without replanning it waits at X1 for R2.
+    # Replanned, it passes B before the broken robot arrives there.
+    result = _ring_run(recovery, BOTH_AT_ONCE, (0, 300))
+
+    visits = result.trajectories[R1].visits
+    assert next(v.arrive for v in visits if v.node == S) == at_station
     assert result.all_delivered and _conflicts(result) == 0
 
 
@@ -168,7 +203,7 @@ CASES = [(m, r, s) for m in MAPS for r in (3, 6) for s in range(3)]
 BREAKDOWNS = DelayModel(0.02, min_ticks=100, max_ticks=1200)  # 2% of edges, 10 s to 2 min
 
 
-@pytest.mark.parametrize("recovery", [WAIT, RETIME])
+@pytest.mark.parametrize("recovery", list(Recovery))
 @pytest.mark.parametrize(("map_name", "robots", "seed"), CASES)
 def test_generated_runs_with_breakdowns_deliver_everything_without_conflicts(
     map_name: str, robots: int, seed: int, recovery: Recovery
@@ -189,9 +224,50 @@ def test_generated_runs_with_breakdowns_deliver_everything_without_conflicts(
     result, again = run(), run()
 
     assert result.breakdowns > 0
-    assert result.all_delivered
+    assert result.all_delivered and result.end_tick < FOREVER
     assert _conflicts(result) == 0
     assert (result.log, result.trajectories) == (again.log, again.trajectories)
+
+
+def test_replanning_happens_in_the_generated_runs() -> None:
+    replans = 0
+    for map_name, robots, seed in CASES:
+        spec = ScenarioSpec(robots=robots, orders_per_hour=150, duration_s=1800)
+        scenario = generate_scenario(MAPS[map_name], spec, seed=seed)
+        result = simulate(
+            scenario,
+            GreedyDispatch(),
+            traffic=True,
+            breakdowns=BREAKDOWNS,
+            breakdown_seed=seed,
+            recovery=REPLAN,
+        )
+        replans += result.replans
+
+    assert replans > len(CASES)  # the generated tests exercise replanning, not just its absence
+
+
+@pytest.mark.parametrize("seed", [0, 1])
+def test_replanning_survives_heavy_breakdowns_and_delays_on_the_large_map(seed: int) -> None:
+    # A regression test: before replanning woke the robots it let through, these runs left a
+    # robot waiting for a node whose queue it already headed, and the fleet stopped.
+    graph = generate_grid_warehouse(PRESETS["large"])
+    scenario = generate_scenario(graph, ScenarioSpec(robots=10, orders_per_hour=300), seed=seed)
+
+    result = simulate(
+        scenario,
+        GreedyDispatch(),
+        traffic=True,
+        delays=DelayModel(0.2, min_ticks=10, max_ticks=50),
+        delay_seed=seed,
+        breakdowns=DelayModel(0.02, min_ticks=300, max_ticks=1800),
+        breakdown_seed=seed,
+        recovery=REPLAN,
+    )
+
+    assert result.replans > 0
+    assert result.all_delivered and result.end_tick < FOREVER
+    assert _conflicts(result) == 0
 
 
 @pytest.mark.parametrize("seed", range(6))
@@ -243,7 +319,7 @@ def test_breakdowns_combine_with_batteries() -> None:
         traffic=True,
         battery=BatterySpec(capacity_m=1200.0),
         breakdowns=BREAKDOWNS,
-        recovery=RETIME,
+        recovery=REPLAN,
     )
 
     assert result.breakdowns > 0 and result.charging_trips > 0

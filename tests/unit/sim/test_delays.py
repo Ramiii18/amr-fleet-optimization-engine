@@ -52,6 +52,22 @@ def test_only_a_travelling_robot_can_be_postponed_and_only_to_later() -> None:
         loading.postpone(20)
 
 
+def test_only_a_travelling_robot_can_be_rerouted_and_only_to_the_same_place() -> None:
+    order = TransportOrder(OrderId("O1"), B, C, 0)
+    driving = RobotState.idle(R1, A).assign(order, Route((A, B), 1.0), tick=0, until_tick=10)
+    detour = Route((A, C, B), 2.0)
+
+    rerouted = driving.reroute(detour, until_tick=8)
+    assert (rerouted.route, rerouted.until_tick, rerouted.phase) == (detour, 8, driving.phase)
+    with pytest.raises(RobotStateError, match="must end at"):
+        driving.reroute(Route((A, C), 1.0), until_tick=8)
+    with pytest.raises(RobotStateError, match="must start at"):
+        driving.reroute(Route((C, B), 1.0), until_tick=8)
+    loading = driving.arrive(tick=10, until_tick=15)
+    with pytest.raises(InvalidTransitionError, match="only a travelling robot"):
+        loading.reroute(detour, until_tick=20)
+
+
 def test_the_resource_order_lets_robots_in_by_planned_time() -> None:
     order = ResourceOrder()
     order.add(R1, TimedPath((Visit(A, 0, FOREVER),)), include_start=True)

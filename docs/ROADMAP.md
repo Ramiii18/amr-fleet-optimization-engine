@@ -442,7 +442,7 @@ another, and the two then wait for each other forever. Replanning therefore re-t
 2. **Breakdowns in the simulator.** Done 2026-11-05. A seeded breakdown model (a share of edge traversals, a
    repair time range); `wait` and `retime`. With every job assigned at the start, `retime` must
    reproduce `wait` exactly: re-timing alone moves no robot.
-3. **Replanning.** `replan`: robots in a corridor are committed to its end, so each delayed robot
+3. **Replanning.** Done 2026-11-05. `replan`: robots in a corridor are committed to its end, so each delayed robot
    replans from the next node it will stand on, through its remaining stops. Hand cases (a robot
    detours around a broken one and arrives earlier than by waiting) and generated runs (every
    order delivered, zero conflicts, reproducible).

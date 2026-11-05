@@ -556,3 +556,16 @@ local pass predicts a CI pass.
   next breakdown.
 - **A changed route changes no logged distance.** The distances in the event log are those planned at
   assignment and loading; the trajectories record what was actually driven.
+- **Robots are never early, now by rule (found in P3.3).**
+  - Ordered execution also relies on this: no robot reaches or leaves a visit before its planned
+    time. Then a robot standing on a resource always has a queue key no later than when it entered,
+    and no plan made afterwards can be queued ahead of it.
+  - Without re-timing this holds by itself. With replanning it does not: a re-timed plan can predict
+    a wait that disappears when the robot ahead is replanned faster, and a departure scheduled before
+    the re-timing would then come early.
+  - A stress test caught this: conflicts, and a re-timing that failed. The simulator now enforces
+    the rule at every departure and every node entry, and re-timing uses the planned arrival as a
+    lower bound, as it already used the planned departure.
+  - Without re-timing the rule never binds, and earlier results reproduce exactly.
+- **A replan can let a waiting robot through.** When a replanned robot leaves a queue, the robot
+  behind it may now be first. If that robot is waiting, it is woken; nothing else would wake it.

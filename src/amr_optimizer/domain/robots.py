@@ -231,6 +231,19 @@ class RobotState:
             )
         return replace(self, until_tick=until_tick)
 
+    def reroute(self, route: Route, *, until_tick: int) -> "RobotState":
+        """The same drive, from the same place to the same place, by ``route``, ending at
+        ``until_tick``: the robot was replanned while driving (Phase 2, D28)."""
+        if not self.phase.is_travelling:
+            raise InvalidTransitionError(
+                f"robot {self.robot_id!r}: only a travelling robot can be rerouted, not "
+                f"{self.phase.name}"
+            )
+        assert self.route is not None  # guaranteed by the travelling-phase invariant
+        rerouted = replace(self, route=route, until_tick=until_tick)
+        rerouted._check_route(route, self.route.target)
+        return rerouted
+
     def reposition(self, route: Route, *, tick: int, until_tick: int) -> "RobotState":
         """Start driving ``route`` to a holding spot, with no order (D24).
 

@@ -1204,6 +1204,59 @@ and ordered execution.
     reproducible. Breakdowns combine with batteries.
   - Without breakdowns, the 72 committed M5 scaling runs reproduce exactly.
 
+**Replanning (`replan`, P3.3).** After re-timing, every robot whose last stop is now later than before
+is replanned, in the order of its next event.
+- **The anchor.** A robot in a corridor is committed to its end: its new plan starts at the next node,
+  at its re-timed arrival there. A robot standing at a node starts there, once any service in
+  progress is done.
+- **The new plan.**
+  - The robot's reservations are released, and SIPP plans again from the anchor through its
+    remaining stops (pickup, drop-off, holding spot, with their services), against every other
+    robot's current plan.
+  - The new plan is kept only if it reaches the remaining stops lexicographically earlier: the next
+    stop first. Otherwise the re-timed plan is reserved again.
+  - Every kept plan was reserved against all others in the re-timed clock, so the queues still follow
+    one clock and execution cannot deadlock (D28).
+- **Bookkeeping.**
+  - The robot's queued uses are replaced.
+  - The job's drives, stop times and the ready time dispatch sees are rebuilt.
+  - The current drive gets its new route (`RobotState.reroute`: same start, same destination).
+  - A robot standing at a node gets a fresh departure. Its old one is cancelled: departures carry an
+    epoch, and a replan moves the robot to a new epoch.
+  - Waiting robots that are now first in their queue are woken. A replanned robot may have left the
+    queue they were waiting in, and no robot leaving a resource would wake them.
+- **Never early, by rule.** No robot reaches or leaves a visit before its current planned time: the
+  simulator re-checks at every departure and every node entry, and re-timing uses both as lower
+  bounds.
+  - **Why it matters.** It guarantees that a robot standing on a resource has a queue key no later
+    than when it entered, so no plan made afterwards can be queued ahead of it.
+  - **Why it needs enforcing.** Plain ordered execution gets it for free. Replanning does not: a
+    re-timed plan can predict a wait behind a robot that is then replanned faster. The robot's
+    departure, scheduled before the re-timing, then came early.
+  - **How it was found.** A stress test on the large map, up to 25 robots with frequent breakdowns
+    and delays, found conflicts, stopped fleets and a re-timing that failed. After both fixes, all 96
+    stress runs delivered every order with zero conflicts. 32 of them ran under `replan`, with 79,727
+    replans in total.
+  - **Cost.** A replanned robot can make the re-timed plans of robots behind it pessimistic. They
+    keep a predicted wait that no longer exists, until the next breakdown re-times them.
+- **Order matters, as in all prioritized planning.** Robots replan one after another, so the first
+  can take a route the second would have liked. Each kept plan is better for its own robot, given the
+  plans of everyone else at that moment; the fleet as a whole is not optimized.
+- **Cost:** one SIPP search per delayed robot at each breakdown.
+- **Testing** (ring map, scripted breakdowns):
+  - **A robot planned behind a broken one detours.** R1 breaks down in the top corridor, and R2's
+    plan, made before the breakdown, follows it there.
+    - Under `wait` and `retime`, R2 waits at A from tick 11 to tick 330, and reaches its pickup at
+      tick 360.
+    - Under `replan`, its anchor is A (it was in the corridor to A), and it goes A, C, D, B: pickup at
+      tick 61.
+  - **A robot goes ahead of a broken one.** R2 breaks down in its spur, and R1 was planned to pass B
+    after it. Without replanning R1 waits for R2 and reaches the station at tick 352; replanned, it
+    passes B first and is there at tick 75.
+  - **Generated runs.** On two maps under all three policies, every order is delivered, with zero
+    conflicts, reproducibly, and replanning happens in them. Breakdowns combine with batteries under
+    `replan`.
+
 ---
 
 ## 14. Interview notes
