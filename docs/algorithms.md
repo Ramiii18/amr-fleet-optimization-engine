@@ -713,6 +713,13 @@ tune on the benchmark (D22).
 - Insertion is never better than the optimum, and finds it in 142 of 200 random problems.
 - Generated runs deliver every order, reproducibly.
 
+**Result** ([benchmarks.md](benchmarks.md), "worst-first objective").
+- **Worst case.** At high load, `cpsat-fair` cut the worst-case completion time against greedy by 80 s
+  and 100 s, and had the best P95 of all variants.
+- **Mean.** It kept 62–80% of plain CP-SAT's gain in mean completion time.
+- **Solving.** Its decisions were also easier to prove optimal: over 99% of searched decisions, against
+  about 85%.
+
 ---
 
 ## 12. Where single-robot shortest paths stop being enough
@@ -855,7 +862,15 @@ where it beat cheapest insertion by about 11 s of mean completion time, with int
 zero. Most of the gain over greedy, however, comes from the planning model itself: look-ahead and
 sequencing. Insertion already gets 36–39 s of the 47–51 s. And optimising the mean made the worst case
 worse. The honest summary is "the model matters most, exact search adds a measurable increment, and
-the objective needs a fairness term".
+the objective needs a fairness term". With the worst-first term (section 11.5), CP-SAT still beat
+insertion at high load, by 5–9 s.
+
+**How did you fix the starvation, and what did it cost?**
+I changed the objective, not the solver. Plans now minimise the longest lead time first, then the
+total. The weight that makes this lexicographic follows from an upper bound on completion times, so
+there is nothing to tune. At high load, the worst case dropped by 80–100 s against greedy, and P95 was
+the best of all variants. About a fifth to two fifths of the mean gain was given up. A useful side
+effect: the solver proved optimality far more often, because the dominant term has a tight bound.
 
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and

@@ -253,3 +253,107 @@ this: it adds due times, so that the objective cares about the orders that have 
 - Solve times were measured under parallel load on one laptop. A real-time system would need wall-clock
   limits, and with them plans would no longer be reproducible.
 - This table was produced on Windows only.
+
+## Planning with the worst-first objective (M3.5, 2026-11-05)
+
+**Command:** `.venv\Scripts\python.exe scripts\compare_planning.py --jobs 8`, as for M3.4, with the two
+worst-first variants added (D22).
+
+**Setup.** As in the M3.4 section above, plus `insertion-fair` and `cpsat-fair`. These minimise the
+longest lead time first and the total completion time second. Two columns are new:
+- the paired difference of each CP-SAT variant against insertion with the *same* objective;
+- the paired difference of the worst-case completion time against greedy.
+
+```text
+Planning comparison, 2026-11-05
+Environment: Python 3.13.1, Windows-11-10.0.26200-SP0, ortools 9.15.6755, amr-fleet-optimization-engine 0.0.1 (commit c47eaaf), 8 worker processes
+Settings: map large, orders released for 3600 s, seeds 0-19, 1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading; planning window 10 orders; CP-SAT: 1 worker, deterministic limit 0.2, seed 0
+
+| Robots | Orders/h | Policy | Utilization | Waiting s | Completion s | Completion P95 s | Completion max s | Empty share | Completion diff. vs greedy (95% CI) | vs insertion, same objective (95% CI) | Max diff. vs greedy (95% CI) |
+|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|
+| 5 | 100 | greedy | 60.9% | 51.6 | 119.5 | 180.7 | 216.0 | 47.3% | baseline |  | baseline |
+| 5 | 100 | insertion | 60.0% | 50.4 | 118.3 | 176.9 | 212.9 | 46.3% | -1.2 s [-1.9, -0.5] |  | -3.1 s [-9.4, +3.2] |
+| 5 | 100 | cpsat | 59.7% | 49.6 | 117.5 | 176.2 | 221.3 | 46.0% | -2.0 s [-2.9, -1.1] | -0.8 s [-1.2, -0.4] | +5.3 s [-1.4, +12.0] |
+| 5 | 100 | insertion-fair | 60.0% | 50.4 | 118.3 | 175.0 | 209.6 | 46.3% | -1.2 s [-1.9, -0.6] |  | -6.5 s [-11.6, -1.3] |
+| 5 | 100 | cpsat-fair | 59.9% | 50.6 | 118.5 | 176.7 | 202.3 | 46.2% | -1.0 s [-1.7, -0.3] | +0.2 s [-0.1, +0.6] | -13.7 s [-20.0, -7.5] |
+| 5 | 150 | greedy | 89.5% | 144.5 | 212.0 | 357.4 | 414.9 | 49.4% | baseline |  | baseline |
+| 5 | 150 | insertion | 87.5% | 105.4 | 172.9 | 356.4 | 520.6 | 46.9% | -39.1 s [-55.5, -22.7] |  | +105.7 s [+62.6, +148.8] |
+| 5 | 150 | cpsat | 86.6% | 93.7 | 161.2 | 325.7 | 625.0 | 45.8% | -50.8 s [-70.5, -31.0] | -11.7 s [-15.5, -7.9] | +210.1 s [+100.4, +319.7] |
+| 5 | 150 | insertion-fair | 88.1% | 122.2 | 189.7 | 321.6 | 378.9 | 47.7% | -22.3 s [-30.4, -14.1] |  | -36.0 s [-49.8, -22.3] |
+| 5 | 150 | cpsat-fair | 87.7% | 112.9 | 180.4 | 304.2 | 334.6 | 47.0% | -31.6 s [-46.0, -17.1] | -9.3 s [-17.1, -1.5] | -80.3 s [-102.0, -58.7] |
+| 10 | 200 | greedy | 57.7% | 41.6 | 108.9 | 150.5 | 190.2 | 45.7% | baseline |  | baseline |
+| 10 | 200 | insertion | 56.7% | 40.3 | 107.6 | 147.4 | 179.8 | 44.5% | -1.3 s [-1.6, -0.9] |  | -10.4 s [-16.2, -4.6] |
+| 10 | 200 | cpsat | 56.6% | 40.1 | 107.5 | 147.1 | 180.4 | 44.4% | -1.4 s [-1.8, -1.0] | -0.2 s [-0.3, +0.0] | -9.8 s [-16.3, -3.3] |
+| 10 | 200 | insertion-fair | 56.7% | 40.4 | 107.7 | 147.7 | 180.0 | 44.5% | -1.2 s [-1.6, -0.8] |  | -10.2 s [-16.2, -4.2] |
+| 10 | 200 | cpsat-fair | 56.7% | 40.4 | 107.7 | 147.0 | 173.5 | 44.5% | -1.2 s [-1.6, -0.8] | +0.0 s [-0.2, +0.2] | -16.6 s [-23.8, -9.4] |
+| 10 | 300 | greedy | 90.8% | 114.8 | 182.4 | 285.0 | 342.4 | 49.3% | baseline |  | baseline |
+| 10 | 300 | insertion | 87.8% | 79.2 | 146.9 | 243.2 | 303.0 | 46.2% | -35.6 s [-48.2, -23.0] |  | -39.4 s [-50.9, -27.8] |
+| 10 | 300 | cpsat | 86.5% | 67.8 | 135.5 | 224.1 | 368.3 | 45.0% | -47.0 s [-63.6, -30.3] | -11.4 s [-15.6, -7.2] | +25.9 s [-9.9, +61.7] |
+| 10 | 300 | insertion-fair | 88.0% | 82.0 | 149.7 | 232.0 | 284.5 | 46.4% | -32.8 s [-44.7, -20.9] |  | -57.9 s [-73.8, -41.9] |
+| 10 | 300 | cpsat-fair | 87.6% | 77.1 | 144.7 | 215.8 | 242.4 | 45.8% | -37.7 s [-51.4, -24.0] | -5.0 s [-7.2, -2.7] | -100.0 s [-121.3, -78.7] |
+
+CP-SAT solver statistics, over all decisions of all seeds:
+
+| Robots | Orders/h | Policy | Decisions | Searched | Proven optimal | Stopped at limit | Fallback | Improved on insertion | Mean gap when stopped | Solve s mean / P95 / max |
+|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 5 | 100 | cpsat | 2434 | 302 | 302 (100.0%) | 0 (0.0%) | 0 (0.0%) | 112 | - | 0.010 / 0.024 / 0.103 |
+| 5 | 100 | cpsat-fair | 2422 | 304 | 304 (100.0%) | 0 (0.0%) | 0 (0.0%) | 130 | - | 0.010 / 0.022 / 0.065 |
+| 5 | 150 | cpsat | 3367 | 1856 | 1579 (85.1%) | 277 (14.9%) | 0 (0.0%) | 1113 | 36.4% | 0.088 / 0.472 / 0.667 |
+| 5 | 150 | cpsat-fair | 3336 | 1993 | 1977 (99.2%) | 16 (0.8%) | 0 (0.0%) | 1270 | 19.3% | 0.034 / 0.095 / 0.534 |
+| 10 | 200 | cpsat | 5213 | 485 | 485 (100.0%) | 0 (0.0%) | 0 (0.0%) | 97 | - | 0.013 / 0.026 / 0.052 |
+| 10 | 200 | cpsat-fair | 5215 | 503 | 503 (100.0%) | 0 (0.0%) | 0 (0.0%) | 162 | - | 0.015 / 0.026 / 0.051 |
+| 10 | 300 | cpsat | 7687 | 3915 | 3317 (84.7%) | 598 (15.3%) | 0 (0.0%) | 1967 | 22.3% | 0.095 / 0.460 / 0.617 |
+| 10 | 300 | cpsat-fair | 7474 | 4037 | 4031 (99.9%) | 6 (0.1%) | 0 (0.0%) | 2717 | 0.0% | 0.041 / 0.107 / 0.457 |
+
+400 runs in 134.3 s.
+Every order was delivered in every run.
+```
+
+### Reading the results
+
+- **The three M3.4 variants reproduce exactly**: the same KPIs and the same solver outcomes, decision
+  for decision. Only the solve times differ (see the last point).
+- **Worst first fixes the worst case.** Against greedy, `cpsat-fair` cuts the worst-case completion
+  time in every configuration, with intervals that exclude zero:
+  - −80.3 s [−102.0, −58.7] at 5 robots and 150 orders/h (334.6 s against 414.9 s);
+  - −100.0 s [−121.3, −78.7] at 10 robots and 300 orders/h (242.4 s against 342.4 s);
+  - −13.7 s and −16.6 s at moderate load.
+
+  Plain `cpsat`, by contrast, is +210.1 s [+100.4, +319.7] at 5 robots and 150 orders/h.
+- **It also has the best P95 of all five variants at high load:** 304.2 s and 215.8 s, against 357.4 s
+  and 285.0 s for greedy.
+- **The price is part of the mean gain.** At high load, `cpsat-fair` cuts mean completion time by
+  31.6 s and 37.7 s against greedy, where plain `cpsat` cuts it by 50.8 s and 47.0 s. The fair variant
+  keeps 62% and 80% of the gain, and turns a worse worst case into a much better one.
+- **CP-SAT still beats insertion under the same objective at high load:** −9.3 s [−17.1, −1.5] and −5.0 s
+  [−7.2, −2.7]. At moderate load the difference is not resolved (+0.2 s and +0.0 s, intervals across
+  zero).
+- **The worst-first model is easier to solve.** 99.2% and 99.9% of searched decisions were proven
+  optimal, against about 85% for plain `cpsat`. The longest lead time dominates the cost, and its lower
+  bound is often tight, so the proof closes sooner.
+- **A correction to the M3.4 reading.** Now that the worst case has a paired interval, plain CP-SAT's
+  worse worst case is resolved only at 5 robots and 150 orders/h. At 10 robots and 300 orders/h it is
+  +25.9 s [−9.9, +61.7]. The difference of the means reported in M3.4 (368.3 s against 342.4 s) is
+  real, but at 20 seeds it cannot be told apart from zero.
+- **Solve times are not reproducible; solver outcomes are.** The identical plain-`cpsat` solves took
+  0.09 s on average in this run and 0.32 s in the M3.4 run, on the same laptop with the same 8
+  processes. Machine state, such as power and thermal limits, changes wall time a lot. The
+  deterministic limit keeps that from changing any plan.
+
+### Recommendation
+
+`cpsat-fair` is the best overall policy in this model:
+- it has the best P95 and the best worst case at high load;
+- it keeps most of the mean gain over greedy;
+- it is the easiest to solve.
+
+Plain `cpsat` remains the choice if only the mean matters. Insertion with worst first is the fallback
+without a solver: it gets most of the way there, but its worst case at high load is clearly behind
+(378.9 s and 284.5 s).
+
+### What this does not show
+
+The same limits as the M3.4 section apply: no congestion, availability predicted exactly, one map with
+uniform demand, 20 seeds, and Windows only. In addition, the worst-first objective protects only the
+single order that has waited longest at each decision. Its effect on the tail beyond the maximum and
+the P95 is not measured.

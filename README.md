@@ -6,8 +6,8 @@ A Python engine for dispatching transport orders to a fleet of autonomous mobile
 planning routes on a warehouse graph, and managing traffic between robots, evaluated in a
 reproducible simulation.
 
-> **Status:** milestones M1 (routing library) and M2 (simulator, dispatch policies, KPIs) are complete.
-> M3 (look-ahead and multi-order planning with CP-SAT) is in progress.
+> **Status:** milestones M1 (routing library), M2 (simulator, dispatch policies, KPIs) and M3
+> (look-ahead and multi-order planning with CP-SAT) are complete. Next is M4: traffic management.
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning
 > project. It does not control physical robots and has not been deployed in any real fleet.
 
@@ -35,8 +35,12 @@ reproducible simulation.
 - **Planning dispatch (M3):** at each decision, plan every robot (busy ones from where and when they
   will finish) and the oldest 10 orders, then start only the idle robots' first jobs (a receding
   horizon). Plans come from cheapest insertion or from an exact CP-SAT model with a deterministic time
-  limit, checked against brute force on 300 small problems. At high load, CP-SAT planning cut mean
-  completion time by about a quarter against greedy, but made the worst case worse;
+  limit, checked against brute force on 450 small problems. Two objectives: total completion time,
+  or worst first (the longest lead time first, then the total). At high load:
+  - minimising total completion time cut mean completion by about a quarter against greedy, but made
+    the worst case worse;
+  - worst first (`cpsat-fair`) kept most of that gain and cut the worst case by 80–100 s.
+
   [benchmarks.md](docs/benchmarks.md) has the numbers.
 - **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
   route validation.

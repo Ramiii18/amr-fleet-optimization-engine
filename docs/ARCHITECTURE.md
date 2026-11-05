@@ -2,7 +2,7 @@
 
 This is a living document. It describes what exists **now** and marks everything else as planned.
 
-## Current state (M1 and M2 complete, M3 in progress, 2026-11-04)
+## Current state (M1, M2 and M3 complete, 2026-11-05)
 
 ```text
 src/amr_optimizer/

@@ -9,7 +9,7 @@ quality dropping.
 |---|---|---|
 | **M1** Routing library | Warehouse graph, Dijkstra, A*, map generator, JSON maps, tests, comparison | **Done** (2026-11-03) |
 | **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | **Done** (2026-11-04) |
-| **M3** Optimization | Look-ahead and multi-order sequencing over a bounded horizon: insertion heuristic and CP-SAT, compared in simulation | In progress (re-planned 2026-11-04) |
+| **M3** Optimization | Look-ahead and multi-order sequencing over a bounded horizon: insertion heuristic and CP-SAT, compared in simulation | **Done** (2026-11-05) |
 | **M4** Traffic v0.2 | Space-time A*, reservation table, prioritized planning, conflict tests, mutex zones, deadlock detection | Not started |
 | **M5** Portfolio v1 | Benchmarks at 3–5, 10 and 25 robots, documentation, visualization, honest limitations | Not started |
 
@@ -112,8 +112,34 @@ finding, its model has to do what greedy cannot (D18):
    time by 24–26% against greedy and by about 11 s against insertion, but its worst-case completion
    time grew (625 s against 415 s for greedy at 5 robots and 150 orders/h).
 5. **Due times, only if increment 4 leaves the question open.** Triggered by the worst-case result of
-   increment 4: look-ahead and sequencing starve some distant orders. Next: add per-order due times and
-   a lateness term.
+   increment 4: look-ahead and sequencing starve some distant orders. Done 2026-11-05, with a
+   parameter-free worst-first objective instead of due times (D22). It minimises the longest lead time
+   first, then the total. `cpsat-fair` cut the worst case by 80–100 s against greedy at high load, and
+   kept 62–80% of the gain in mean completion time.
+
+## M3 acceptance
+
+- **CP-SAT finds the brute-force optimum on at least 200 small instances, and insertion never beats
+  it:** met. 250 random and 50 map-based problems with total completion time, and 150 random problems
+  with worst first; insertion was never better than the optimum.
+- **Both new policies deliver every order, and runs are reproducible, CP-SAT included:** met. Tests
+  compare event logs of repeated runs. The M3.5 benchmark run reproduced the M3.4 KPIs and solver
+  outcomes exactly.
+- **Paired differences with 95% intervals, every timeout and fallback counted:** met. Each decision is
+  reported as no search needed, proven optimal, stopped at the limit (with its gap), or fallback.
+- **CP-SAT earns its place only if it beats insertion with an interval that excludes zero:**
+  - with total completion time: met in 3 of 4 configurations;
+  - with worst first: met in both high-load configurations, not resolved at moderate load.
+
+  CP-SAT pays off where queues form. When idle robots are usually available, insertion is enough.
+
+**Recommendation from M3:** `cpsat-fair`. It has the best P95 and worst case at high load, keeps most of
+the mean gain, and is the easiest variant to solve ([benchmarks.md](benchmarks.md)).
+
+**Finding that shapes M4:** all M3 gains come from planning on *exact* predictions of when and where
+robots become free, and from less empty travel. With traffic, travel times and availability become
+estimates, and congestion may eat part of the saving. M4 should re-run this comparison with traffic,
+re-plan when a prediction turns out wrong, and report the cost of congestion separately.
 
 **Acceptance criteria:**
 - CP-SAT finds the brute-force optimum on at least 200 random small instances, and the insertion
