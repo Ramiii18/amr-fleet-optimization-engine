@@ -455,8 +455,12 @@ local pass predicts a CI pass.
   idle. Until it reaches the high threshold it is hidden from dispatch, and dispatch sees when it will
   be ready, so look-ahead planning can still plan for it.
 - **Safety by threshold.** The low threshold is set above the energy of the longest job plus the
-  longest drive from any drop-off to a charger, measured on the map, with a margin. Because only robots
-  above it receive jobs, no battery can run empty. An invariant checks this anyway.
+  longest drive from any drop-off to a charger, measured on the map, with a margin. Only robots above
+  it receive jobs, and an invariant checks every battery after every edge.
+  - **Corrected in P2.4:** the bound assumes shortest drives.
+  - With traffic, an itinerary may detour to arrive earlier, and a low robot waiting for a charger
+    may be moved out of the way. So the argument is not a proof, and the invariant is the guarantee.
+  - The margin held in every run: 18.2% at the lowest in the benchmark (algorithms section 13.6).
 - **Chargers are reserved for charging.** With the battery model on, holding spots exclude chargers,
   and an idle robot that is charged and holds a charger another robot needs is moved away, by the
   same mechanism as for pickups (D24).

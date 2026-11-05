@@ -649,3 +649,143 @@ Every order was delivered in every run.
 - **The delay model is simple:** independent delays per edge, uniformly distributed, with no
   correlation in space or time. There are no breakdowns (P3).
 - One map, 10 robots, 20 seeds, Windows only.
+
+## Batteries and charging policies (Phase 2, P2, 2026-11-05)
+
+**Command:** `.venv\Scripts\python.exe scripts\compare_charging.py` with the defaults: 20 seeds, orders
+released for one hour, 8 worker processes.
+
+**Setup.**
+- The large map (5 chargers) with traffic: 10 robots at 200 orders/h (moderate load) and 300 orders/h
+  (high load), as in P1.
+- Greedy and `cpsat-fair`, each run on the same scenarios, without a battery model and with the
+  default synthetic battery under each charging policy:
+  - `when-low`: robots charge only below 25% and stay out of service until 90% (D26);
+  - `opportunistic`: as `when-low`, and idle robots top up when no order is waiting (D27);
+  - `opportunistic-early`: as `opportunistic`, but a low robot is back in service at 25%.
+- **The battery** lasts one hour of driving (3,600 m) and charges fully in 20 minutes. Start levels
+  are uniform between 30% and 100%, from a stream seeded by the scenario seed, so every charging
+  policy starts from the same levels.
+- **The charging KPIs:**
+  - *out of service* is the share of robot time from falling below the low threshold until charged
+    again;
+  - *charger wait* is robot time out of service while no charger was free;
+  - *charger occupancy* is the share of charger time with a robot on the charger.
+
+```text
+Charging comparison, 2026-11-05
+Environment: Python 3.13.1, Windows-11-10.0.26200-SP0, ortools 9.15.6755, amr-fleet-optimization-engine 0.0.1 (commit 5ebf82d), 8 worker processes
+Settings: map large (5 chargers), orders released for 3600 s, seeds 0-19, 1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading, traffic on
+Battery (synthetic, D26): 3600 m of driving, full charge in 1200 s, low 25%, high 90%, start levels 30% to 100% (seeded)
+
+Service:
+
+| Robots | Orders/h | Policy | Charging | Waiting s | Completion s | Completion P95 s | Completion max s | Conflicts per run | Cost of batteries (95% CI) | vs when-low (95% CI) | Max: vs when-low (95% CI) | vs greedy, same charging (95% CI) |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---|---|---|---|
+| 10 | 200 | greedy | no battery | 47.8 | 117.5 | 169.9 | 220.2 | 0.0 |  |  |  | baseline |
+| 10 | 200 | greedy | when-low | 113.5 | 183.2 | 328.8 | 392.2 | 0.0 | +65.7 s [+33.4, +98.0] |  |  | baseline |
+| 10 | 200 | greedy | opportunistic | 87.6 | 157.0 | 271.9 | 322.2 | 0.0 | +39.5 s [+15.4, +63.6] | -26.2 s [-45.6, -6.8] | -70.0 s [-126.0, -14.1] | baseline |
+| 10 | 200 | greedy | opportunistic-early | 62.3 | 131.8 | 207.6 | 262.6 | 0.0 | +14.4 s [+6.1, +22.7] | -51.3 s [-78.5, -24.1] | -129.6 s [-192.7, -66.5] | baseline |
+| 10 | 200 | cpsat-fair | no battery | 43.0 | 112.7 | 155.4 | 198.8 | 0.0 |  |  |  | -4.8 s [-5.9, -3.6] |
+| 10 | 200 | cpsat-fair | when-low | 76.6 | 146.0 | 255.8 | 294.5 | 0.0 | +33.3 s [+14.1, +52.5] |  |  | -37.1 s [-53.0, -21.2] |
+| 10 | 200 | cpsat-fair | opportunistic | 50.7 | 120.1 | 178.7 | 219.2 | 0.0 | +7.4 s [-0.2, +15.0] | -25.9 s [-40.6, -11.2] | -75.3 s [-121.6, -29.0] | -36.9 s [-54.6, -19.1] |
+| 10 | 200 | cpsat-fair | opportunistic-early | 44.5 | 114.2 | 162.3 | 205.4 | 0.0 | +1.5 s [-0.7, +3.7] | -31.9 s [-50.8, -12.9] | -89.1 s [-141.6, -36.6] | -17.7 s [-24.9, -10.5] |
+| 10 | 300 | greedy | no battery | 300.9 | 371.7 | 616.1 | 683.5 | 0.0 |  |  |  | baseline |
+| 10 | 300 | greedy | when-low | 740.5 | 810.8 | 1494.1 | 1585.4 | 0.0 | +439.1 s [+407.1, +471.1] |  |  | baseline |
+| 10 | 300 | greedy | opportunistic | 741.7 | 811.8 | 1501.0 | 1600.0 | 0.0 | +440.1 s [+401.8, +478.4] | +1.0 s [-11.5, +13.5] | +14.6 s [-9.6, +38.8] | baseline |
+| 10 | 300 | greedy | opportunistic-early | 736.5 | 806.3 | 1997.6 | 2186.2 | 0.0 | +434.6 s [+370.9, +498.2] | -4.6 s [-41.0, +31.9] | +600.8 s [+508.4, +693.2] | baseline |
+| 10 | 300 | cpsat-fair | no battery | 140.9 | 211.9 | 333.9 | 376.1 | 0.0 |  |  |  | -159.9 s [-189.6, -130.2] |
+| 10 | 300 | cpsat-fair | when-low | 487.9 | 558.0 | 1040.2 | 1082.3 | 0.0 | +346.1 s [+310.3, +382.0] |  |  | -252.9 s [-280.3, -225.4] |
+| 10 | 300 | cpsat-fair | opportunistic | 485.9 | 556.0 | 1049.3 | 1097.2 | 0.0 | +344.2 s [+306.5, +381.8] | -2.0 s [-13.9, +10.0] | +14.9 s [-12.9, +42.8] | -255.8 s [-281.4, -230.1] |
+| 10 | 300 | cpsat-fair | opportunistic-early | 460.7 | 530.8 | 1403.9 | 1602.0 | 0.0 | +319.0 s [+254.2, +383.8] | -27.2 s [-64.0, +9.7] | +519.7 s [+379.6, +659.8] | -275.4 s [-297.9, -252.9] |
+
+Charging (means over seeds; lowest level: the minimum over seeds):
+
+| Robots | Orders/h | Policy | Charging | Trips when low | Top-ups | Out of service | Charger wait, robot-s | Charger occupancy | Lowest level |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|
+| 10 | 200 | greedy | when-low | 8.8 | 0.0 | 16.6% | 27 | 32.8% | 19.3% |
+| 10 | 200 | greedy | opportunistic | 5.2 | 80.2 | 11.9% | 44 | 40.7% | 18.8% |
+| 10 | 200 | greedy | opportunistic-early | 30.9 | 96.7 | 6.8% | 201 | 30.1% | 18.6% |
+| 10 | 200 | cpsat-fair | when-low | 7.8 | 0.0 | 15.4% | 50 | 30.6% | 20.4% |
+| 10 | 200 | cpsat-fair | opportunistic | 2.9 | 94.0 | 7.0% | 2 | 40.6% | 19.8% |
+| 10 | 200 | cpsat-fair | opportunistic-early | 22.8 | 103.2 | 4.1% | 368 | 35.2% | 19.8% |
+| 10 | 300 | greedy | when-low | 12.8 | 0.0 | 19.7% | 119 | 37.4% | 19.6% |
+| 10 | 300 | greedy | opportunistic | 12.8 | 15.7 | 19.7% | 134 | 39.0% | 19.2% |
+| 10 | 300 | greedy | opportunistic-early | 204.3 | 14.3 | 33.2% | 2195 | 30.3% | 18.2% |
+| 10 | 300 | cpsat-fair | when-low | 11.2 | 0.0 | 19.4% | 51 | 37.2% | 19.7% |
+| 10 | 300 | cpsat-fair | opportunistic | 10.8 | 18.6 | 19.4% | 103 | 39.4% | 19.4% |
+| 10 | 300 | cpsat-fair | opportunistic-early | 195.2 | 17.3 | 33.3% | 2859 | 28.2% | 18.3% |
+
+0 conflicts in 320 runs; lowest battery level 18.2%.
+320 runs in 375.5 s.
+Every order was delivered in every run.
+```
+
+### Reading the results
+
+- **Safe and complete.**
+  - All 320 runs deliver every order, with zero conflicts.
+  - The lowest level any battery reached was 18.2%. If every drive were shortest, the threshold
+    argument (D26) would give at least 12.3% on this map: 25% minus the 456 m safety bound. With traffic
+    it is not a proof (detours, moves out of the way; algorithms section 13.6). A battery below zero
+    would have stopped the run with an error.
+  - The rows without batteries match the P1 rows without delays exactly.
+- **Batteries cost capacity, steeply at high load.** Under `when-low`, robots spend 15% to 20% of their
+  time out of service.
+  - At moderate load, mean completion rises by 33.3 s (`cpsat-fair`) and 65.7 s (greedy).
+  - At high load, it rises by 346.1 s and 439.1 s. Without batteries this fleet was already 86% to 89%
+    busy at that load (P1), so it is overloaded and the queue grows all hour.
+- **Topping up helps at moderate load, and makes no detectable difference at high load.**
+  - At moderate load, `opportunistic` beats `when-low` on the mean by 26.2 s [6.8, 45.6] (greedy) and
+    25.9 s [11.2, 40.6] (`cpsat-fair`), and on the worst case by 70.0 s and 75.3 s.
+  - Robots top up 80 to 94 times per run, so fewer of them go low: time out of service falls from
+    15%–17% to 7%–12%.
+  - With `cpsat-fair`, the cost of batteries at moderate load falls to 7.4 s [−0.2, +15.0], an
+    interval that includes zero.
+  - At high load an order is almost always waiting: 16 to 19 top-ups per run, and no detectable
+    difference (+1.0 s [−11.5, +13.5] and −2.0 s [−13.9, +10.0]).
+- **Returning robots to work early is the best policy at moderate load, and the worst in the tail at
+  high load.**
+  - At moderate load, `opportunistic-early` has the lowest cost of batteries: 14.4 s (greedy) and 1.5 s
+    [−0.7, +3.7] (`cpsat-fair`). Against `when-low` it is better by 51.3 s and 31.9 s on the mean, and
+    by 129.6 s and 89.1 s on the worst case.
+  - Its lead over `opportunistic` was not tested directly. The means differ by 25.2 s for greedy
+    (131.8 s against 157.0 s) and by 5.9 s for `cpsat-fair` (114.2 s against 120.1 s).
+  - At high load it thrashes:
+    - a robot back at exactly the low threshold is sent straight to work, and any job takes it below
+      the threshold again, so it returns to a charger after every job;
+    - robots make 195 to 204 charging trips per run instead of 11 to 13;
+    - they wait 2,195 to 2,859 robot-s for a charger instead of 51 to 119;
+    - they spend 33% of their time out of service instead of 19% to 20%.
+  - **The mean completion time does not show it** (−4.6 s [−41.0, +31.9] and −27.2 s [−64.0, +9.7]).
+    The worst case does: 600.8 s [508.4, 693.2] worse for greedy and 519.7 s [379.6, 659.8] for
+    `cpsat-fair`, and mean P95 is 364 to 504 s higher.
+- **Planning matters more with batteries.** Under `when-low`, `cpsat-fair`'s lead over greedy grows:
+  - from 4.8 s to 37.1 s [21.2, 53.0] at moderate load;
+  - from 159.9 s to 252.9 s [225.4, 280.3] at high load.
+
+  As with delays, batteries remove capacity, and greedy's long empty trips use up what remains.
+  `cpsat-fair` also plans orders for robots that will be back from charging, which greedy cannot. The
+  two effects are not separated.
+
+### Recommendation
+
+- **`opportunistic`** is the robust choice. It is better than `when-low` at moderate load, in the mean
+  and the worst case, and indistinguishable at high load.
+- **`opportunistic-early`** is better still at moderate load. It risks a worst case 520 to 600 s worse
+  under high load.
+- A release threshold between the low and the high one would probably fall between the two; it was not
+  tested.
+
+### What this does not show
+
+- **The battery is synthetic.** It is sized so that charging matters within a one-hour run, and the
+  costs measured here scale with that choice.
+- **One-hour runs from random start levels.** Many robots need their first charge within the hour. A
+  full shift in steady state was not simulated.
+- **Simple energy physics:**
+  - charging is linear, with no slowdown near full;
+  - only driving uses energy: loading, waiting and charging losses are free.
+- **Battery-blind dispatch.** The policies see when robots out of service will be back, but not battery
+  levels. Energy-aware assignment and a CP-SAT charging schedule (backlog) were not tried.
+- One map (5 chargers), 10 robots, 20 seeds, Windows only.

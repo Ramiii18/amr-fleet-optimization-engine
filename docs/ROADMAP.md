@@ -290,7 +290,7 @@ by what they build on:
 | Milestone | Content | Why in this place | Status |
 |---|---|---|---|
 | **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | **Done** (2026-11-05) |
-| **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | In progress |
+| **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | **Done** (2026-11-05) |
 | **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | Not started |
 | **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | Not started |
 
@@ -368,7 +368,7 @@ that charging matters within a one-hour run (D26).
      `opportunistic-early`, and `opportunistic` keeps the D26 hysteresis (back in service at the high
      threshold).
    - Charging KPIs (`ChargingKpis`) and `amr-sim --charging`.
-4. **Comparison.**
+4. **Comparison.** Done 2026-11-05 ([benchmarks.md](benchmarks.md)).
    - The three charging policies, and runs without batteries, are compared under greedy and
      `cpsat-fair`, with charging KPIs: charging trips and top-ups, time out of service, time waiting
      for a charger, charger occupancy, and the lowest battery level.
@@ -379,10 +379,45 @@ that charging matters within a one-hour run (D26).
 - Without a battery model, all earlier results reproduce exactly.
 - The comparison reports paired differences, and charging KPIs, for every charging policy.
 
+## P2 acceptance
+
+- **No battery ever goes below zero:** met. The simulator checks every battery after every edge.
+  - The check never fired: not in the hand cases, the 108 generated test runs under three charging
+    policies, or the 240 benchmark runs with batteries.
+  - The lowest level in the benchmark was 18.2%. If every drive were shortest, the threshold
+    argument would give at least 12.3% on that map.
+  - The argument is not a proof under traffic, because of detours and moves out of the way
+    (algorithms section 13.6). The invariant is what guarantees this criterion.
+- **Every order is delivered and every run is conflict-free, with charging:** met. The 36 generated
+  test configurations (12 scenarios, three charging policies) and all 320 benchmark runs have zero
+  conflicts.
+- **Without a battery model, earlier results reproduce exactly:** met.
+  - 72 runs of the M5 scaling benchmark match the committed results KPI for KPI.
+  - The end-of-run rule fired in none of 144 runs checked.
+  - The benchmark rows without batteries match P1.
+- **Paired differences and charging KPIs for every charging policy:** met.
+
+**Findings:**
+- Batteries cost capacity: 15% to 20% of robot time out of service under `when-low`. At high load
+  the fleet is overloaded.
+- Topping up idle robots (`opportunistic`) cuts mean completion by 26 s and the worst case by 70 to
+  75 s at moderate load, and makes no detectable difference at high load.
+- Returning low robots to work at the low threshold (`opportunistic-early`) is best at moderate
+  load, but at high load robots thrash: about 200 charging trips per run instead of 11 to 13, and a
+  worst case 520 to 600 s worse. The mean completion time does not show it.
+
+**What shapes P3:**
+- A breakdown takes a robot out of service like a low battery, but without warning. The
+  out-of-service machinery can be reused: hidden from dispatch, with an expected return.
+- A blocked corridor needs what P1 and P2 avoided: replanning itineraries that are already being
+  executed.
+
 ## Phase 2 backlog (unordered)
 
 - **From P2:** a CP-SAT schedule of charging slots over a horizon (intervals with charger capacity),
   against the rule-based policies.
+- **From P2:** make the battery safety argument a proof under traffic. Check each planned itinerary's
+  energy against the robot's level, and move low robots only towards a charger.
 
 - **From M4:** mutex zones (groups of nodes and corridors with capacity 1); traffic-aware cost
   estimates for the planners; a fleet-wide path planner (for example conflict-based search) instead

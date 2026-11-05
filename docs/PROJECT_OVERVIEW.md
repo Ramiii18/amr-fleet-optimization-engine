@@ -72,8 +72,11 @@ Milestones M1 to M5 are complete:
 - traffic with reservations and safe-interval path planning;
 - scaling benchmarks with 3 to 25 robots, and figures.
 
+Phase 2 added:
+- delays during execution, survived by keeping the planned order of robots (P1);
+- batteries, shared chargers and three charging policies, with charger utilization (P2).
+
 Some goals above are **not built yet** and are in the Phase 2 backlog:
-- battery and charging, with charger utilization;
 - faults, blocked aisles and replanning during execution;
 - order priorities and deadlines;
 - mutex zones;

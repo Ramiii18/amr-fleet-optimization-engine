@@ -159,7 +159,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         kind = "naive" if args.naive else "ordered"
         mode += f", {args.delay_share:.0%} of edges delayed, {kind} execution"
     if args.charging:
-        mode += f", batteries charged {args.charging}"
+        mode += f", batteries ({args.charging} charging)"
     print(f"Policy:   {kpis.policy}, {rounds}, {mode}")
     print(
         f"Delivered {kpis.delivered} of {kpis.orders} orders in {kpis.duration_s:.1f} s of "

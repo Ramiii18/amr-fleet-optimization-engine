@@ -95,7 +95,7 @@ def test_batteries_can_be_switched_on_with_traffic(capsys: pytest.CaptureFixture
 
     assert main(run) == 0
     out = capsys.readouterr().out
-    assert "with traffic (reservations), batteries charged opportunistic" in out
+    assert "with traffic (reservations), batteries (opportunistic charging)" in out
     assert "top-ups" in out and "lowest battery" in out
     assert "WARNING" not in out
 

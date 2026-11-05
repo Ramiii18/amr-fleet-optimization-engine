@@ -13,7 +13,6 @@ limits in mind.
   traffic model prevents conflicts at the level of the graph and the schedule, not physical
   collisions.
 - **Not built yet (Phase 2):**
-  - battery and charging;
   - robot faults, blocked aisles and replanning during execution (P1 added random delays and robust
     execution);
   - order priorities and deadlines;
@@ -49,6 +48,28 @@ limits in mind.
   with an error rather than hiding it.
 - **The measured cost of traffic mixes two effects.** It includes waiting for other robots and the short
   drive to a holding spot after each delivery, which free flow does not make. They are not separated.
+
+## Batteries and charging (Phase 2, P2)
+
+- **Synthetic battery parameters.** A full battery lasts one hour of driving and charges in 20 minutes,
+  chosen so that charging matters within a one-hour run (D26). The measured costs of charging scale
+  with these choices, and are not predictions for any real robot.
+- **Start-of-shift runs.** Runs last one hour from random start levels between 30% and 100%. A full
+  shift in steady state was not simulated.
+- **Simple energy model.** Only driving uses energy, in proportion to distance; loading, waiting and
+  charging losses are free. Charging is linear, with no slowdown near full.
+- **Threshold rules, not optimization.**
+  - Robots go to the nearest free charger by travel time, and there is no queue at chargers.
+  - The dispatch policies see when robots out of service will be back, but not battery levels.
+  - Energy-aware assignment and a CP-SAT charging schedule (backlog) were not tried.
+  - Only three charging rules were compared, with fixed thresholds.
+- **Battery safety is checked, not proved.**
+  - Only robots above a threshold derived from the map receive jobs (D26). The threshold covers four
+    shortest drives between endpoints.
+  - With traffic, an itinerary may detour, and a low robot waiting for a charger may be moved out of
+    the way. Neither is bounded.
+  - An invariant stops the run if a battery would go below zero. It never fired; the lowest level in
+    the benchmark was 18.2%.
 
 ## Dispatch and optimization
 

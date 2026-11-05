@@ -997,14 +997,24 @@ comparisons are exact.
   one hour of driving (3,600,000 units) and charges fully in 20 minutes (300 units per tick).
 - Start levels are seeded, uniform between 30% and 100%.
 
-**Why no battery can run empty.** Only robots above the low threshold (25% by default) receive jobs.
-That threshold must cover the most driving a robot can need before it reaches a charger:
+**Why batteries should not run empty.** Only robots above the low threshold (25% by default)
+receive jobs. That threshold must cover the most driving a robot can need before it reaches a charger:
 - a job: to the pickup, to the drop-off and to a holding spot;
 - then the drive to a charger.
 
-That is four drives between endpoints, each at most the longest shortest route between two endpoints
-on the map. `safe_low_m` computes this bound, and `EnergyModel` refuses a threshold below it. On the
-large map the bound is 456 m, 13% of the battery, so the 25% threshold leaves a margin of 444 m.
+That is four drives between endpoints. Each is at most the longest shortest route between two
+endpoints on the map, if robots drive shortest routes. `safe_low_m` computes this bound, and
+`EnergyModel` refuses a threshold below it. On the large map the bound is 456 m, 13% of the battery,
+so the 25% threshold leaves a margin of 444 m.
+
+**Where the argument is not a proof (found in P2.4).** With traffic, two things can exceed the bound:
+- **Detours.** A SIPP itinerary may take a longer route when that arrives earlier than waiting.
+- **Extra moves.** A low robot waiting for a charger can still be moved out of the way of a pickup.
+
+Neither is bounded. The invariant stops the run with an error if a battery would go below zero. In the
+240 benchmark runs with batteries the lowest level was 18.2%, against 12.3% if every drive were
+shortest. A proof would need the energy of planned itineraries checked against the threshold, or low
+robots moved only towards a charger (backlog).
 
 **Testing.**
 - The unit conversions, drains and charging are checked by hand, including the cap at full charge
@@ -1300,6 +1310,15 @@ edges delayed. The fix is to keep the *order* in which robots use each node and 
 times. A robot waits for everyone planned before it on its next corridor and node, if necessary at the
 end of its corridor. All these waits point forward in planned time, so they form a directed acyclic
 graph: execution cannot deadlock, and without delays it reproduces the plan exactly.
+
+**When should a robot charge, and when should it go back to work?**
+Two thresholds give hysteresis: go to charge below the low one, return to service at the high one.
+Topping up idle robots when nothing is waiting helped at moderate load (26 s off the mean, 70 to 75 s
+off the worst case) and was neutral at high load. Returning robots to work as soon as they pass the low
+threshold looked better still at moderate load, but at high load each robot went straight back to a
+charger after every job: about 200 charging trips per run instead of 11 to 13, and a worst case 520 to
+600 s worse. The mean completion time did not show it, which is why the benchmarks report the worst
+case too.
 
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and

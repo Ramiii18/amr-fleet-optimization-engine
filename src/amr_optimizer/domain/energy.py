@@ -10,7 +10,9 @@ cover the most energy a robot can need before it reaches a charger:
 - then drive to a charger.
 
 `safe_low_m` bounds this from the map, as four times the longest shortest route between any two
-endpoints. `EnergyModel` refuses a threshold below it.
+endpoints. `EnergyModel` refuses a threshold below it. The bound assumes shortest drives: with
+traffic, itineraries may detour and low robots may be moved out of the way, so the simulator also
+checks every battery after every edge.
 """
 
 import math
@@ -124,7 +126,8 @@ class EnergyModel:
 
 
 def safe_low_m(graph: WarehouseGraph) -> float:
-    """An upper bound, in metres, on the driving a robot can need before reaching a charger.
+    """An upper bound, in metres, on the driving a robot can need before reaching a charger,
+    if it drives shortest routes.
 
     A job is three drives between endpoints (to the pickup, to the drop-off, to a holding spot),
     and the drive to a charger is a fourth, each at most the longest shortest route between two
