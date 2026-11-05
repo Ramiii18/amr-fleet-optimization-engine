@@ -32,7 +32,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
 ]
-viz = ["matplotlib>=3.9"]
+viz = ["matplotlib>=3.11"] # figures and animations (viz/, scripts/make_figures.py); 3.11 is tested
 
 [project.scripts]
 amr-sim = "amr_optimizer.cli:main" # the command-line runner, also `python -m amr_optimizer`

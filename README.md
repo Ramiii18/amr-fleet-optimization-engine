@@ -70,7 +70,7 @@ git clone https://github.com/Ramiii18/amr-fleet-optimization-engine.git
 cd amr-fleet-optimization-engine
 py -3.13 -m venv .venv
 .venv\Scripts\python.exe -m pip install --upgrade pip
-.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.venv\Scripts\python.exe -m pip install -e ".[dev,viz]"
 ```
 
 On Linux or macOS, use `python3.13 -m venv .venv` and `.venv/bin/python` instead.
