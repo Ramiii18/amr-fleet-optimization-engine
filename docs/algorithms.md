@@ -1013,6 +1013,70 @@ large map the bound is 456 m, 13% of the battery, so the 25% threshold leaves a 
 - On a hand map the safety bound is exactly 16 m. A battery whose threshold falls below it is refused,
   and one exactly at it is accepted.
 
+**Charging when low, in the simulator (`sim/simulator.py`, P2.2).** Batteries need traffic mode, because
+chargers are shared resources and only traffic mode models who occupies a node. Energy is settled
+lazily: a level changes when a robot reaches the end of an edge (drain) and when it leaves a charger
+(charge since arrival), so no event is needed per tick of charging.
+
+Every decision point (after an event that changes a phase) runs in three steps:
+1. **Charging status.**
+   - An idle robot below the low threshold goes out of service.
+   - A robot out of service that has charged to the high threshold returns to service.
+   - Each low robot that is neither charging nor driving to a charger goes to the nearest free charger,
+     by travel time. The drive is an ordinary move (REPOSITIONING), planned with SIPP like any other,
+     with a hold at the charger.
+2. **The dispatch policy.**
+   - Robots out of service are hidden from it (`DispatchSnapshot.unavailable`).
+   - Their expected return is in `planned_ready`: the tick they will reach the high threshold, at
+     their charger. A look-ahead policy can therefore plan orders for them. When a robot has a
+     planned ready time, availability uses it first (`dispatch/horizon.py`).
+3. **Claiming occupied chargers.**
+   - A charger held by an idle robot in service is claimed only now, after the policy, because the
+     policy may have sent that robot to work instead.
+   - Otherwise the holder is moved out of the way (the D24 mechanism for pickups), and the low robot
+     drives to the charger.
+   - If no charger is usable, the low robot stays where it is. It is checked again at every decision
+     point, and the wait is measured.
+
+**Wake-ups.**
+- A low robot's return to service is scheduled as a wake-up event, so the policy sees it at the exact
+  tick it reaches the high threshold.
+- A robot that starts the run low leaves for a charger at tick 0.
+
+**When a run ends.** A run ends at its last event that did something. When only wake-ups are left and no
+order is waiting, every order has been delivered and no robot is moving, so the run stops.
+- Without this rule, charging after the last job would lengthen the run. That would dilute throughput
+  and utilization, which are both measured over the run.
+- Time out of service is counted until the robot returns to service or the run ends.
+- In all 144 runs without batteries checked (72 from the M5 scaling benchmark, 72 from the P1 delay
+  configurations), the rule never fired, so earlier results are unchanged.
+
+**Invariant and KPIs.**
+- A battery below zero raises `SimulationInvariantError`. The threshold rule (above) is meant to make
+  this impossible; the invariant checks it on every edge.
+- The result reports charging trips, robot time out of service, robot time waiting for a charger, and
+  the lowest level reached, as a share of capacity.
+
+**Cost.** Steps 1 and 3 are O(R + C) per decision point, plus one SIPP plan per robot sent to a charger
+or moved off one (R robots, C chargers).
+
+**Testing.**
+- Hand map, tick by tick:
+  - a robot that ends a job low drives to the charger, charges, and takes the next order at the exact
+    tick it reaches the high threshold;
+  - a robot that starts low leaves at tick 0 and is not offered to the policy until it is charged;
+  - a robot that starts low on a charger returns to service through its wake-up alone;
+  - a charged robot on the charger is moved away for a low one;
+  - a run with nothing left to do ends when the last robot reaches its charger.
+- Generated runs on two maps, with a small battery so robots charge within half an hour: every order is
+  delivered, there are zero conflicts, the lowest level stays above zero, and runs are reproducible.
+- Without batteries, the 72 runs of the M5 scaling benchmark reproduce the committed results exactly.
+
+**Limitations.**
+- The nearest free charger is chosen greedily, by travel time. There is no queue at chargers and no
+  look-ahead on charger occupancy (the CP-SAT charging schedule is in the backlog).
+- Thresholds are fixed. Charging starts only when a robot is low; opportunistic top-ups are P2.3.
+
 ---
 
 ## 14. Interview notes

@@ -460,6 +460,9 @@ local pass predicts a CI pass.
 - **Chargers are reserved for charging.** With the battery model on, holding spots exclude chargers,
   and an idle robot that is charged and holds a charger another robot needs is moved away, by the
   same mechanism as for pickups (D24).
+- **Work before making way.** Such a robot is moved only after the dispatch policy has run at that
+  decision point. The policy may give it an order, and then it leaves the charger anyway, without a
+  wasted move. (Added in P2.2.)
 - **Synthetic parameters, chosen so charging matters within a one-hour run:**
   - a full battery lasts one hour of driving, and a full charge takes 20 minutes;
   - start levels are uniform between 30% and 100%, from their own named random stream (D14);
@@ -474,3 +477,8 @@ local pass predicts a CI pass.
   driving empty.
 - **Earlier results are unaffected.** Without the battery model, the simulator behaves exactly as
   before.
+- **A run ends at its last event that did something.** When only wake-ups are left and no order is
+  waiting, the run stops. A robot's return to service after the last job therefore does not lengthen
+  the run, and does not dilute throughput or utilization. Time out of service is counted until the
+  robot returns to service or the run ends. In the 144 runs without batteries checked, the rule never
+  fired. (Added in P2.2.)

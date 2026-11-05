@@ -352,7 +352,7 @@ that charging matters within a one-hour run (D26).
    - Each edge driven drains energy in proportion to its length.
    - A robot standing idle at a charger charges at a fixed rate.
    - Start levels are seeded.
-2. **Charging in the simulator, when low.**
+2. **Charging in the simulator, when low.** Done 2026-11-05.
    - A robot that becomes idle below a low threshold drives to the nearest free charger and charges
      there.
    - It is hidden from dispatch until it reaches a high threshold, and dispatch sees when it will be

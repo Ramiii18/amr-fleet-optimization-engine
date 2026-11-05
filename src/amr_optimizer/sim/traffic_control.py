@@ -70,13 +70,20 @@ class PlannedMove:
 class TrafficControl:
     """The reservation table of one simulation run, and the plans made against it."""
 
-    def __init__(self, scenario: Scenario, travel_times: TravelTimes) -> None:
+    def __init__(
+        self, scenario: Scenario, travel_times: TravelTimes, *, reserve_chargers: bool = False
+    ) -> None:
+        """With ``reserve_chargers`` (batteries on, D26), robots never park on a charger
+        unless they are sent there to charge."""
         self.table = ReservationTable()
         self.planner = ItineraryPlanner(travel_times)
         self._graph = scenario.graph
         self._load_ticks, self._unload_ticks = scenario.load_ticks, scenario.unload_ticks
-        excluded = (NodeKind.INTERSECTION, NodeKind.STATION)
+        excluded = {NodeKind.INTERSECTION, NodeKind.STATION}
+        if reserve_chargers:
+            excluded.add(NodeKind.CHARGER)
         self._holding_spots = sorted(n.id for n in scenario.graph.nodes if n.kind not in excluded)
+        self.chargers = tuple(sorted(n.id for n in scenario.graph.nodes_of_kind(NodeKind.CHARGER)))
         self._distances: dict[NodeId, dict[NodeId, int]] = {}
         self.ready: dict[RobotId, tuple[int, NodeId]] = {}  # where and when busy robots go idle
         for robot in scenario.robots:
@@ -152,10 +159,17 @@ class TrafficControl:
             (cuts[0], cuts[1], cuts[2]),
         )
 
-    def plan_move(self, robot: RobotState, now: int, avoid: frozenset[NodeId]) -> PlannedMove:
-        """Plan and reserve a drive for idle ``robot`` from its node to a free holding spot."""
+    def plan_move(
+        self,
+        robot: RobotState,
+        now: int,
+        avoid: frozenset[NodeId],
+        target: NodeId | None = None,
+    ) -> PlannedMove:
+        """Plan and reserve a drive for idle ``robot`` from its node to ``target``, or to a free
+        holding spot. A target must be free from ``now`` on (see `free_charger`)."""
         start = self.table.end_hold(robot.robot_id, now)
-        holding = self._holding_spot(start, now, avoid | {start})
+        holding = target or self._holding_spot(start, now, avoid | {start})
         itinerary = self._plan(robot.robot_id, start, now, [Stop(holding)])
         self.ready[robot.robot_id] = (itinerary.stop_ticks[0], holding)
         return PlannedMove(
@@ -168,6 +182,15 @@ class TrafficControl:
 
     def became_idle(self, robot: RobotId) -> None:
         self.ready.pop(robot, None)
+
+    def nearest_chargers(self, node: NodeId) -> list[NodeId]:
+        """Every charger reachable from ``node``, nearest first (free-flow ticks, then id)."""
+        distances = self._distances_from(node)
+        return [c for _, c in sorted((distances[c], c) for c in self.chargers if c in distances)]
+
+    def ticks_between(self, source: NodeId, target: NodeId) -> int | None:
+        """Free-flow ticks from ``source`` to ``target``, or ``None`` if unreachable."""
+        return self._distances_from(source).get(target)
 
     def _plan(self, robot: RobotId, start: NodeId, now: int, stops: list[Stop]) -> Itinerary:
         itinerary = self.planner.plan(self.table, start, now, stops)

@@ -81,12 +81,12 @@ def availability(robot: RobotState, snapshot: DispatchSnapshot) -> RobotAvailabi
     phases still to come. The result is exact while robots never interfere; with traffic
     (M4) it becomes an estimate.
     """
-    if robot.is_idle:
-        return RobotAvailability(robot.robot_id, robot.node, 0, idle=True)
     planned = snapshot.planned_ready.get(robot.robot_id)
-    if planned is not None:  # with traffic: when and where its itinerary makes it idle
+    if planned is not None:  # with traffic: when and where it is planned to be ready
         tick, node = planned
         return RobotAvailability(robot.robot_id, node, max(0, tick - snapshot.tick), False)
+    if robot.is_idle:
+        return RobotAvailability(robot.robot_id, robot.node, 0, idle=True)
     if robot.phase is RobotPhase.REPOSITIONING and robot.route and robot.until_tick is not None:
         ready = max(0, robot.until_tick - snapshot.tick)
         return RobotAvailability(robot.robot_id, robot.route.target, ready, False)

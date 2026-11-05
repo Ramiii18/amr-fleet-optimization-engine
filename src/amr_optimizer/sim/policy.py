@@ -38,7 +38,9 @@ class DispatchSnapshot:
     caches answers, which does not change them. ``load_ticks`` and ``unload_ticks`` are the
     scenario's handling times, so a policy can predict when a busy robot will finish (D18).
     ``planned_ready`` gives, with traffic, the tick and node at which each busy robot will
-    become idle, as planned; it is empty without traffic.
+    become idle, as planned; it is empty without traffic. ``unavailable`` lists idle robots
+    that may not take a job now, because their battery is low (D26); ``idle_robots`` leaves
+    them out, and ``planned_ready`` says when and where they will be back in service.
     """
 
     tick: int
@@ -48,6 +50,7 @@ class DispatchSnapshot:
     load_ticks: int
     unload_ticks: int
     planned_ready: Mapping[RobotId, tuple[int, NodeId]] = MappingProxyType({})
+    unavailable: frozenset[RobotId] = frozenset()
 
     def __post_init__(self) -> None:
         if self.load_ticks < 0 or self.unload_ticks < 0:
@@ -58,7 +61,12 @@ class DispatchSnapshot:
 
     @property
     def idle_robots(self) -> tuple[RobotState, ...]:
-        return tuple(robot for robot in self.robots if robot.is_idle)
+        """The robots that can take a job now: idle, and not out of service."""
+        return tuple(
+            robot
+            for robot in self.robots
+            if robot.is_idle and robot.robot_id not in self.unavailable
+        )
 
 
 class DispatchPolicy(Protocol):

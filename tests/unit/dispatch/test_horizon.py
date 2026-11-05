@@ -120,6 +120,14 @@ def test_an_idle_robot_is_ready_now_where_it_stands() -> None:
     assert availability(robot, _snapshot(9, [robot], [])) == RobotAvailability(R1, N[2], 0, True)
 
 
+def test_an_idle_robot_with_a_planned_return_is_ready_then() -> None:
+    # A robot charging out of service is idle, but it is planned from its return to service.
+    robot = RobotState.idle(R1, N[4], tick=3)
+    snapshot = dataclasses.replace(_snapshot(9, [robot], []), planned_ready={R1: (40, N[4])})
+
+    assert availability(robot, snapshot) == RobotAvailability(R1, N[4], 31, idle=False)
+
+
 class _Recorder:
     """Greedy dispatch that records, at every decision, where and when each busy robot is
     predicted to deliver its order."""
