@@ -440,3 +440,37 @@ local pass predicts a CI pass.
 - Robots never leave a node earlier than planned, so slack in a plan is not used to catch up.
 - A robot may stop inside a corridor, before its end node. The model counts it as occupying the
   corridor; physical stopping distances are not modelled.
+
+## D26: Battery in integer energy units; charging happens while idle at a charger; a robot below a threshold is out of service until charged
+**Status:** Accepted (2026-11-05)
+**Why:**
+- **Integer energy (as D6 for time).**
+  - Each edge drains a whole number of units, in proportion to its length.
+  - A robot idle at a charger gains a fixed number of units per tick, up to its capacity.
+  - Energy comparisons are exact, and runs stay reproducible.
+- **No new robot phase.** Charging is what an idle robot does when it stands on a charger. Driving to
+  a charger is an ordinary move (REPOSITIONING). The state machine and its exhaustive tests stay as
+  they are.
+- **Out of service while low.** A robot below the low threshold is sent to a charger as soon as it is
+  idle. Until it reaches the high threshold it is hidden from dispatch, and dispatch sees when it will
+  be ready, so look-ahead planning can still plan for it.
+- **Safety by threshold.** The low threshold is set above the energy of the longest job plus the
+  longest drive from any drop-off to a charger, measured on the map, with a margin. Because only robots
+  above it receive jobs, no battery can run empty. An invariant checks this anyway.
+- **Chargers are reserved for charging.** With the battery model on, holding spots exclude chargers,
+  and an idle robot that is charged and holds a charger another robot needs is moved away, by the
+  same mechanism as for pickups (D24).
+- **Synthetic parameters, chosen so charging matters within a one-hour run:**
+  - a full battery lasts one hour of driving, and a full charge takes 20 minutes;
+  - start levels are uniform between 30% and 100%, from their own named random stream (D14);
+  - robots go to charge below 25% and stay out of service until 90%.
+
+  None of this is modelled on a real robot.
+
+**Consequences:**
+- **Charging needs traffic.** Chargers are shared resources, and only the traffic mode models
+  occupancy.
+- **No energy for loading and unloading, or for standing idle.** Driving loaded costs the same as
+  driving empty.
+- **Earlier results are unaffected.** Without the battery model, the simulator behaves exactly as
+  before.

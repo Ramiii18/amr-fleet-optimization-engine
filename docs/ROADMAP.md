@@ -290,7 +290,7 @@ by what they build on:
 | Milestone | Content | Why in this place | Status |
 |---|---|---|---|
 | **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | **Done** (2026-11-05) |
-| **P2** Battery and charging | Battery model, charging policy, chargers as shared resources, a CP-SAT charger schedule against a threshold rule | The largest part of the original scope still missing; a different CP-SAT model (intervals, capacity) | Not started |
+| **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | In progress |
 | **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | Not started |
 | **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | Not started |
 
@@ -340,7 +340,42 @@ by what they build on:
 - Replanning or reordering in that case is the natural next step, and the same machinery handles
   breakdowns and blocked corridors.
 
+## P2: plan (2026-11-05)
+
+**Goal.** Robots run on batteries and share a few chargers. Charging takes robots out of service, and
+how it is scheduled changes what the fleet delivers. The battery parameters are synthetic, chosen so
+that charging matters within a one-hour run (D26).
+
+**Increments:**
+1. **Energy model.**
+   - Integer energy units.
+   - Each edge driven drains energy in proportion to its length.
+   - A robot standing idle at a charger charges at a fixed rate.
+   - Start levels are seeded.
+2. **Charging in the simulator, when low.**
+   - A robot that becomes idle below a low threshold drives to the nearest free charger and charges
+     there.
+   - It is hidden from dispatch until it reaches a high threshold, and dispatch sees when it will be
+     ready.
+   - Chargers are endpoints, reserved for charging. An idle, charged robot on a charger that another
+     robot needs is moved away.
+   - Invariant: no battery ever goes below zero.
+3. **Opportunistic charging and comparison.**
+   - Idle robots also top up when no order is waiting and a charger is free, and they can be
+     dispatched as soon as they are above the low threshold.
+   - The two charging policies are compared under greedy and `cpsat-fair`, with charging KPIs:
+     charging trips, time out of service waiting for a charger, and the lowest battery level.
+
+**Acceptance criteria:**
+- No battery ever goes below zero, in any test or benchmark run; checked by an invariant.
+- Every order is delivered and every run with traffic is conflict-free, with charging.
+- Without a battery model, all earlier results reproduce exactly.
+- The comparison reports paired differences, and charging KPIs, for both charging policies.
+
 ## Phase 2 backlog (unordered)
+
+- **From P2:** a CP-SAT schedule of charging slots over a horizon (intervals with charger capacity),
+  against the rule-based policies.
 
 - **From M4:** mutex zones (groups of nodes and corridors with capacity 1); traffic-aware cost
   estimates for the planners; a fleet-wide path planner (for example conflict-based search) instead
