@@ -1018,7 +1018,8 @@ chargers are shared resources and only traffic mode models who occupies a node. 
 lazily: a level changes when a robot reaches the end of an edge (drain) and when it leaves a charger
 (charge since arrival), so no event is needed per tick of charging.
 
-Every decision point (after an event that changes a phase) runs in three steps:
+Every decision point (after an event that changes a phase) runs in three steps (four with
+opportunistic charging, below):
 1. **Charging status.**
    - An idle robot below the low threshold goes out of service.
    - A robot out of service that has charged to the high threshold returns to service.
@@ -1072,10 +1073,43 @@ or moved off one (R robots, C chargers).
   delivered, there are zero conflicts, the lowest level stays above zero, and runs are reproducible.
 - Without batteries, the 72 runs of the M5 scaling benchmark reproduce the committed results exactly.
 
+**Opportunistic charging (P2.3, D27).** `simulate(..., charging=...)` takes one of three policies:
+
+| Policy | Robots out of service charge to | Idle robots in service top up |
+|---|---|---|
+| `when-low` (default) | the high threshold | no |
+| `opportunistic` | the high threshold | yes |
+| `opportunistic-early` | the low threshold | yes |
+
+- **Top-ups.**
+  - A top-up is step 4 of a decision point, and happens only when no order is waiting.
+  - Idle robots in service below the high threshold, not already on a charger, drive to the nearest
+    free charger, lowest level first, until none is free.
+  - They stay in service: the policy may send them to work from the charger, and a low robot may
+    claim the charger (step 3).
+- **Why both opportunistic policies are kept.** The early variant is the first version built. A
+  development probe at high load showed it thrashing (D27): a robot back at exactly the low threshold
+  can do only about one job before it is low again. Keeping it makes that failure mode measurable.
+- **Charging KPIs** (`metrics.compute_charging_kpis`):
+  - charging trips and top-ups;
+  - the share of robot time out of service;
+  - robot time waiting for a charger;
+  - charger occupancy (the share of charger time with a robot on it);
+  - the lowest level reached.
+- **Testing.**
+  - On the hand map: a robot tops up after a job and is sent to work from the charger at the exact
+    tick the next order is released; the same run without top-ups leaves it waiting where it is.
+  - Return to service at the low threshold under the early variant, and at the high threshold under
+    the other two, to the tick.
+  - The eviction rule, and the generated runs (all orders delivered, zero conflicts, batteries above
+    zero, reproducible), under all three policies.
+
 **Limitations.**
 - The nearest free charger is chosen greedily, by travel time. There is no queue at chargers and no
   look-ahead on charger occupancy (the CP-SAT charging schedule is in the backlog).
-- Thresholds are fixed. Charging starts only when a robot is low; opportunistic top-ups are P2.3.
+- Thresholds are fixed.
+- Top-ups ignore demand: a robot may drive to a charger just before an order arrives near where it
+  stood.
 
 ---
 

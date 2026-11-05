@@ -360,17 +360,24 @@ that charging matters within a one-hour run (D26).
    - Chargers are endpoints, reserved for charging. An idle, charged robot on a charger that another
      robot needs is moved away.
    - Invariant: no battery ever goes below zero.
-3. **Opportunistic charging and comparison.**
-   - Idle robots also top up when no order is waiting and a charger is free, and they can be
-     dispatched as soon as they are above the low threshold.
-   - The two charging policies are compared under greedy and `cpsat-fair`, with charging KPIs:
-     charging trips, time out of service waiting for a charger, and the lowest battery level.
+3. **Opportunistic charging.** Done 2026-11-05.
+   - Idle robots also top up when no order is waiting and a charger is free. They stay in service
+     while they charge.
+   - Changed while building (D27): the first version also returned low robots to service at the low
+     threshold. It thrashed at high load in a probe, so it is kept as a third policy,
+     `opportunistic-early`, and `opportunistic` keeps the D26 hysteresis (back in service at the high
+     threshold).
+   - Charging KPIs (`ChargingKpis`) and `amr-sim --charging`.
+4. **Comparison.**
+   - The three charging policies, and runs without batteries, are compared under greedy and
+     `cpsat-fair`, with charging KPIs: charging trips and top-ups, time out of service, time waiting
+     for a charger, charger occupancy, and the lowest battery level.
 
 **Acceptance criteria:**
 - No battery ever goes below zero, in any test or benchmark run; checked by an invariant.
 - Every order is delivered and every run with traffic is conflict-free, with charging.
 - Without a battery model, all earlier results reproduce exactly.
-- The comparison reports paired differences, and charging KPIs, for both charging policies.
+- The comparison reports paired differences, and charging KPIs, for every charging policy.
 
 ## Phase 2 backlog (unordered)
 

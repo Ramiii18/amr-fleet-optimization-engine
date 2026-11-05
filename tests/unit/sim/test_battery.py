@@ -20,6 +20,7 @@ import pytest
 from amr_optimizer.dispatch import GreedyDispatch, InsertionDispatch, Objective
 from amr_optimizer.domain import (
     BatterySpec,
+    ChargingPolicy,
     OrderId,
     RobotId,
     RobotState,
@@ -41,6 +42,8 @@ from amr_optimizer.warehouse import (
 
 A, B, W, E, S1, S2, P1, CH = (NodeId(n) for n in ("A", "B", "W", "E", "S1", "S2", "P1", "CH"))
 R1, R2 = RobotId("R1"), RobotId("R2")
+WHEN_LOW, OPPORTUNISTIC = ChargingPolicy.WHEN_LOW, ChargingPolicy.OPPORTUNISTIC
+EARLY = ChargingPolicy.OPPORTUNISTIC_EARLY
 
 
 def _hand_map() -> WarehouseGraph:
@@ -136,12 +139,15 @@ def test_the_run_ends_with_the_last_job_not_with_the_last_charge() -> None:
     assert result.out_of_service_ticks == 110 - 70
 
 
-def test_a_charged_robot_on_the_charger_makes_way_for_a_low_one() -> None:
-    # R2 starts on the charger, in service. R1 ends its job low (as above) and needs that
-    # charger, so R2 is moved away first.
+@pytest.mark.parametrize("charging", list(ChargingPolicy))
+def test_a_charged_robot_on_the_charger_makes_way_for_a_low_one(
+    charging: ChargingPolicy,
+) -> None:
+    # R2 starts on the charger, in service (charging, under the opportunistic policy). R1 ends
+    # its job low (as above) and needs that charger, so R2 is moved away first.
     scenario = _scenario({R1: P1, R2: CH}, [TransportOrder(OrderId("O1"), A, S1, 0)])
 
-    result = simulate(scenario, _OnlyR1(), traffic=True, battery=_battery(0.30))
+    result = simulate(scenario, _OnlyR1(), traffic=True, battery=_battery(0.30), charging=charging)
 
     assert result.moves_out_of_the_way == 1
     assert result.charging_trips == 1
@@ -207,6 +213,87 @@ def test_batteries_need_traffic() -> None:
         simulate(scenario, GreedyDispatch(), battery=BatterySpec())
 
 
+def test_a_charging_policy_needs_a_battery() -> None:
+    scenario = _scenario({R1: P1}, [])
+
+    with pytest.raises(ValueError, match="needs a battery"):
+        simulate(scenario, GreedyDispatch(), traffic=True, charging=OPPORTUNISTIC)
+
+
+# --- opportunistic charging (D27) -------------------------------------------------------------
+
+
+def test_an_idle_robot_tops_up_and_goes_to_work_from_the_charger() -> None:
+    # R1 starts at 70% (44,800 units) and does O1 (6 m) as in the first test. Idle at P1 at
+    # tick 70 with 38,800 units, above the low threshold, with no order waiting: it tops up at
+    # CH, arriving at tick 110. O2 is released at tick 200; R1 is in service, so the policy
+    # sends it straight from the charger. After O2 it has nothing to do and tops up again.
+    orders = [TransportOrder(OrderId("O1"), A, S1, 0), TransportOrder(OrderId("O2"), B, S2, 200)]
+    scenario = _scenario({R1: P1}, orders)
+
+    result = simulate(
+        scenario, GreedyDispatch(), traffic=True, battery=_battery(0.70), charging=OPPORTUNISTIC
+    )
+
+    assert (
+        result.trajectories[R1].visits[6:12]
+        == _path(
+            (P1, 70, 70),
+            (W, 80, 80),
+            (E, 100, 100),
+            (CH, 110, 200),
+            (E, 210, 210),
+            (B, 220, 225),
+        ).visits
+    )
+    assert result.trajectories[R1].end.node == CH
+    assert (result.top_up_trips, result.charging_trips) == (2, 0)
+    assert result.out_of_service_ticks == 0
+    assert result.charger_ticks == 200 - 110  # the run ends when R1 reaches CH the second time
+    assert result.all_delivered and _conflicts(result) == 0
+
+
+def test_without_opportunistic_charging_the_same_robot_waits_where_it_is() -> None:
+    orders = [TransportOrder(OrderId("O1"), A, S1, 0), TransportOrder(OrderId("O2"), B, S2, 200)]
+    scenario = _scenario({R1: P1}, orders)
+
+    result = simulate(scenario, GreedyDispatch(), traffic=True, battery=_battery(0.70))
+
+    assert result.trajectories[R1].visits[6] == Visit(P1, 70, 200)
+    assert (result.top_up_trips, result.charging_trips, result.charger_ticks) == (0, 0, 0)
+
+
+@pytest.mark.parametrize("charging", [WHEN_LOW, OPPORTUNISTIC])
+def test_a_low_robot_is_back_in_service_at_the_high_threshold(charging: ChargingPolicy) -> None:
+    # As in the test of a robot that starts low: both policies charge it to the high threshold
+    # (tick 528) before the policy sees it.
+    scenario = _scenario({R1: P1}, [TransportOrder(OrderId("O1"), A, S1, 5)])
+    policy = _OnlyR1()
+
+    simulate(scenario, policy, traffic=True, battery=_battery(0.20), charging=charging)
+
+    assert policy.offered[0] == (528, (R1,))
+
+
+def test_early_opportunistic_charging_returns_a_low_robot_at_the_low_threshold() -> None:
+    # R1 starts at 20% (12,800 units), drives to CH (4 m) and arrives at tick 40 with 8,800.
+    # It is back in service at the low threshold (16,000), 72 ticks later, at tick 112, not at
+    # the high threshold (tick 528). It then does O1 from CH (8 m), is low again at P1 at tick
+    # 202 with 8,000 units, and goes back to CH: tick 242, 4,000 units.
+    scenario = _scenario({R1: P1}, [TransportOrder(OrderId("O1"), A, S1, 5)])
+    policy = _OnlyR1()
+
+    result = simulate(scenario, policy, traffic=True, battery=_battery(0.20), charging=EARLY)
+
+    assert policy.offered[0] == (112, (R1,))
+    assert result.trajectories[R1].visits[3] == Visit(CH, 40, 112)
+    assert result.charging_trips == 2
+    assert result.lowest_energy_share == pytest.approx(4_000 / 64_000)
+    assert result.out_of_service_ticks == 112 + (242 - 202)
+    assert result.end_tick == 242
+    assert result.all_delivered
+
+
 # --- whole generated runs ---------------------------------------------------------------------
 
 MAPS = {name: generate_grid_warehouse(PRESETS[name]) for name in ("small", "medium")}
@@ -216,23 +303,25 @@ CASES = [(m, r, s) for m in MAPS for r in (3, 6) for s in range(3)]
 SMALL_BATTERY = BatterySpec(capacity_m=1200.0)
 
 
+@pytest.mark.parametrize("charging", list(ChargingPolicy))
 @pytest.mark.parametrize(("map_name", "robots", "seed"), CASES)
 def test_generated_runs_with_batteries_never_run_empty(
-    map_name: str, robots: int, seed: int
+    map_name: str, robots: int, seed: int, charging: ChargingPolicy
 ) -> None:
     spec = ScenarioSpec(robots=robots, orders_per_hour=150, duration_s=1800)
     scenario = generate_scenario(MAPS[map_name], spec, seed=seed)
-    policy = InsertionDispatch(objective=Objective.WORST_FIRST)
-    battery = SMALL_BATTERY
 
-    result = simulate(scenario, policy, traffic=True, battery=battery, battery_seed=seed)
-    again = simulate(
-        scenario,
-        InsertionDispatch(objective=Objective.WORST_FIRST),
-        traffic=True,
-        battery=battery,
-        battery_seed=seed,
-    )
+    def run() -> SimulationResult:
+        return simulate(
+            scenario,
+            InsertionDispatch(objective=Objective.WORST_FIRST),
+            traffic=True,
+            battery=SMALL_BATTERY,
+            battery_seed=seed,
+            charging=charging,
+        )
+
+    result, again = run(), run()
 
     assert result.all_delivered
     assert _conflicts(result) == 0
@@ -241,13 +330,23 @@ def test_generated_runs_with_batteries_never_run_empty(
 
 
 def test_robots_do_charge_in_the_generated_runs() -> None:
-    trips = 0
+    trips = dict.fromkeys(ChargingPolicy, 0)
+    top_ups = 0
     for map_name, robots, seed in CASES:
         spec = ScenarioSpec(robots=robots, orders_per_hour=150, duration_s=1800)
         scenario = generate_scenario(MAPS[map_name], spec, seed=seed)
-        result = simulate(
-            scenario, GreedyDispatch(), traffic=True, battery=SMALL_BATTERY, battery_seed=seed
-        )
-        trips += result.charging_trips
+        for charging in trips:
+            result = simulate(
+                scenario,
+                GreedyDispatch(),
+                traffic=True,
+                battery=SMALL_BATTERY,
+                battery_seed=seed,
+                charging=charging,
+            )
+            trips[charging] += result.charging_trips
+            top_ups += result.top_up_trips
 
-    assert trips > len(CASES)  # the tests above exercise charging, not just its absence
+    # The tests above exercise charging, not just its absence.
+    assert trips[WHEN_LOW] > len(CASES)
+    assert top_ups > len(CASES)

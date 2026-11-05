@@ -482,3 +482,31 @@ local pass predicts a CI pass.
   the run, and does not dilute throughput or utilization. Time out of service is counted until the
   robot returns to service or the run ends. In the 144 runs without batteries checked, the rule never
   fired. (Added in P2.2.)
+
+## D27: Opportunistic charging tops up idle robots on free chargers and keeps them in service; low robots still charge to the high threshold
+**Status:** Accepted (2026-11-05)
+**Why:**
+- **One change against the D26 rule.** When no order is waiting, idle robots in service that are below
+  the high threshold drive to the nearest free charger, lowest level first. Everything else stays as in
+  D26, including the hysteresis: a robot out of service charges from the low to the high threshold.
+  A comparison then measures the effect of top-ups alone.
+- **Top-ups never block work.** A robot that tops up stays in service. The policy can send it to work
+  from the charger at any decision point, and a low robot can claim its charger (D26).
+- **Top-ups take free chargers only.** They never move another robot.
+- **The early-release variant is kept as a measured counter-example.**
+  - The first version returned a low robot to service as soon as it had charged to the low
+    threshold.
+  - In a development probe at high load (large map, 10 robots, 300 orders/h, seeds 0 and 1, both
+    dispatch policies), robots thrashed:
+    - 128 to 182 charging trips per run instead of 10 to 12;
+    - up to 2,010 s of robot time waiting for a charger;
+    - a worse worst case in 3 of 4 runs.
+  - It stays available as `opportunistic-early`, so the comparison measures it over every seed.
+
+**Consequences:**
+- **Top-ups count as run time.** They happen whenever nothing is waiting, including after the last
+  job, and they are real moves, so the D26 end-of-run rule does not cut them.
+- **No charger look-ahead.** The dispatch policy does not know where chargers are, or which robots are
+  charging.
+- **Separate KPIs.** Trips when low and top-ups are counted separately, and charger occupancy is
+  measured (`ChargingKpis`).

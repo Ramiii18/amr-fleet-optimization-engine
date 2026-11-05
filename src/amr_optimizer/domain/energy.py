@@ -17,6 +17,7 @@ import math
 import random
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 
 from amr_optimizer.domain.timing import TimeModel
 from amr_optimizer.routing import shortest_path_lengths
@@ -24,6 +25,29 @@ from amr_optimizer.warehouse import NodeId, NodeKind, WarehouseGraph
 
 UNITS_PER_METRE = 1000
 """Energy units per metre driven: one unit is the energy of one millimetre."""
+
+
+class ChargingPolicy(Enum):
+    """When robots charge (D26, D27)."""
+
+    WHEN_LOW = "when-low"
+    """Only below the low threshold; out of service until the high threshold."""
+    OPPORTUNISTIC = "opportunistic"
+    """As when-low, and idle robots in service also top up when no order is waiting and a
+    charger is free. They stay in service while they charge."""
+    OPPORTUNISTIC_EARLY = "opportunistic-early"
+    """As opportunistic, but a low robot is back in service as soon as it has charged to the
+    low threshold, not the high one."""
+
+    @property
+    def tops_up(self) -> bool:
+        """Whether idle robots in service top up."""
+        return self is not ChargingPolicy.WHEN_LOW
+
+    @property
+    def back_at_low(self) -> bool:
+        """Whether a low robot returns to service at the low threshold (else the high one)."""
+        return self is ChargingPolicy.OPPORTUNISTIC_EARLY
 
 
 @dataclass(frozen=True, slots=True)

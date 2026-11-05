@@ -14,6 +14,16 @@ Definitions (all times in seconds of simulated time):
 
 Times are reported over delivered orders; undelivered orders are counted separately and
 never silently dropped. Percentiles use the nearest-rank method (`percentile`).
+
+Runs with a battery model also have charging KPIs (`ChargingKpis`, D26 and D27):
+
+- **charging trips**: drives to a charger by robots below the low threshold;
+- **top-ups**: drives to a charger by robots in service (opportunistic charging);
+- **out of service**: the share of robot time spent out of service, from falling below the low
+  threshold until charged again (or the end of the run);
+- **charger wait**: robot time out of service while no charger was free;
+- **charger occupancy**: the share of charger time with a robot standing on the charger;
+- **lowest level**: the lowest battery level any robot reached, as a share of capacity.
 """
 
 import math
@@ -24,6 +34,7 @@ from dataclasses import dataclass
 from amr_optimizer.domain import OrderId
 from amr_optimizer.sim import EventKind, SimulationResult
 from amr_optimizer.traffic import path_conflicts
+from amr_optimizer.warehouse import NodeKind
 
 SECONDS_PER_HOUR = 3600.0
 
@@ -123,4 +134,34 @@ def compute_kpis(result: SimulationResult) -> RunKpis:
         empty_distance_m=empty_m,
         loaded_distance_m=loaded_m,
         conflicts=len(path_conflicts({r: [p] for r, p in result.trajectories.items()})),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ChargingKpis:
+    """The charging KPIs of one run with a battery model (definitions above)."""
+
+    charging_trips: int
+    top_up_trips: int
+    out_of_service_share: float
+    charger_wait_s: float
+    charger_occupancy: float
+    lowest_energy_share: float
+
+
+def compute_charging_kpis(result: SimulationResult) -> ChargingKpis:
+    """Charging KPIs of ``result``, which must come from a run with a battery model."""
+    if not result.battery or result.lowest_energy_share is None:
+        raise ValueError("the run had no battery model")
+    scenario = result.scenario
+    robots = len(scenario.robots)
+    chargers = len(scenario.graph.nodes_of_kind(NodeKind.CHARGER))
+    end = result.end_tick
+    return ChargingKpis(
+        charging_trips=result.charging_trips,
+        top_up_trips=result.top_up_trips,
+        out_of_service_share=result.out_of_service_ticks / (robots * end) if end else math.nan,
+        charger_wait_s=result.charger_wait_ticks * scenario.time_model.tick_s,
+        charger_occupancy=result.charger_ticks / (chargers * end) if end else math.nan,
+        lowest_energy_share=result.lowest_energy_share,
     )

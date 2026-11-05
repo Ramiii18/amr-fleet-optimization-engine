@@ -77,6 +77,8 @@ def test_delays_can_be_switched_on_with_traffic(capsys: pytest.CaptureFixture[st
     "bad",
     [
         ["--delay-share", "0.2"],  # needs --traffic
+        ["--charging", "when-low"],  # needs --traffic
+        ["--traffic", "--charging", "sometimes"],
         ["--traffic", "--delay-share", "1.5"],
         ["--traffic", "--delay-share", "0.2", "--delay-s", "5", "1"],
     ],
@@ -86,3 +88,17 @@ def test_bad_delay_options_are_rejected(bad: list[str]) -> None:
         main([*SMALL_RUN, *bad])
 
     assert exit_info.value.code == 2
+
+
+def test_batteries_can_be_switched_on_with_traffic(capsys: pytest.CaptureFixture[str]) -> None:
+    run = [*SMALL_RUN, "--traffic", "--charging", "opportunistic"]
+
+    assert main(run) == 0
+    out = capsys.readouterr().out
+    assert "with traffic (reservations), batteries charged opportunistic" in out
+    assert "top-ups" in out and "lowest battery" in out
+    assert "WARNING" not in out
+
+    assert main([*run, "--json"]) == 0
+    charging = json.loads(capsys.readouterr().out)["charging"]
+    assert 0 < charging["lowest_energy_share"] <= 1

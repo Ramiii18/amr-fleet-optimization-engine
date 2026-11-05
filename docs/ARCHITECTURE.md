@@ -16,7 +16,8 @@ src/amr_optimizer/
   domain/      timing.py     TimeModel (integer ticks), TravelTimes (per-edge travel ticks)
                orders.py     TransportOrder
                robots.py     RobotState and the robot state machine (ALLOWED_TRANSITIONS)
-               energy.py     BatterySpec, EnergyModel: integer energy units, safety bound (Phase 2)
+               energy.py     BatterySpec, EnergyModel: integer energy units, safety bound;
+                             ChargingPolicy (Phase 2)
   scenario/    model.py      Scenario: validated input of one simulation run
                generator.py  seeded order stream (Bernoulli arrivals), fleet placement
   sim/         simulator.py  discrete-event loop, executor, invariant checks; free flow or traffic;
@@ -39,7 +40,8 @@ src/amr_optimizer/
                execution.py  executing plans under delays: naive or in planned order (Phase 2)
   viz/         motion.py     robot position and activity at any tick (pure functions)
                plots.py      map, robots, scaling chart, animation (matplotlib; `viz` extra)
-  metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile
+  metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile;
+                             compute_charging_kpis for runs with batteries (Phase 2)
                compare.py    paired_difference: per-seed differences with a t confidence interval
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
 scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py,

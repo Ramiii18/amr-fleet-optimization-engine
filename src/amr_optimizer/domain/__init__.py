@@ -1,7 +1,13 @@
 """Domain model of the fleet: time units, transport orders, robots and their state machine,
 and batteries."""
 
-from amr_optimizer.domain.energy import UNITS_PER_METRE, BatterySpec, EnergyModel, safe_low_m
+from amr_optimizer.domain.energy import (
+    UNITS_PER_METRE,
+    BatterySpec,
+    ChargingPolicy,
+    EnergyModel,
+    safe_low_m,
+)
 from amr_optimizer.domain.orders import OrderId, OrderValidationError, TransportOrder
 from amr_optimizer.domain.robots import (
     ALLOWED_TRANSITIONS,
@@ -18,6 +24,7 @@ __all__ = [
     "TICK_ROUNDING_TOLERANCE",
     "UNITS_PER_METRE",
     "BatterySpec",
+    "ChargingPolicy",
     "EnergyModel",
     "InvalidTransitionError",
     "OrderId",

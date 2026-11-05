@@ -12,7 +12,8 @@ from collections.abc import Sequence
 from dataclasses import asdict
 
 from amr_optimizer.dispatch import POLICIES
-from amr_optimizer.metrics import RunKpis, compute_kpis
+from amr_optimizer.domain import BatterySpec, ChargingPolicy
+from amr_optimizer.metrics import ChargingKpis, RunKpis, compute_charging_kpis, compute_kpis
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import simulate
 from amr_optimizer.traffic import NO_DELAYS, DelayModel, ExecutionPolicy
@@ -62,6 +63,12 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="with --traffic: robots keep their own schedules under delays (conflicts possible)",
     )
+    parser.add_argument(
+        "--charging",
+        choices=[policy.value for policy in ChargingPolicy],
+        help="with --traffic: robots run on the default synthetic battery (D26) and charge "
+        "by this policy (D27); default is no battery model",
+    )
     parser.add_argument("--json", action="store_true", help="print the KPIs as JSON")
     return parser
 
@@ -86,12 +93,23 @@ def _report(kpis: RunKpis) -> list[str]:
     ]
 
 
+def _charging_report(kpis: ChargingKpis) -> list[str]:
+    return [
+        f"  charging           {kpis.charging_trips:8d} trips when low  "
+        f"{kpis.top_up_trips:8d} top-ups",
+        f"  out of service     {kpis.out_of_service_share:8.1%} of robot time  "
+        f"{kpis.charger_wait_s:8.1f} s waiting for a charger",
+        f"  chargers           {kpis.charger_occupancy:8.1%} occupied  "
+        f"lowest battery {kpis.lowest_energy_share:.0%}",
+    ]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.round_s < 0:
         _parser().error("--round-s must be non-negative")
-    if (args.delay_share or args.naive) and not args.traffic:
-        _parser().error("--delay-share and --naive need --traffic")
+    if (args.delay_share or args.naive or args.charging) and not args.traffic:
+        _parser().error("--delay-share, --naive and --charging need --traffic")
     if not 0 <= args.delay_share <= 1:
         _parser().error("--delay-share must be between 0 and 1")
     spec = ScenarioSpec(
@@ -105,6 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _parser().error("--delay-s needs 0 < MIN <= MAX")
     delays = DelayModel(args.delay_share, low, high) if args.delay_share else NO_DELAYS
     execution = ExecutionPolicy.NAIVE if args.naive else ExecutionPolicy.ORDERED
+    charging = ChargingPolicy(args.charging) if args.charging else ChargingPolicy.WHEN_LOW
 
     started = time.perf_counter()
     result = simulate(
@@ -115,12 +134,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         delays=delays,
         delay_seed=args.seed,
         execution=execution,
+        battery=BatterySpec() if args.charging else None,
+        battery_seed=args.seed,
+        charging=charging,
     )
     elapsed = time.perf_counter() - started
     kpis = compute_kpis(result)
+    charging_kpis = compute_charging_kpis(result) if result.battery else None
 
     if args.json:
-        print(json.dumps(asdict(kpis) | {"empty_share": kpis.empty_share}, indent=2))
+        output = asdict(kpis) | {"empty_share": kpis.empty_share}
+        if charging_kpis is not None:
+            output["charging"] = asdict(charging_kpis)
+        print(json.dumps(output, indent=2))
         return 0
     rounds = f"decision rounds every {args.round_s:g} s" if interval else "decides at every event"
     print(
@@ -132,6 +158,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.delay_share:
         kind = "naive" if args.naive else "ordered"
         mode += f", {args.delay_share:.0%} of edges delayed, {kind} execution"
+    if args.charging:
+        mode += f", batteries charged {args.charging}"
     print(f"Policy:   {kpis.policy}, {rounds}, {mode}")
     print(
         f"Delivered {kpis.delivered} of {kpis.orders} orders in {kpis.duration_s:.1f} s of "
@@ -140,4 +168,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if kpis.undelivered:
         print(f"WARNING: {kpis.undelivered} orders were not delivered")
     print("\n".join(_report(kpis)))
+    if charging_kpis is not None:
+        print("\n".join(_charging_report(charging_kpis)))
     return 0

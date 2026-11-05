@@ -57,6 +57,7 @@ from types import MappingProxyType
 
 from amr_optimizer.domain import (
     BatterySpec,
+    ChargingPolicy,
     EnergyModel,
     OrderId,
     RobotId,
@@ -119,6 +120,8 @@ class SimulationResult:
     decision_seconds: tuple[float, ...] = ()  # wall time of each decision; see below
     battery: bool = False
     charging_trips: int = 0  # drives to a charger by robots below the low threshold
+    top_up_trips: int = 0  # drives to a charger by robots in service (opportunistic, D27)
+    charger_ticks: int = 0  # robot-ticks spent standing on a charger (charging, or full)
     out_of_service_ticks: int = 0  # robot-ticks spent out of service, below the threshold
     charger_wait_ticks: int = 0  # robot-ticks out of service while no charger was free
     lowest_energy_share: float | None = None  # the lowest level any battery reached
@@ -145,6 +148,7 @@ def simulate(
     execution: ExecutionPolicy = ExecutionPolicy.ORDERED,
     battery: BatterySpec | None = None,
     battery_seed: int = 0,
+    charging: ChargingPolicy = ChargingPolicy.WHEN_LOW,
 ) -> SimulationResult:
     """Run ``scenario`` under ``policy`` until no events remain, or past ``max_tick``.
 
@@ -156,7 +160,7 @@ def simulate(
     ``delay_seed`` and ``execution`` then set how plans are executed (D25). Each robot draws
     its delays from its own stream, named after ``delay_seed`` and the robot. With ``battery``
     (and traffic), robots drain and charge batteries (D26); start levels come from a stream
-    named after ``battery_seed``.
+    named after ``battery_seed``, and ``charging`` sets when robots charge (D27).
     """
     if max_tick is not None and max_tick < 0:
         raise ValueError(f"max_tick must be non-negative, got {max_tick}")
@@ -168,6 +172,8 @@ def simulate(
         raise ValueError("delays and execution policies need traffic=True")
     if not traffic and battery is not None:
         raise ValueError("batteries need traffic=True: chargers are shared resources")
+    if battery is None and charging is not ChargingPolicy.WHEN_LOW:
+        raise ValueError("a charging policy needs a battery")
     return _Simulation(
         scenario,
         policy,
@@ -179,6 +185,7 @@ def simulate(
         execution,
         battery,
         battery_seed,
+        charging,
     ).run()
 
 
@@ -245,6 +252,7 @@ class _Simulation:
         execution: ExecutionPolicy = ExecutionPolicy.ORDERED,
         battery: BatterySpec | None = None,
         battery_seed: int = 0,
+        charging: ChargingPolicy = ChargingPolicy.WHEN_LOW,
     ) -> None:
         self.scenario = scenario
         self.policy = policy
@@ -269,7 +277,12 @@ class _Simulation:
         self._waiting_since: dict[RobotId, int] = {}  # out of service, no charger free yet
         self._arrival_level: dict[RobotId, int] = {}  # level on reaching the charger it drives to
         self._charging_trips = self._out_of_service = self._charger_wait = self._lowest = 0
+        self._top_ups = self._charger_ticks = 0
+        self._charging = charging
+        self._back_level = 0  # the level at which a robot out of service returns to service
         if self._energy_model is not None:
+            model = self._energy_model
+            self._back_level = model.low if charging.back_at_low else model.high
             levels = self._energy_model.start_levels(
                 len(scenario.robots), random.Random(f"{battery_seed}:battery")
             )
@@ -437,7 +450,7 @@ class _Simulation:
             self._let_next_in(here, self._order.leave(here, robot_id, self.now))
         if self._energy_model is not None and robot_id in self._charging_since:
             self._energy[robot_id] = self._level(robot_id)  # stop charging
-            del self._charging_since[robot_id]
+            self._charger_ticks += self.now - self._charging_since.pop(robot_id)
             self._decide = True  # a charger becomes free: robots waiting for one may take it
         track = self._tracks[robot_id]
         track[-1] = Visit(track[-1].node, track[-1].arrive, self.now)
@@ -502,7 +515,7 @@ class _Simulation:
                 self._charging_since[robot_id] = now
                 if robot_id in self._low:  # decide again when it will be charged enough
                     model = self._energy_model
-                    ticks = model.ticks_to_reach(self._energy[robot_id], model.high)
+                    ticks = model.ticks_to_reach(self._energy[robot_id], self._back_level)
                     self._push(now + ticks, _Wake())
         elif robot.phase is RobotPhase.TO_PICKUP and order is not None:
             new = robot.arrive(tick=now, until_tick=now + self.scenario.load_ticks)
@@ -537,6 +550,8 @@ class _Simulation:
         # Only now move idle robots off chargers that low robots need: the policy may have
         # sent them to work instead.
         self._send_to_chargers(evict=True)
+        if self._charging.tops_up and not self.pending:
+            self._top_up()
 
     def _assign_orders(self) -> None:
         if not self.pending or not any(
@@ -714,12 +729,12 @@ class _Simulation:
             if not robot.is_idle:
                 continue
             if robot_id in self._low:
-                if robot_id in self._charging_since and self._level(robot_id) >= model.high:
+                if robot_id in self._charging_since and self._level(robot_id) >= self._back_level:
                     self._out_of_service += now - self._low.pop(robot_id)
             elif self._level(robot_id) < model.low:
                 self._low[robot_id] = now
                 if robot_id in self._charging_since:  # already on a charger (at the start)
-                    ticks = model.ticks_to_reach(self._level(robot_id), model.high)
+                    ticks = model.ticks_to_reach(self._level(robot_id), self._back_level)
                     self._push(now + ticks, _Wake())
         self._send_to_chargers(evict=False)
 
@@ -740,6 +755,7 @@ class _Simulation:
             if (waiting := self._waiting_since.pop(robot_id, None)) is not None:
                 self._charger_wait += now - waiting
             self._send_to_charger(robot_id, charger, pickups)
+            self._charging_trips += 1
 
     def _free_charger(
         self, node: NodeId, pickups: frozenset[NodeId], *, evict: bool
@@ -772,7 +788,34 @@ class _Simulation:
             self._energy_model.edge_cost(a, b) for a, b in itertools.pairwise(move.route.nodes)
         )
         self._arrival_level[robot_id] = self._level(robot_id) - cost
-        self._charging_trips += 1
+
+    def _top_up(self) -> None:
+        """Opportunistic charging (D27): with no order waiting, send idle robots in service that
+        are below the high threshold and not on a charger to the nearest free charger, lowest
+        level first. They stay in service: the policy can send them to work at any time, and a
+        low robot can claim their charger."""
+        assert self.traffic is not None and self._energy_model is not None
+        high = self._energy_model.high
+        candidates = sorted(
+            (self._level(robot_id), index, robot_id)
+            for index, (robot_id, robot) in enumerate(self.robots.items())
+            if robot.is_idle
+            and robot_id not in self._low
+            and robot_id not in self._charging_since
+            and self._level(robot_id) < high
+        )
+        for _, _, robot_id in candidates:
+            node = self.robots[robot_id].node
+            free = (
+                charger
+                for charger in self.traffic.nearest_chargers(node)
+                if self.traffic.table.is_free_from(charger, self.now)
+            )
+            charger = next(free, None)
+            if charger is None:
+                return  # every charger is taken or claimed
+            self._send_to_charger(robot_id, charger, frozenset())
+            self._top_ups += 1
 
     def _charging_ready(self) -> dict[RobotId, tuple[int, NodeId]]:
         """When and where each robot out of service is expected back in service."""
@@ -783,17 +826,17 @@ class _Simulation:
             robot = self.robots[robot_id]
             if robot_id in self._arrival_level:  # driving to a charger
                 arrival, charger = self.traffic.ready[robot_id]
-                charge = model.ticks_to_reach(self._arrival_level[robot_id], model.high)
+                charge = model.ticks_to_reach(self._arrival_level[robot_id], self._back_level)
                 ready[robot_id] = (arrival + charge, charger)
             elif robot_id in self._charging_since:  # charging
                 ready[robot_id] = (
-                    now + model.ticks_to_reach(self._level(robot_id), model.high),
+                    now + model.ticks_to_reach(self._level(robot_id), self._back_level),
                     robot.node,
                 )
             else:  # waiting for a charger: a rough guess, the nearest charger
                 chargers = self.traffic.nearest_chargers(robot.node)
                 trip = self.traffic.ticks_between(robot.node, chargers[0]) or 0
-                charge = model.ticks_to_reach(self._level(robot_id), model.high)
+                charge = model.ticks_to_reach(self._level(robot_id), self._back_level)
                 ready[robot_id] = (now + trip + charge, chargers[0])
         return ready
 
@@ -912,6 +955,9 @@ class _Simulation:
             decision_seconds=tuple(self._decision_seconds),
             battery=self._energy_model is not None,
             charging_trips=self._charging_trips,
+            top_up_trips=self._top_ups,
+            charger_ticks=self._charger_ticks
+            + sum(self.now - since for since in self._charging_since.values()),
             out_of_service_ticks=self._out_of_service
             + sum(self.now - since for since in self._low.values()),
             charger_wait_ticks=self._charger_wait

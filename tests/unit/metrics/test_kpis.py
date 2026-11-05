@@ -4,6 +4,7 @@
 (1 s); loading and unloading take 5 ticks (0.5 s) each.
 """
 
+import dataclasses
 import math
 from collections.abc import Sequence
 
@@ -11,10 +12,10 @@ import pytest
 
 from amr_optimizer.dispatch import GreedyDispatch
 from amr_optimizer.domain import OrderId, RobotId, RobotState, TimeModel, TransportOrder
-from amr_optimizer.metrics import compute_kpis, percentile
+from amr_optimizer.metrics import ChargingKpis, compute_charging_kpis, compute_kpis, percentile
 from amr_optimizer.scenario import Scenario
 from amr_optimizer.sim import Assignment, DispatchSnapshot, simulate
-from amr_optimizer.warehouse import NodeId, WarehouseGraph
+from amr_optimizer.warehouse import Edge, Node, NodeId, NodeKind, WarehouseGraph
 
 A, B, C = NodeId("A"), NodeId("B"), NodeId("C")
 R1, R2 = RobotId("R1"), RobotId("R2")
@@ -139,3 +140,39 @@ def test_jobs_cut_off_by_max_tick_count_as_busy_until_the_end(line_graph: Wareho
 
     assert (kpis.delivered, kpis.undelivered) == (0, 1)
     assert kpis.utilization == pytest.approx(1.0)  # busy for the whole 1.0 s that was run
+
+
+# --- charging KPIs -----------------------------------------------------------------------------
+
+
+def test_charging_kpis_are_shares_of_robot_and_charger_time() -> None:
+    nodes = [Node(A, 0, 0), Node(B, 1, 0), Node(C, 2, 0, NodeKind.CHARGER)]
+    edges = [Edge(u, v, 1.0) for u, v in ((A, B), (B, A), (B, C), (C, B))]
+    scenario = _scenario(WarehouseGraph(nodes, edges), {R1: A, R2: B}, [])
+    result = dataclasses.replace(
+        simulate(scenario, Lazy()),
+        end_tick=1000,
+        battery=True,
+        charging_trips=2,
+        top_up_trips=3,
+        out_of_service_ticks=500,  # of 2 robots x 1000 ticks
+        charger_wait_ticks=40,
+        charger_ticks=250,  # of 1 charger x 1000 ticks
+        lowest_energy_share=0.2,
+    )
+
+    assert compute_charging_kpis(result) == ChargingKpis(
+        charging_trips=2,
+        top_up_trips=3,
+        out_of_service_share=0.25,
+        charger_wait_s=4.0,
+        charger_occupancy=0.25,
+        lowest_energy_share=0.2,
+    )
+
+
+def test_charging_kpis_need_a_run_with_batteries(line_graph: WarehouseGraph) -> None:
+    result = simulate(_scenario(line_graph, {R1: A}, []), Lazy())
+
+    with pytest.raises(ValueError, match="no battery model"):
+        compute_charging_kpis(result)
