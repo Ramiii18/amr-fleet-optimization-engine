@@ -561,3 +561,91 @@ Every order was delivered in every run, with no conflicts.
   exact execution without delays, and free-flow estimates inside the planners.
 - **20 seeds per configuration.** The intervals show the remaining uncertainty.
 - Windows only.
+
+## Delays: robust execution and its cost (Phase 2, P1, 2026-11-05)
+
+**Command:** `.venv\Scripts\python.exe scripts\compare_delays.py --jobs 8` with the defaults: 20 seeds,
+orders released for one hour.
+
+**Setup.**
+- The large map with traffic: 10 robots at 200 orders/h (moderate load) and 300 orders/h (high
+  load).
+- Greedy and `cpsat-fair`, each run on the same scenarios:
+  - without delays;
+  - with 5% of edge traversals delayed;
+  - with 20% of edge traversals delayed.
+- A delayed edge takes 1 to 5 s longer; a normal edge takes 1 to 4 s. Each robot draws its delays from
+  its own stream, seeded by the scenario seed, so both policies face the same delays per robot as far
+  as their paths allow.
+- **The KPIs are those of ordered execution:** every robot keeps the planned order of robots at every
+  node and corridor (D25).
+- **"Naive: conflicts per run"** counts the conflicts in the same runs when every robot keeps its own
+  schedule instead.
+
+```text
+Delay comparison, 2026-11-05
+Environment: Python 3.13.1, Windows-11-10.0.26200-SP0, ortools 9.15.6755, amr-fleet-optimization-engine 0.0.1 (commit 8572e1c), 8 worker processes
+Settings: map large, orders released for 3600 s, seeds 0-19, 1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading, traffic on; delayed edges take 1 to 5 s longer
+
+| Robots | Orders/h | Policy | Delays | Utilization | Waiting s | Completion s | Completion P95 s | Completion max s | Conflicts per run | Naive: conflicts per run | Cost of delays (95% CI) | vs greedy, same delays (95% CI) |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 10 | 200 | greedy | none | 59.8% | 47.8 | 117.5 | 169.9 | 220.2 | 0.0 | - |  | baseline |
+| 10 | 200 | greedy | 5% of edges | 66.1% | 59.9 | 134.7 | 204.3 | 260.7 | 0.0 | 191.8 | +17.3 s [+14.5, +20.1] | baseline |
+| 10 | 200 | greedy | 20% of edges | 87.6% | 524.2 | 623.2 | 1231.4 | 1361.6 | 0.0 | 279.8 | +505.7 s [+403.7, +607.7] | baseline |
+| 10 | 200 | cpsat-fair | none | 57.1% | 43.0 | 112.7 | 155.4 | 198.8 | 0.0 | - |  | -4.8 s [-5.9, -3.6] |
+| 10 | 200 | cpsat-fair | 5% of edges | 61.2% | 51.3 | 125.6 | 179.6 | 235.9 | 0.0 | 148.7 | +12.9 s [+11.1, +14.6] | -9.2 s [-11.7, -6.7] |
+| 10 | 200 | cpsat-fair | 20% of edges | 76.5% | 118.7 | 211.1 | 365.6 | 467.5 | 0.0 | 217.2 | +98.5 s [+81.5, +115.4] | -412.0 s [-506.9, -317.1] |
+| 10 | 300 | greedy | none | 88.9% | 300.9 | 371.7 | 616.1 | 683.5 | 0.0 | - |  | baseline |
+| 10 | 300 | greedy | 5% of edges | 90.1% | 521.3 | 598.5 | 1066.7 | 1153.2 | 0.0 | 433.4 | +226.8 s [+193.9, +259.7] | baseline |
+| 10 | 300 | greedy | 20% of edges | 91.9% | 1863.8 | 1964.5 | 3761.7 | 3959.4 | 0.0 | 531.2 | +1592.8 s [+1486.8, +1698.9] | baseline |
+| 10 | 300 | cpsat-fair | none | 86.4% | 140.9 | 211.9 | 333.9 | 376.1 | 0.0 | - |  | -159.9 s [-189.6, -130.2] |
+| 10 | 300 | cpsat-fair | 5% of edges | 88.1% | 254.1 | 330.6 | 533.2 | 589.5 | 0.0 | 337.6 | +118.8 s [+94.7, +142.9] | -267.9 s [-309.0, -226.9] |
+| 10 | 300 | cpsat-fair | 20% of edges | 89.5% | 881.1 | 980.7 | 1849.5 | 2007.1 | 0.0 | 416.9 | +768.9 s [+693.4, +844.4] | -983.8 s [-1095.8, -871.8] |
+
+Ordered execution: 0 conflicts in 240 runs.
+400 runs in 593.8 s.
+Every order was delivered in every run.
+```
+
+### Reading the results
+
+- **Ordered execution is safe under delays.** All 240 runs with ordered execution deliver every order
+  with zero conflicts, checked by the independent checker. The rows without delays reproduce the M5
+  benchmark exactly.
+- **Without the ordering, delays mean collisions.** Naive execution of the same runs averages 149 to
+  531 conflicts per run.
+- **The cost of delays grows steeply with load and with the share of delayed edges:**
+  - with 5% of edges delayed, mean completion rises by 13 to 17 s at moderate load, and by 119 s
+    (`cpsat-fair`) or 227 s (greedy) at high load;
+  - with 20% of edges delayed, it rises by 99 s (`cpsat-fair`) or 506 s (greedy) at moderate load.
+
+  At high load the fleet is overloaded, and the queue grows all hour. Mean completion reaches 981 s
+  for `cpsat-fair` and 1,965 s for greedy.
+- **Why so steep.** A 20% delay share adds 0.6 s on average to every edge driven. An edge normally
+  takes 1 s (spurs), 2 s (aisles) or 4 s (cross aisles), so driving takes 15% to 60% longer per edge.
+  A fleet that was 60% or 90% busy loses that capacity. On top of that, ordered execution passes each
+  delay on to the robots planned behind the delayed one, and new plans are still made with the old
+  timings.
+- **Planning matters even more under delays.** `cpsat-fair`'s lead over greedy grows with the delays:
+  - at moderate load, from 4.8 s without delays to 412.0 s [317.1, 506.9] with 20% delayed;
+  - at high load, from 159.9 s to 983.8 s [871.8, 1,095.8].
+
+  Greedy's long empty trips use the capacity that delays have already reduced. Planning keeps the fleet
+  below saturation longer.
+
+### What this does not show
+
+- **The cost of delays bundles three effects:**
+  - the delays themselves;
+  - the capacity they remove;
+  - the waits they pass on through the planned order.
+
+  It does not separate them.
+- **No replanning.** A late robot keeps its plan, and robots planned behind it wait. Replanning or
+  reordering when a robot falls far behind could reduce the knock-on waits; this connects to P3
+  (faults and replanning).
+- **New plans assume everyone is on time.** They are made with the planned times of robots that may be
+  running late, and the ordering absorbs the difference at run time.
+- **The delay model is simple:** independent delays per edge, uniformly distributed, with no
+  correlation in space or time. There are no breakdowns (P3).
+- One map, 10 robots, 20 seeds, Windows only.

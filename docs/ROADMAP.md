@@ -289,7 +289,7 @@ by what they build on:
 
 | Milestone | Content | Why in this place | Status |
 |---|---|---|---|
-| **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | In progress |
+| **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | **Done** (2026-11-05) |
 | **P2** Battery and charging | Battery model, charging policy, chargers as shared resources, a CP-SAT charger schedule against a threshold rule | The largest part of the original scope still missing; a different CP-SAT model (intervals, capacity) | Not started |
 | **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | Not started |
 | **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | Not started |
@@ -305,7 +305,8 @@ by what they build on:
 2. **Delays in the fleet simulator.** Done 2026-11-05. Movement is executed edge by edge, phases end at
    actual arrivals, and new itineraries join the planned order of the robots already moving. Without
    delays, the M5 results reproduce exactly (checked on 72 runs).
-3. **Comparison.** Delay levels × execution policies × dispatch policies:
+3. **Comparison.** Done 2026-11-05 ([benchmarks.md](benchmarks.md)). Delay levels × execution
+   policies × dispatch policies:
    - conflicts (expected under naive execution);
    - the cost of delays (under ordered execution).
 
@@ -314,6 +315,30 @@ by what they build on:
   and generated runs.
 - With no delays, it reproduces the plans, and the M5 results, exactly.
 - Naive execution's conflicts are measured and reported, not hidden.
+
+## P1 acceptance
+
+- **Ordered execution is conflict-free and complete at every delay level:** met.
+  - 181 random fleets of the executor tests;
+  - 24 generated simulator test runs;
+  - 240 benchmark runs.
+
+  Zero conflicts, every order delivered.
+- **Without delays, the plans and the M5 results reproduce exactly:** met. The executor reproduces
+  every random plan, 72 runs of the M5 scaling benchmark match the committed results KPI for KPI, and
+  the benchmark rows without delays match M5.
+- **Naive execution's conflicts measured and reported:** met. 136 conflicts in 71 of the random
+  fleets, all 24 test runs, and 149 to 531 per run in the benchmark.
+
+**Finding:**
+- Robust execution keeps the fleet safe, but delays cost capacity, steeply at high load.
+- With 20% of edges delayed, `cpsat-fair` beats greedy by 412 s at moderate load and 984 s at high
+  load.
+
+**What shapes P3:**
+- Robots that fall far behind pass their delay on to everyone planned after them.
+- Replanning or reordering in that case is the natural next step, and the same machinery handles
+  breakdowns and blocked corridors.
 
 ## Phase 2 backlog (unordered)
 

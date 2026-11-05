@@ -14,7 +14,8 @@ limits in mind.
   collisions.
 - **Not built yet (Phase 2):**
   - battery and charging;
-  - robot faults, blocked aisles and replanning during execution;
+  - robot faults, blocked aisles and replanning during execution (P1 added random delays and robust
+    execution);
   - order priorities and deadlines;
   - mutex zones;
   - an API service;
@@ -37,9 +38,12 @@ limits in mind.
   modelling choice.
 - **Prioritized planning (D24).** Robots plan in decision order, first come, first served. A
   fleet-wide planner, such as conflict-based search, could reduce waiting; it was not tried.
-- **Exact execution.** Robots are never delayed, so plans never break. Real delays would need an
-  execution policy that keeps the planned order of robots at each resource; this is in the Phase 2
-  backlog.
+- **Delays: robust execution, but no replanning (Phase 2, P1).** With delays, robots keep the planned
+  order at every node and corridor (D25), which is safe and cannot deadlock.
+  - A late robot passes its delay on to the robots planned behind it. Nobody replans or reorders.
+  - New plans assume that robots already moving are on time.
+  - The delay model is independent per edge, with no correlated slow-downs and no breakdowns.
+  - The M4 and M5 benchmarks ran without delays.
 - **Well-formed layouts only.** Planning is guaranteed to succeed because every stopping place is a
   dead-end spur. On maps without that property, prioritized planning can fail, and the simulator stops
   with an error rather than hiding it.

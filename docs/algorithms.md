@@ -979,6 +979,14 @@ of delays doesn't depend on earlier outcomes.
       its trajectories, and no drive is faster than free flow;
     - naive execution causes conflicts in all 24 runs, 776 in total.
 
+**Result** ([benchmarks.md](benchmarks.md), "Delays").
+- **Safety.** Ordered execution had zero conflicts in all 240 benchmark runs with delays, where naive
+  execution would cause 149 to 531 per run.
+- **Cost.** Delays cost capacity, steeply under load. With 20% of edges delayed by 1 to 5 s, greedy's
+  mean completion time at moderate load rose from 118 s to 623 s.
+- **Planning.** `cpsat-fair` held up best: its lead over greedy grew to 412 s at moderate load, and to
+  984 s at high load.
+
 ---
 
 ## 14. Interview notes

@@ -13,7 +13,8 @@ traffic. Blue robots are driving to a pickup, orange ones carry a load, and blac
 
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning project:
 > it does not control physical robots, has not been deployed in any real fleet, and is not a safety
-> system. Milestones M1 to M5 are complete; see the [roadmap](docs/ROADMAP.md).
+> system. Milestones M1 to M5 and Phase 2's P1 (delays) are complete; see the
+> [roadmap](docs/ROADMAP.md).
 
 ## Results at a glance
 
@@ -28,6 +29,7 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | **Optimizing the same decision bought nothing** | Optimal matching (Hungarian) equals greedy when dispatching at every event, because almost every decision has one robot or one order. The gain came from changing the problem: look-ahead to busy robots and sequencing several orders per robot. |
 | **Exact search adds a measurable increment** | CP-SAT beats a cheapest-insertion heuristic *on the same model* at high load. In free flow the lead is 5 to 12 s, tested directly. With traffic it is 20 to 24 s, estimated as the difference between the two policies' leads over greedy. The model provides most of the gain. |
 | **Optimizing the mean starved some orders; the fix is an objective, not a solver** | Minimizing total completion time made CP-SAT's worst case 210 s worse than greedy's. A worst-first objective (longest lead time first, then the total) made it 80 to 100 s better instead, keeping 62–80% of the gain in mean (free flow, high load). |
+| **Plans stay safe when robots are delayed** | Robots that keep the planned order of robots at every node and corridor had 0 conflicts in 240 runs with random delays. Keeping each robot's own schedule would have caused 149 to 531 per run. Delays cost capacity, steeply under load, and planning matters even more: with 20% of edges delayed, `cpsat-fair` beats greedy by 412 to 984 s of mean completion time. |
 | **Decisions are fast enough for online use** | Every decision took under 1 s (`cpsat-fair` P95 up to 265 ms at 25 robots); greedy and insertion take a few milliseconds. Measured on a laptop. |
 
 <picture>
@@ -42,7 +44,7 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | **Warehouse and routing** (`warehouse/`, `routing/`) | Validated directed graphs, a synthetic grid generator with one-way aisles and dead-end spurs, JSON maps | Dijkstra, A* with consistent heuristics, blocked edges |
 | **Simulation** (`domain/`, `scenario/`, `sim/`) | Seeded order streams, an explicit robot state machine, a discrete-event simulator with invariant checks after every tick | Integer time in 0.1 s ticks, pure-function dispatch interface, common random numbers across policies |
 | **Dispatch** (`dispatch/`) | Greedy; optimal matching; receding-horizon planning of every robot and the oldest 10 orders, by cheapest insertion or CP-SAT | Linear assignment (scipy); CP-SAT giant-tour circuit with symmetry breaking and a deterministic time limit; lexicographic worst-first objective |
-| **Traffic** (`traffic/`) | One robot per node and per corridor; each job planned as one timed path; robots park on free dead-end spots | Safe-interval path planning (SIPP), reservation tables, prioritized planning, completeness on well-formed layouts |
+| **Traffic** (`traffic/`) | One robot per node and per corridor; each job planned as one timed path; robots park on free dead-end spots; under random delays, plans are executed in the planned order of robots | Safe-interval path planning (SIPP), reservation tables, prioritized planning, completeness on well-formed layouts, deadlock-free ordered execution (temporal plan graph) |
 | **Evaluation** (`metrics/`, `viz/`) | KPIs from the event log, conflict counts from trajectories, paired statistics, figures and animation | Nearest-rank percentiles, t confidence intervals, colour-vision-safe palette |
 
 The [algorithms guide](docs/algorithms.md) explains each component: the problem, the approach, its
@@ -94,6 +96,7 @@ py -3.13 -m venv .venv
 | Insertion and CP-SAT planning | `compare_planning.py` | about 2–5 min | [benchmarks](docs/benchmarks.md#planning-with-the-worst-first-objective-m35-2026-11-05) |
 | Free flow vs traffic | `compare_traffic.py` | about 2.5 min | [benchmarks](docs/benchmarks.md#traffic-the-cost-of-congestion-m4-2026-11-05) |
 | Scaling, 3 to 25 robots | `benchmark_scaling.py --csv docs/results/scaling.csv` | about 8.5 min | [benchmarks](docs/benchmarks.md#scaling-with-traffic-3-to-25-robots-m5-2026-11-05) |
+| Delays and robust execution | `compare_delays.py` | about 10 min | [benchmarks](docs/benchmarks.md#delays-robust-execution-and-its-cost-phase-2-p1-2026-11-05) |
 | Figures and animation | `make_figures.py` | about 25 s | [docs/figures](docs/figures/) |
 
 The comparison scripts run in parallel worker processes (`--jobs`, default 8). The KPIs don't depend
@@ -112,7 +115,8 @@ The four checks run before every commit:
 
 In short:
 - robots are points on a graph, with no physics or footprint;
-- the traffic model is conservative, and robots are never delayed, so plans never break;
+- the traffic model is conservative; delays are survived by keeping the planned order, not by
+  replanning;
 - prioritized planning is not fleet-optimal;
 - battery, charging, faults and replanning are not built;
 - everything was evaluated on one synthetic map with uniform demand.
