@@ -2,82 +2,104 @@
 
 [![CI](https://github.com/Ramiii18/amr-fleet-optimization-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Ramiii18/amr-fleet-optimization-engine/actions/workflows/ci.yml)
 
-A Python engine for dispatching transport orders to a fleet of autonomous mobile robots (AMRs),
-planning routes on a warehouse graph, and managing traffic between robots, evaluated in a
-reproducible simulation.
+A Python engine that dispatches transport orders to a fleet of autonomous mobile robots (AMRs),
+plans collision-free routes for them on a warehouse graph, and measures the result in a
+reproducible discrete-event simulation.
 
-> **Status:** milestones M1 (routing library), M2 (simulator, dispatch policies, KPIs), M3
-> (look-ahead and multi-order planning with CP-SAT) and M4 (traffic management) are complete. Next is
-> M5: portfolio benchmarks and visualization.
-> Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning
-> project. It does not control physical robots and has not been deployed in any real fleet.
+![Ten robots on the large map with traffic: robots driving to pickups, carrying loads, and parking](docs/figures/traffic.gif)
 
-## What exists today
+*Two minutes of a simulated run: 10 robots, 300 orders per hour, the `cpsat-fair` dispatcher, with
+traffic. Blue robots are driving to a pickup, orange ones carry a load, and black ones are free.*
 
-- **Warehouse model:** a validated, read-only directed graph of locations and connections.
-- **Map generator:** synthetic grid warehouses with one-way aisles, two-way cross aisles, and dead-end
-  spurs for storage, stations, chargers and parking. Three presets, up to 461 nodes, also committed as
-  JSON maps in [scenarios/maps/](scenarios/maps/).
-- **Routing:** Dijkstra (point-to-point and one-to-all) and A* (Euclidean or Manhattan heuristic), both
-  able to avoid blocked edges.
-- **Domain model (M2):** integer simulation ticks with per-edge travel times, transport
-  orders, and robots whose phases follow an explicit, fully tested state machine.
-- **Scenarios (M2):** seeded, reproducible order streams and fleet start positions; the same seed gives
-  the same scenario on Windows and Linux.
-- **Simulator (M2):** a deterministic discrete-event simulator with a pure-function dispatch interface,
-  invariant checks after every tick, a per-order event log and every robot's trajectory.
-- **Traffic (M4, `--traffic`):** robots reserve nodes and corridors and plan each whole job as one
-  timed path around all others (safe-interval path planning). They wait where needed, never collide,
-  and park on free dead-end spots. Without it, robots drive in free flow and pass through each other.
-  An independent checker counts the collisions in either mode: hundreds per hour in free flow at high
-  load, none with traffic. Traffic made the best planner's lead over greedy grow from 38 s to 160 s
-  at high load; see [benchmarks.md](docs/benchmarks.md).
-- **Dispatch (M2):** greedy (oldest order, nearest robot) and optimal assignment (Hungarian problem,
-  solved with scipy), with optional decision rounds.
-- **KPIs and comparison (M2):** waiting, completion (mean, P95 and maximum), utilization and empty
-  travel, from the event log. Policies are compared on paired seeds, with confidence intervals. In M2,
-  optimal matching gave no measurable gain over greedy; [benchmarks.md](docs/benchmarks.md) explains
-  why.
-- **Planning dispatch (M3):** at each decision, plan every robot (busy ones from where and when they
-  will finish) and the oldest 10 orders, then start only the idle robots' first jobs (a receding
-  horizon). Plans come from cheapest insertion or from an exact CP-SAT model with a deterministic time
-  limit, checked against brute force on 450 small problems. Two objectives: total completion time,
-  or worst first (the longest lead time first, then the total). At high load:
-  - minimising total completion time cut mean completion by about a quarter against greedy, but made
-    the worst case worse;
-  - worst first (`cpsat-fair`) kept most of that gain and cut the worst case by 80–100 s.
+> Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning project:
+> it does not control physical robots, has not been deployed in any real fleet, and is not a safety
+> system. Milestones M1 to M5 are complete; see the [roadmap](docs/ROADMAP.md).
 
-  [benchmarks.md](docs/benchmarks.md) has the numbers.
-- **Verification:** hand-computed cases, oracle tests against NetworkX on 60 random graphs, and
-  route validation.
+## Results at a glance
 
-```python
-from amr_optimizer.routing import astar, manhattan
-from amr_optimizer.warehouse import NodeId, load_graph
+All numbers come from committed scripts. Each comparison runs every policy on the same 20
+seeded scenarios and reports paired differences with 95% confidence intervals
+([benchmarks](docs/benchmarks.md)).
 
-graph = load_graph("scenarios/maps/large.json")
-result = astar(graph, NodeId("ST00"), NodeId("S05-07"), manhattan)
-print(result.route.nodes, result.route.length_m)  # 48.0 m: aisle 5 runs downward,
-# so the route goes up aisle 4, crosses at row 10, and comes back down aisle 5.
-```
+| Finding | Evidence |
+|---|---|
+| **No collisions with traffic management** | 0 conflicts in all 720 benchmark runs with traffic, checked by an independent checker. The same scenarios in free flow average 61 to 554 conflicts per run, depending on fleet size and load. |
+| **Planning beats greedy dispatch as fleets grow** | At 25 robots and 750 orders/h, mean completion time is 267 s with `cpsat-fair` against 532 s with greedy, and the worst case 496 s against 1,050 s. |
+| **Optimizing the same decision bought nothing** | Optimal matching (Hungarian) equals greedy when dispatching at every event, because almost every decision has one robot or one order. The gain came from changing the problem: look-ahead to busy robots and sequencing several orders per robot. |
+| **Exact search adds a measurable increment** | CP-SAT beats a cheapest-insertion heuristic *on the same model* at high load. In free flow the lead is 5 to 12 s, tested directly. With traffic it is 20 to 24 s, estimated as the difference between the two policies' leads over greedy. The model provides most of the gain. |
+| **Optimizing the mean starved some orders; the fix is an objective, not a solver** | Minimizing total completion time made CP-SAT's worst case 210 s worse than greedy's. A worst-first objective (longest lead time first, then the total) made it 80 to 100 s better instead, keeping 62–80% of the gain in mean (free flow, high load). |
+| **Decisions are fast enough for online use** | Every decision took under 1 s (`cpsat-fair` P95 up to 265 ms at 25 robots); greedy and insertion take a few milliseconds. Measured on a laptop. |
 
-## Setup (Windows, PowerShell)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/scaling-dark.png">
+  <img alt="Mean completion time with traffic by fleet size: at 30 orders per robot per hour, greedy rises to 532 s at 25 robots while insertion-fair and cpsat-fair stay below 300 s" src="docs/figures/scaling-light.png">
+</picture>
 
-Requires Python 3.13 and Git.
+## What's inside
+
+| Area | What it does | Key ideas |
+|---|---|---|
+| **Warehouse and routing** (`warehouse/`, `routing/`) | Validated directed graphs, a synthetic grid generator with one-way aisles and dead-end spurs, JSON maps | Dijkstra, A* with consistent heuristics, blocked edges |
+| **Simulation** (`domain/`, `scenario/`, `sim/`) | Seeded order streams, an explicit robot state machine, a discrete-event simulator with invariant checks after every tick | Integer time in 0.1 s ticks, pure-function dispatch interface, common random numbers across policies |
+| **Dispatch** (`dispatch/`) | Greedy; optimal matching; receding-horizon planning of every robot and the oldest 10 orders, by cheapest insertion or CP-SAT | Linear assignment (scipy); CP-SAT giant-tour circuit with symmetry breaking and a deterministic time limit; lexicographic worst-first objective |
+| **Traffic** (`traffic/`) | One robot per node and per corridor; each job planned as one timed path; robots park on free dead-end spots | Safe-interval path planning (SIPP), reservation tables, prioritized planning, completeness on well-formed layouts |
+| **Evaluation** (`metrics/`, `viz/`) | KPIs from the event log, conflict counts from trajectories, paired statistics, figures and animation | Nearest-rank percentiles, t confidence intervals, colour-vision-safe palette |
+
+The [algorithms guide](docs/algorithms.md) explains each component: the problem, the approach, its
+complexity, why it is correct, and its limits. It ends with interview-style questions and answers.
+The reasoning behind each design choice is recorded in [decisions](docs/DECISIONS.md).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/map-dark.png">
+  <img alt="The large warehouse map with ten robots coloured by activity" src="docs/figures/map-light.png" width="560">
+</picture>
+
+## How it is verified
+
+- **Oracles.** Dijkstra and A* are checked against NetworkX. CP-SAT is checked against a brute-force
+  search over every plan, and SIPP against a brute-force search over every (node, tick) state.
+- **An independent conflict checker** examines every recorded trajectory. It shares nothing with the
+  planner except the definition of occupancy, and it is not trivially silent: in free flow it finds
+  hundreds of conflicts per run.
+- **Hand-derived timelines.** Head-on crossings, station contention, robots moving out of each
+  other's way, and look-ahead decisions are each checked tick for tick against timelines computed by
+  hand.
+- **Invariants** in the state machine and the simulator stop a run with an error, instead of producing
+  quietly wrong KPIs.
+- **Reproducibility.** Every run is deterministic, a pinned scenario is checked on Windows and Linux
+  in CI, and earlier benchmark tables reproduce exactly after later changes.
+- **Checks on every commit:** over 1,250 tests, ruff, and mypy in strict mode.
+
+## Quick start
+
+Requires Python 3.13 and Git (Windows PowerShell shown; on Linux or macOS use `python3.13 -m venv
+.venv` and `.venv/bin/python`).
 
 ```powershell
 git clone https://github.com/Ramiii18/amr-fleet-optimization-engine.git
 cd amr-fleet-optimization-engine
 py -3.13 -m venv .venv
-.venv\Scripts\python.exe -m pip install --upgrade pip
 .venv\Scripts\python.exe -m pip install -e ".[dev,viz]"
+
+.venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 300 --policy cpsat-fair --traffic
+.venv\Scripts\amr-sim.exe --help   # every option; --json prints the KPIs as JSON
 ```
 
-On Linux or macOS, use `python3.13 -m venv .venv` and `.venv/bin/python` instead.
+## Reproducing every number
 
-## Checks
+| Result | Command (`.venv\Scripts\python.exe scripts\...`) | Run time on the development laptop | Recorded in |
+|---|---|---:|---|
+| Dijkstra vs A* | `compare_routing.py` | about 1 s | [benchmarks](docs/benchmarks.md#routing-dijkstra-vs-a-m1-re-run-2026-11-04) |
+| Greedy vs optimal matching | `compare_dispatch.py` | about 25 s | [benchmarks](docs/benchmarks.md#dispatch-greedy-vs-optimal-assignment-in-simulation-m2-2026-11-04) |
+| Insertion and CP-SAT planning | `compare_planning.py` | about 2–5 min | [benchmarks](docs/benchmarks.md#planning-with-the-worst-first-objective-m35-2026-11-05) |
+| Free flow vs traffic | `compare_traffic.py` | about 2.5 min | [benchmarks](docs/benchmarks.md#traffic-the-cost-of-congestion-m4-2026-11-05) |
+| Scaling, 3 to 25 robots | `benchmark_scaling.py --csv docs/results/scaling.csv` | about 8.5 min | [benchmarks](docs/benchmarks.md#scaling-with-traffic-3-to-25-robots-m5-2026-11-05) |
+| Figures and animation | `make_figures.py` | about 25 s | [docs/figures](docs/figures/) |
 
-Run all four before every commit:
+The comparison scripts run in parallel worker processes (`--jobs`, default 8). The KPIs don't depend
+on the machine or on parallelism. Run times and decision latencies do.
+
+The four checks run before every commit:
 
 ```powershell
 .venv\Scripts\python.exe -m pytest
@@ -86,31 +108,26 @@ Run all four before every commit:
 .venv\Scripts\python.exe -m mypy
 ```
 
-## Run a simulation
+## Limitations
 
-```powershell
-.venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 300 --policy cpsat
-.venv\Scripts\amr-sim.exe --help   # policies, --json for JSON, and the other options
-```
+In short:
+- robots are points on a graph, with no physics or footprint;
+- the traffic model is conservative, and robots are never delayed, so plans never break;
+- prioritized planning is not fleet-optimal;
+- battery, charging, faults and replanning are not built;
+- everything was evaluated on one synthetic map with uniform demand.
 
-## Scripts
-
-```powershell
-.venv\Scripts\python.exe scripts\generate_maps.py     # regenerate scenarios/maps from the presets
-.venv\Scripts\python.exe scripts\compare_routing.py   # Dijkstra vs A* comparison (docs/benchmarks.md)
-.venv\Scripts\python.exe scripts\compare_dispatch.py  # dispatch policies in simulation (docs/benchmarks.md)
-.venv\Scripts\python.exe scripts\compare_planning.py  # greedy vs insertion vs CP-SAT planning (docs/benchmarks.md)
-.venv\Scripts\python.exe scripts\compare_traffic.py   # every policy in free flow and with traffic (docs/benchmarks.md)
-```
+The full list is in [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 
 ## Documentation
 
 - [Project overview](docs/PROJECT_OVERVIEW.md): goals, scope and constraints
-- [Roadmap](docs/ROADMAP.md): milestones and current status
-- [Architecture](docs/ARCHITECTURE.md): modules and modelling assumptions
-- [Algorithms](docs/algorithms.md): how each algorithm works, why it is correct, its limits
-- [Benchmarks](docs/benchmarks.md): measured results, reported as run
+- [Algorithms](docs/algorithms.md): how each algorithm works, why it is correct, and its limits
+- [Benchmarks](docs/benchmarks.md): every measured result, reported as run
 - [Decisions](docs/DECISIONS.md): design decisions and their reasons
+- [Architecture](docs/ARCHITECTURE.md): modules, dependencies and modelling assumptions
+- [Limitations](docs/LIMITATIONS.md): what the engine does not model or prove
+- [Roadmap](docs/ROADMAP.md): milestones, acceptance criteria and the Phase 2 backlog
 - [Progress log](docs/LEARNING_PROGRESS.md): what was built and verified, by session
 
 ## License

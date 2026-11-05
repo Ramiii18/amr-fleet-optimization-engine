@@ -63,7 +63,22 @@ Everything is evaluated in a reproducible simulation on synthetic data.
 - No infrastructure is added (message brokers, Kubernetes, distributed services) before there is a
   demonstrated need for it.
 
-## Status
+## Status (2026-11-05)
 
-See [ROADMAP.md](ROADMAP.md) for milestones and [ARCHITECTURE.md](ARCHITECTURE.md) for the current
-design.
+Milestones M1 to M5 are complete:
+- routing;
+- simulation;
+- dispatch with greedy, Hungarian, insertion and CP-SAT;
+- traffic with reservations and safe-interval path planning;
+- scaling benchmarks with 3 to 25 robots, and figures.
+
+Some goals above are **not built yet** and are in the Phase 2 backlog:
+- battery and charging, with charger utilization;
+- faults, blocked aisles and replanning during execution;
+- order priorities and deadlines;
+- mutex zones;
+- an API service.
+
+What exists is summarized in the [README](../README.md); its limits are listed in
+[LIMITATIONS.md](LIMITATIONS.md). See [ROADMAP.md](ROADMAP.md) for milestones and
+[ARCHITECTURE.md](ARCHITECTURE.md) for the current design.

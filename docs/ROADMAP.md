@@ -11,7 +11,7 @@ quality dropping.
 | **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | **Done** (2026-11-04) |
 | **M3** Optimization | Look-ahead and multi-order sequencing over a bounded horizon: insertion heuristic and CP-SAT, compared in simulation | **Done** (2026-11-05) |
 | **M4** Traffic v0.2 | Reservation table, safe-interval path planning (SIPP), prioritized planning, conflict checking, holding spots, measured cost of congestion | **Done** (2026-11-05) |
-| **M5** Portfolio v1 | Scaling benchmark with traffic at 3, 5, 10 and 25 robots, decision latency, figures and animation, portfolio README, consolidated limitations | In progress (planned 2026-11-05) |
+| **M5** Portfolio v1 | Scaling benchmark with traffic at 3, 5, 10 and 25 robots, decision latency, figures and animation, portfolio README, consolidated limitations | **Done** (2026-11-05) |
 
 **MVP definition (M2):** the engine takes a synthetic warehouse map and a seeded stream of transport orders
 and dispatches the orders to N identical robots. The simulator executes them with correct integer travel
@@ -252,7 +252,7 @@ Every number and every figure comes from a committed script.
    - a short animation of a run with traffic.
 
    A figure script regenerates them all into `docs/figures/`.
-3. **Portfolio documentation.**
+3. **Portfolio documentation.** Done 2026-11-05.
    - The README becomes the landing page: what the engine does, headline results with figures, how to
      reproduce every number, and the architecture.
    - A consolidated `docs/LIMITATIONS.md`.
@@ -265,6 +265,22 @@ Every number and every figure comes from a committed script.
 - A reader can reproduce every reported number with the commands in the README.
 - No document implies real deployment or control of physical robots, and the limitations are stated
   in one place.
+
+## M5 acceptance
+
+- **Scaling benchmark recorded verbatim; every order delivered; zero conflicts; latency per policy and
+  fleet size:** met. 480 runs (benchmarks.md, "Scaling with traffic").
+- **Every figure produced by a committed script from simulation output, none edited by hand:** met.
+  `scripts/make_figures.py` draws from `docs/results/scaling.csv` and one fixed run.
+- **Every reported number reproducible with commands in the README:** met. The README maps each result
+  to its script, its approximate run time and the section where it is recorded.
+- **No implied deployment; limitations in one place:** met. The README, the project overview and
+  [LIMITATIONS.md](LIMITATIONS.md) state the synthetic, non-deployed scope, and LIMITATIONS.md
+  consolidates every known limit.
+
+**Not done as specified:** the palette validator of the visualization guidance was not run, because it
+needs Node.js, which is not part of the toolchain. The documented, pre-validated palette slots were
+used unchanged (LIMITATIONS.md).
 
 ## Phase 2 backlog (after M5, or earlier if time allows)
 

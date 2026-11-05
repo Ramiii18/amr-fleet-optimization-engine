@@ -1079,6 +1079,18 @@ first come, first served: a robot planned early can force long waits on later on
 search or priority-swapping schemes can do better, at a much higher cost per decision. They are in
 the Phase 2 backlog, to be compared against this baseline.
 
+**How does it scale with the fleet?**
+- **Dispatch quality.** At high load with traffic, the best planner's lead over greedy grows with the
+  fleet: 91 s at 3 robots, 160 s at 10, 265 s at 25. More robots share the aisles, so greedy's
+  unnecessary empty trips delay everyone.
+- **Computation.**
+  - Greedy and insertion decide in a few milliseconds at every size.
+  - CP-SAT's decisions grow with the fleet and the queue, to a P95 of 265 ms at 25 robots, bounded per
+    solve by its deterministic limit.
+  - Path planning costs a couple of milliseconds per job, because SIPP searches safe intervals rather
+    than ticks.
+- **Untested.** Beyond 25 robots, other layouts and clustered demand (LIMITATIONS.md).
+
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and
 comparing per-seed differences removes that variation. The interval shows whether the remaining
