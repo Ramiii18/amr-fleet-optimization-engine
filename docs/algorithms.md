@@ -958,6 +958,27 @@ of delays doesn't depend on earlier outcomes.
   - naive execution of the same fleets causes 136 conflicts, in 71 of them;
   - adding delay never makes any event earlier.
 
+**In the fleet simulator** (`simulate(..., traffic=True, delays=..., execution=...)`):
+- **Movement.** With traffic, robots now move edge by edge. One event fires when a robot leaves a
+  node, and one when it reaches the end of a corridor; drives end on arrival, not at a planned tick.
+- **Plans keep arriving.** Itineraries are planned throughout the run, so the order of robots is kept
+  *online*: every node and corridor has a queue of planned uses, sorted by planned time
+  (`ResourceOrder`). A robot enters a resource only when its use is first in the queue, and a node
+  also needs one tick of clearance. New itineraries are planned from the current tick on, so their
+  uses queue behind every use planned earlier, including those of late robots. All waits still point
+  forward in planned time.
+- **Phases.** A delayed drive extends its phase (`RobotState.postpone`). Loading and unloading keep
+  their fixed durations, and a robot leaves a stop no earlier than planned.
+- **The policy sees no extra decision points.** Only events that change a robot's phase can lead to a
+  dispatch decision, so movement alone never makes the policy decide at a tick it otherwise wouldn't.
+- **Testing.**
+  - Without delays, 72 runs of the M5 scaling benchmark (3 seeds × 8 configurations × 3 policies,
+    `cpsat-fair` at 25 robots included) reproduce the committed results exactly, KPI for KPI.
+  - With delays (20% of edges, 5 to 40 extra ticks), 24 generated runs:
+    - ordered execution delivers every order with zero conflicts, reproducibly. Its log agrees with
+      its trajectories, and no drive is faster than free flow;
+    - naive execution causes conflicts in all 24 runs, 776 in total.
+
 ---
 
 ## 14. Interview notes

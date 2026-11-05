@@ -53,6 +53,7 @@ class PlannedJob:
     dropoff_tick: int  # reaches the drop-off and starts unloading
     holding_tick: int  # reaches the holding spot and becomes idle
     releases: tuple[int, ...]  # ticks at which a node this robot held becomes free again
+    stop_visits: tuple[int, int, int]  # the path's visits at the pickup, drop-off, holding spot
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,7 @@ class PlannedMove:
     route: Route
     holding_tick: int
     releases: tuple[int, ...]
+    stop_visits: tuple[int]  # the path's visit at the holding spot: its last
 
 
 class TrafficControl:
@@ -131,7 +133,11 @@ class TrafficControl:
             Stop(holding),
         ]
         itinerary = self._plan(robot.robot_id, start, now, stops)
-        to_pickup, to_dropoff, to_holding = self._legs(itinerary, stops)
+        cuts = self._stop_visits(itinerary, stops)
+        visits = itinerary.path.visits
+        to_pickup = self._route(visits[: cuts[0] + 1])
+        to_dropoff = self._route(visits[cuts[0] : cuts[1] + 1])
+        to_holding = self._route(visits[cuts[1] : cuts[2] + 1])
         pickup_tick, dropoff_tick, holding_tick = itinerary.stop_ticks
         self.ready[robot.robot_id] = (holding_tick, holding)
         return PlannedJob(
@@ -143,6 +149,7 @@ class TrafficControl:
             dropoff_tick,
             holding_tick,
             _releases(itinerary.path, (start, order.pickup)),
+            (cuts[0], cuts[1], cuts[2]),
         )
 
     def plan_move(self, robot: RobotState, now: int, avoid: frozenset[NodeId]) -> PlannedMove:
@@ -156,6 +163,7 @@ class TrafficControl:
             self._route(itinerary.path.visits),
             itinerary.stop_ticks[0],
             _releases(itinerary.path, (start,)),
+            (len(itinerary.path.visits) - 1,),
         )
 
     def became_idle(self, robot: RobotId) -> None:
@@ -205,10 +213,11 @@ class TrafficControl:
             self._distances[source] = distances
         return self._distances[source]
 
-    def _legs(self, itinerary: Itinerary, stops: Sequence[Stop]) -> tuple[Route, Route, Route]:
-        """Split the itinerary's path at its stops into the routes of the robot's phases."""
+    @staticmethod
+    def _stop_visits(itinerary: Itinerary, stops: Sequence[Stop]) -> list[int]:
+        """The index of the visit at each stop: where the robot is when its service begins."""
         visits = itinerary.path.visits
-        cuts, index = [0], 0
+        cuts, index = [], 0
         for stop, tick in zip(stops, itinerary.stop_ticks, strict=True):
             while not (
                 visits[index].node == stop.node
@@ -216,11 +225,7 @@ class TrafficControl:
             ):
                 index += 1
             cuts.append(index)
-        return (
-            self._route(visits[cuts[0] : cuts[1] + 1]),
-            self._route(visits[cuts[1] : cuts[2] + 1]),
-            self._route(visits[cuts[2] : cuts[3] + 1]),
-        )
+        return cuts
 
     def _route(self, visits: Sequence[Visit]) -> Route:
         nodes = tuple(visit.node for visit in visits)

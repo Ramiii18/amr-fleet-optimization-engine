@@ -5,6 +5,7 @@ from amr_optimizer.traffic.execution import (
     NO_DELAYS,
     DelayModel,
     ExecutionPolicy,
+    ResourceOrder,
     execute_plans,
 )
 from amr_optimizer.traffic.paths import (
@@ -39,6 +40,7 @@ __all__ = [
     "ReservationConflictError",
     "ReservationTable",
     "Resource",
+    "ResourceOrder",
     "Stop",
     "TimedPath",
     "Visit",

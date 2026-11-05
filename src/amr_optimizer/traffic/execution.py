@@ -20,6 +20,8 @@ actual time of each event follows from those already computed. This is a longest
 in a directed acyclic graph, so ordered execution always finishes: it cannot deadlock.
 """
 
+import bisect
+import itertools
 import random
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -28,7 +30,14 @@ from enum import Enum
 
 from amr_optimizer.domain import RobotId, TravelTimes
 from amr_optimizer.traffic.conflicts import path_conflicts
-from amr_optimizer.traffic.paths import FOREVER, Corridor, TimedPath, Visit, validate_timed_path
+from amr_optimizer.traffic.paths import (
+    FOREVER,
+    Corridor,
+    Resource,
+    TimedPath,
+    Visit,
+    validate_timed_path,
+)
 from amr_optimizer.warehouse import NodeId
 
 
@@ -151,3 +160,61 @@ def execute_plans(
         )
         for robot, path in plans.items()
     }
+
+
+class ResourceOrder:
+    """The planned order of robots at every node and corridor, during execution (D25).
+
+    The online counterpart of `execute_plans`, for a simulation in which plans keep arriving.
+    Every use of a resource is queued by its planned start tick. A robot may enter a resource
+    only when its use is first in the queue, so every robot planned earlier has left it; a
+    node also needs one tick of clearance after the previous robot left (D23). Leaving a
+    resource removes the robot's use from the front of the queue.
+
+    New plans are made from the current tick on, so their uses are queued behind every use
+    planned earlier, even uses of robots that are running late. Every wait therefore points
+    forward in planned time, and execution cannot deadlock (D25).
+    """
+
+    __slots__ = ("_counter", "_left_at", "_queues")
+
+    def __init__(self) -> None:
+        self._queues: dict[Resource, list[tuple[int, int, RobotId]]] = defaultdict(list)
+        self._left_at: dict[Resource, int] = {}
+        self._counter = itertools.count()
+
+    def add(self, robot: RobotId, path: TimedPath, *, include_start: bool) -> None:
+        """Queue every use of ``path``. Its first node is already queued if the robot is
+        standing there from a previous plan; then ``include_start`` is false."""
+        visits = path.visits
+        if include_start:
+            self._insert(visits[0].node, visits[0].arrive, robot)
+        for before, after in itertools.pairwise(visits):
+            self._insert(Corridor.between(before.node, after.node), before.depart, robot)
+            self._insert(after.node, after.arrive, robot)
+
+    def next_user(self, resource: Resource) -> RobotId | None:
+        queue = self._queues.get(resource)
+        return queue[0][2] if queue else None
+
+    def may_enter_corridor(self, source: NodeId, target: NodeId, robot: RobotId) -> bool:
+        return self.next_user(Corridor.between(source, target)) == robot
+
+    def earliest_arrival(self, node: NodeId, robot: RobotId) -> int | None:
+        """The earliest tick ``robot`` may enter ``node``, or ``None`` while a robot planned
+        earlier has yet to leave it."""
+        if self.next_user(node) != robot:
+            return None
+        return self._left_at.get(node, -1) + 1
+
+    def leave(self, resource: Resource, robot: RobotId, tick: int) -> RobotId | None:
+        """``robot`` leaves ``resource`` at ``tick``. Returns the robot that may enter next."""
+        queue = self._queues.get(resource)
+        if not queue or queue[0][2] != robot:
+            raise RuntimeError(f"robot {robot!r} leaves {resource!r} out of the planned order")
+        queue.pop(0)
+        self._left_at[resource] = tick
+        return self.next_user(resource)
+
+    def _insert(self, resource: Resource, tick: int, robot: RobotId) -> None:
+        bisect.insort(self._queues[resource], (tick, next(self._counter), robot))

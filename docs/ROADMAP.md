@@ -302,9 +302,9 @@ by what they build on:
    A robot that would reach an occupied node waits at the end of its corridor. Tested on hand cases
    and random plans: with no delays the plans are reproduced exactly; with delays, ordered execution
    has zero conflicts and always finishes.
-2. **Delays in the fleet simulator.** Movement is executed edge by edge, phases end at actual
-   arrivals, and new itineraries join the planned order of the robots already moving. With no delays,
-   the M5 results must reproduce exactly.
+2. **Delays in the fleet simulator.** Done 2026-11-05. Movement is executed edge by edge, phases end at
+   actual arrivals, and new itineraries join the planned order of the robots already moving. Without
+   delays, the M5 results reproduce exactly (checked on 72 runs).
 3. **Comparison.** Delay levels × execution policies × dispatch policies:
    - conflicts (expected under naive execution);
    - the cost of delays (under ordered execution).

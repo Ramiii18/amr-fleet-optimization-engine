@@ -25,6 +25,15 @@ free holding spot. Orders whose pickup is reserved by another robot are hidden f
 policy until it is free, and an idle robot standing on an assigned order's pickup is first
 moved out of the way. Both modes record every robot's trajectory, so conflicts can be counted.
 
+**Execution with traffic** (Phase 2, D25). Robots move edge by edge: an event when a robot
+leaves a node, and one when it reaches the end of a corridor. With ``delays``, a drive can take
+longer than planned. With ``execution=ExecutionPolicy.ORDERED`` (the default), every robot then
+still uses every node and corridor in the planned order of robots, waiting at the end of its
+corridor if the node ahead is not free yet; without delays this reproduces the plans exactly.
+``ExecutionPolicy.NAIVE`` lets every robot keep its own schedule, and conflicts are counted.
+Only events that change a robot's phase can lead to a dispatch decision, so movement alone
+never makes the policy decide at a tick it otherwise wouldn't.
+
 Events at the same tick are handled in the order they were scheduled. Together with
 scenario-ordered robots and release-ordered orders, this makes every run deterministic.
 
@@ -34,6 +43,7 @@ After every tick the simulator checks its invariants and raises
 
 import heapq
 import itertools
+import random
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -58,7 +68,17 @@ from amr_optimizer.sim.policy import (
     InvalidAssignmentError,
 )
 from amr_optimizer.sim.traffic_control import PlannedJob, PlannedMove, TrafficControl
-from amr_optimizer.traffic import FOREVER, TimedPath, Visit
+from amr_optimizer.traffic import (
+    FOREVER,
+    NO_DELAYS,
+    Corridor,
+    DelayModel,
+    ExecutionPolicy,
+    Resource,
+    ResourceOrder,
+    TimedPath,
+    Visit,
+)
 from amr_optimizer.warehouse import NodeId
 
 
@@ -107,6 +127,9 @@ def simulate(
     max_tick: int | None = None,
     decision_interval_ticks: int | None = None,
     traffic: bool = False,
+    delays: DelayModel = NO_DELAYS,
+    delay_seed: int = 0,
+    execution: ExecutionPolicy = ExecutionPolicy.ORDERED,
 ) -> SimulationResult:
     """Run ``scenario`` under ``policy`` until no events remain, or past ``max_tick``.
 
@@ -114,7 +137,9 @@ def simulate(
     orders still in progress, pending or unreleased at that point. With
     ``decision_interval_ticks``, the policy decides only at multiples of that interval;
     without it, the policy decides as soon as a robot is idle and an order is pending. With
-    ``traffic``, robots plan around each other (see the module docstring).
+    ``traffic``, robots plan around each other (see the module docstring); ``delays``,
+    ``delay_seed`` and ``execution`` then set how plans are executed (D25). Each robot draws
+    its delays from its own stream, named after ``delay_seed`` and the robot.
     """
     if max_tick is not None and max_tick < 0:
         raise ValueError(f"max_tick must be non-negative, got {max_tick}")
@@ -122,7 +147,11 @@ def simulate(
         raise ValueError(
             f"decision_interval_ticks must be at least 1, got {decision_interval_ticks}"
         )
-    return _Simulation(scenario, policy, max_tick, decision_interval_ticks, traffic).run()
+    if not traffic and (delays.probability > 0 or execution is not ExecutionPolicy.ORDERED):
+        raise ValueError("delays and execution policies need traffic=True")
+    return _Simulation(
+        scenario, policy, max_tick, decision_interval_ticks, traffic, delays, delay_seed, execution
+    ).run()
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +174,31 @@ class _Wake:
     """Makes the loop stop when a reserved pickup becomes free again (traffic only)."""
 
 
-_Event = _Release | _PhaseEnd | _DecisionRound | _Wake
+@dataclass(frozen=True, slots=True)
+class _Depart:
+    """A robot tries to leave its node for the next one on its path (traffic only)."""
+
+    robot_id: RobotId
+
+
+@dataclass(frozen=True, slots=True)
+class _Reach:
+    """A robot reaches the end of its corridor and tries to enter the node (traffic only)."""
+
+    robot_id: RobotId
+
+
+@dataclass(slots=True)
+class _Cursor:
+    """Where a robot is on its current planned path, during execution."""
+
+    path: TimedPath
+    stops: tuple[int, ...]  # visits where the robot serves, or holds (the last)
+    index: int = 0  # the visit it is at, or the one it left while in the corridor after it
+    in_corridor: bool = False
+
+
+_Event = _Release | _PhaseEnd | _DecisionRound | _Wake | _Depart | _Reach
 
 
 class _Simulation:
@@ -158,6 +211,9 @@ class _Simulation:
         max_tick: int | None,
         decision_interval_ticks: int | None = None,
         traffic: bool = False,
+        delays: DelayModel = NO_DELAYS,
+        delay_seed: int = 0,
+        execution: ExecutionPolicy = ExecutionPolicy.ORDERED,
     ) -> None:
         self.scenario = scenario
         self.policy = policy
@@ -170,6 +226,14 @@ class _Simulation:
         self.planner = TravelPlanner(self.travel_times)
         self.traffic = TrafficControl(scenario, self.travel_times) if traffic else None
         self._plans: dict[RobotId, PlannedJob | PlannedMove] = {}
+        self._cursors: dict[RobotId, _Cursor] = {}
+        self._delays = delays
+        self._delay_streams = {
+            r.robot_id: random.Random(f"{delay_seed}:delays:{r.robot_id}") for r in scenario.robots
+        }
+        self._order = ResourceOrder() if traffic and execution is ExecutionPolicy.ORDERED else None
+        self._waiting: dict[RobotId, Resource] = {}  # robots waiting for a resource to free up
+        self._decide = False  # did something happen this tick that the policy should see?
         self._last_prune = 0
         self.moves = self.deferred = 0
         self._decision_seconds: list[float] = []
@@ -187,6 +251,10 @@ class _Simulation:
         self._scheduled: dict[RobotId, int] = {}  # each busy robot's one pending event
         for order in scenario.orders:
             self._push(order.release_tick, _Release(order))
+        if self._order is not None:
+            for robot in scenario.robots:
+                start = TimedPath((Visit(robot.node, 0, FOREVER),))
+                self._order.add(robot.robot_id, start, include_start=True)
 
     # --- main loop ---------------------------------------------------------------------------
 
@@ -202,7 +270,9 @@ class _Simulation:
                 while self._queue and self._queue[0][0] == tick:
                     _, _, event = heapq.heappop(self._queue)
                     self._handle(event)
-                self._dispatch()
+                if self._decide:
+                    self._decide = False
+                    self._dispatch()
             self._check_invariants()
         return self._result()
 
@@ -210,6 +280,13 @@ class _Simulation:
         heapq.heappush(self._queue, (tick, next(self._counter), event))
 
     def _handle(self, event: _Event) -> None:
+        if isinstance(event, _Depart):
+            self._depart(event.robot_id)
+            return
+        if isinstance(event, _Reach):
+            self._reach(event.robot_id)
+            return
+        self._decide = True
         if isinstance(event, _Release):
             self.pending[event.order.id] = event.order
             self.released += 1
@@ -226,14 +303,7 @@ class _Simulation:
         if self._scheduled.pop(robot_id, None) != self.now or robot.is_idle:
             raise SimulationInvariantError(f"robot {robot_id!r}: unexpected phase-end event")
         now, order, plan = self.now, robot.order, self._plans.get(robot_id)
-        if robot.phase is RobotPhase.REPOSITIONING:
-            new = robot.finish_repositioning(tick=now)
-            self._plans.pop(robot_id)
-            if self.traffic is not None:
-                self.traffic.became_idle(robot_id)
-            self._set(new)
-            return
-        if order is None:  # unreachable: only a repositioning robot has no order
+        if order is None:  # unreachable: travelling ends without an order happen on arrival
             raise SimulationInvariantError(f"robot {robot_id!r}: busy without an order")
         match robot.phase:
             case RobotPhase.TO_PICKUP:
@@ -241,7 +311,11 @@ class _Simulation:
                 self._log(EventKind.PICKUP_REACHED, order, new.node, robot_id)
             case RobotPhase.LOADING:
                 if isinstance(plan, PlannedJob):
-                    route, until = plan.to_dropoff, plan.dropoff_tick
+                    route, until = (
+                        plan.to_dropoff,
+                        self._estimate(plan.dropoff_tick, plan.to_dropoff),
+                    )
+                    self._depart_after_service(robot_id)
                 else:
                     route, ticks = self._route(robot.node, order.dropoff)
                     until = now + ticks
@@ -255,18 +329,112 @@ class _Simulation:
                 self.delivered.append(order.id)
                 self._log(EventKind.DELIVERED, order, robot.node, robot_id)
                 if isinstance(plan, PlannedJob):
-                    new = robot.reposition(plan.to_holding, tick=now, until_tick=plan.holding_tick)
+                    until = self._estimate(plan.holding_tick, plan.to_holding)
+                    new = robot.reposition(plan.to_holding, tick=now, until_tick=until)
+                    self._depart_after_service(robot_id)
                 else:
                     new = robot.finish_unloading(tick=now)
-            case _:  # IDLE and REPOSITIONING are handled above
+            case _:  # IDLE has no end; REPOSITIONING ends on arrival
                 raise SimulationInvariantError(f"robot {robot_id!r}: unexpected {robot.phase}")
         self._set(new)
 
     def _set(self, robot: RobotState) -> None:
+        """Store the robot's new state, and schedule the end of its phase if the phase has a
+        fixed length. With traffic, drives end when the robot arrives (`_reach`)."""
         self.robots[robot.robot_id] = robot
-        if robot.until_tick is not None:
+        if robot.until_tick is not None and not (
+            self.traffic is not None and robot.phase.is_travelling
+        ):
             self._scheduled[robot.robot_id] = robot.until_tick
             self._push(robot.until_tick, _PhaseEnd(robot.robot_id))
+
+    def _estimate(self, planned: int, route: Route) -> int:
+        """When a drive that starts now should end: as planned, unless the robot is already
+        too late for that. A drive never ends before either bound, so arrivals can only
+        postpone the estimate (`RobotState.postpone`)."""
+        return max(planned, self.now + self.travel_times.route_ticks(route))
+
+    # --- movement with traffic (D25) -------------------------------------------------------------
+
+    def _depart(self, robot_id: RobotId) -> None:
+        """Leave the current node, if every robot planned earlier on the corridor has left it."""
+        cursor = self._cursors[robot_id]
+        visits = cursor.path.visits
+        if cursor.in_corridor or cursor.index + 1 >= len(visits):
+            raise SimulationInvariantError(f"robot {robot_id!r}: nowhere to depart to")
+        here, there = visits[cursor.index].node, visits[cursor.index + 1].node
+        if self._order is not None and not self._order.may_enter_corridor(here, there, robot_id):
+            self._waiting[robot_id] = Corridor.between(here, there)
+            return
+        if self._order is not None:
+            self._let_next_in(here, self._order.leave(here, robot_id, self.now))
+        track = self._tracks[robot_id]
+        track[-1] = Visit(track[-1].node, track[-1].arrive, self.now)
+        cursor.in_corridor = True
+        extra = self._delays.draw(self._delay_streams[robot_id])
+        self._push(self.now + self.travel_times.edge_ticks(here, there) + extra, _Reach(robot_id))
+
+    def _reach(self, robot_id: RobotId) -> None:
+        """Enter the node at the end of the corridor, if it is free in the planned order;
+        otherwise wait at the end of the corridor."""
+        cursor = self._cursors[robot_id]
+        visits = cursor.path.visits
+        here, there = visits[cursor.index].node, visits[cursor.index + 1].node
+        if self._order is not None:
+            earliest = self._order.earliest_arrival(there, robot_id)
+            if earliest is None:  # a robot planned earlier still has to pass
+                self._waiting[robot_id] = there
+                return
+            if earliest > self.now:  # the node was left this tick: one tick of clearance
+                self._push(earliest, _Reach(robot_id))
+                return
+            corridor = Corridor.between(here, there)
+            self._let_next_in(corridor, self._order.leave(corridor, robot_id, self.now))
+        cursor.index += 1
+        cursor.in_corridor = False
+        self._tracks[robot_id].append(Visit(there, self.now, FOREVER))
+        if cursor.index in cursor.stops:
+            self._decide = True
+            self._arrive_at_stop(robot_id)
+        else:
+            self._push(max(self.now, visits[cursor.index].depart), _Depart(robot_id))
+
+    def _let_next_in(self, resource: Resource, robot_id: RobotId | None) -> None:
+        """Wake the robot that is next in line for ``resource``, if it is waiting for it."""
+        if robot_id is None or self._waiting.get(robot_id) != resource:
+            return
+        del self._waiting[robot_id]
+        if isinstance(resource, Corridor):
+            self._push(self.now, _Depart(robot_id))
+        else:
+            self._push(self.now + 1, _Reach(robot_id))
+
+    def _arrive_at_stop(self, robot_id: RobotId) -> None:
+        """A drive ends at a stop: start loading or unloading, or become idle at the end."""
+        robot = self.robots[robot_id]
+        if robot.until_tick is not None and robot.until_tick < self.now:
+            robot = robot.postpone(self.now)  # delayed
+        now, order = self.now, robot.order
+        if robot.phase is RobotPhase.REPOSITIONING:
+            new = robot.finish_repositioning(tick=now)
+            self._plans.pop(robot_id)
+            self._cursors.pop(robot_id)
+            assert self.traffic is not None
+            self.traffic.became_idle(robot_id)
+        elif robot.phase is RobotPhase.TO_PICKUP and order is not None:
+            new = robot.arrive(tick=now, until_tick=now + self.scenario.load_ticks)
+            self._log(EventKind.PICKUP_REACHED, order, new.node, robot_id)
+        elif robot.phase is RobotPhase.TO_DROPOFF and order is not None:
+            new = robot.arrive(tick=now, until_tick=now + self.scenario.unload_ticks)
+            self._log(EventKind.DROPOFF_REACHED, order, new.node, robot_id)
+        else:
+            raise SimulationInvariantError(f"robot {robot_id!r}: arrived while {robot.phase}")
+        self._set(new)
+
+    def _depart_after_service(self, robot_id: RobotId) -> None:
+        """After loading or unloading, leave no earlier than planned."""
+        cursor = self._cursors[robot_id]
+        self._push(max(self.now, cursor.path.visits[cursor.index].depart), _Depart(robot_id))
 
     def _route(self, source: NodeId, target: NodeId) -> tuple[Route, int]:
         route, ticks = self.planner.route(source, target), self.planner.ticks(source, target)
@@ -387,11 +555,11 @@ class _Simulation:
             until = self.now + ticks
         else:
             job = self.traffic.plan_job(robot, order, self.now, pickups)
-            self._plans[robot.robot_id] = job
-            self._track_path(robot.robot_id, job.path)
-            self._wake_at(job.releases)
+            self._follow(robot.robot_id, job, job.path, job.stop_visits, job.releases)
             route = job.to_pickup
             until = job.pickup_tick if len(route.nodes) > 1 else self.now + self.scenario.load_ticks
+            if len(route.nodes) > 1:
+                self._push(max(self.now, job.path.visits[0].depart), _Depart(robot.robot_id))
         new = robot.assign(order, route, tick=self.now, until_tick=until)
         self._log(EventKind.ASSIGNED, order, robot.node, robot.robot_id, route.length_m)
         if new.phase is RobotPhase.LOADING:
@@ -402,11 +570,26 @@ class _Simulation:
         assert self.traffic is not None
         robot = self.robots[robot_id]
         move = self.traffic.plan_move(robot, self.now, pickups)
-        self._plans[robot_id] = move
-        self._track_path(robot_id, move.path)
-        self._wake_at(move.releases)
+        self._follow(robot_id, move, move.path, move.stop_visits, move.releases)
         self.moves += 1
         self._set(robot.reposition(move.route, tick=self.now, until_tick=move.holding_tick))
+        self._push(max(self.now, move.path.visits[0].depart), _Depart(robot_id))
+
+    def _follow(
+        self,
+        robot_id: RobotId,
+        plan: PlannedJob | PlannedMove,
+        path: TimedPath,
+        stops: tuple[int, ...],
+        releases: Sequence[int],
+    ) -> None:
+        """Start executing a new plan: queue its uses of nodes and corridors in the planned
+        order (its first node is already the robot's), and follow it from its first visit."""
+        self._plans[robot_id] = plan
+        self._cursors[robot_id] = _Cursor(path, stops)
+        if self._order is not None:
+            self._order.add(robot_id, path, include_start=False)
+        self._wake_at(releases)
 
     def _wake_at(self, ticks: Sequence[int]) -> None:
         for tick in ticks:
@@ -468,6 +651,13 @@ class _Simulation:
         if len(self.pending) + len(carried) + len(self.delivered) != self.released:
             raise SimulationInvariantError("released orders are lost or counted twice")
         for robot in self.robots.values():
+            if self.traffic is not None and robot.phase.is_travelling:
+                # Drives end on arrival, at a time the delays decide: no phase-end event.
+                if robot.robot_id in self._scheduled or robot.robot_id not in self._cursors:
+                    raise SimulationInvariantError(
+                        f"robot {robot.robot_id!r}: a drive must follow a plan, without an event"
+                    )
+                continue
             if robot.until_tick is None:
                 if robot.robot_id in self._scheduled:
                     raise SimulationInvariantError(f"idle robot {robot.robot_id!r} has an event")
@@ -488,18 +678,10 @@ class _Simulation:
                 )
 
     def _duration(self, robot: RobotState) -> int:
-        """How long the robot's current phase must last."""
+        """How long the robot's current phase must last (free flow, or loading and
+        unloading; drives with traffic are checked on arrival instead)."""
         if robot.route is not None:
-            free_flow = self.travel_times.route_ticks(robot.route)
-            plan = self._plans.get(robot.robot_id)
-            if plan is None:
-                return free_flow
-            planned = _planned_end(plan, robot.phase) - robot.since_tick
-            if planned < free_flow:
-                raise SimulationInvariantError(
-                    f"robot {robot.robot_id!r}: planned faster than free flow"
-                )
-            return planned
+            return self.travel_times.route_ticks(robot.route)
         if robot.phase is RobotPhase.LOADING:
             return self.scenario.load_ticks
         return self.scenario.unload_ticks
@@ -523,13 +705,3 @@ class _Simulation:
             deferred_assignments=self.deferred,
             decision_seconds=tuple(self._decision_seconds),
         )
-
-
-def _planned_end(plan: PlannedJob | PlannedMove, phase: RobotPhase) -> int:
-    if isinstance(plan, PlannedMove):
-        return plan.holding_tick
-    return {
-        RobotPhase.TO_PICKUP: plan.pickup_tick,
-        RobotPhase.TO_DROPOFF: plan.dropoff_tick,
-        RobotPhase.REPOSITIONING: plan.holding_tick,
-    }[phase]

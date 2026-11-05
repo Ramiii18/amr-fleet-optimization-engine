@@ -28,7 +28,7 @@ loudly instead of producing quietly wrong KPIs.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from types import MappingProxyType
 from typing import NewType, Self
@@ -212,6 +212,24 @@ class RobotState:
         self._check_source("finish unloading", RobotPhase.UNLOADING)
         self._check_transition("finish unloading", RobotPhase.IDLE, tick)
         return RobotState(self.robot_id, RobotPhase.IDLE, self.node, tick)
+
+    def postpone(self, until_tick: int) -> "RobotState":
+        """The same drive, ending later than expected: the robot was delayed (Phase 2, D25).
+
+        Only a travelling robot can be delayed, and only to a later end.
+        """
+        if not self.phase.is_travelling:
+            raise InvalidTransitionError(
+                f"robot {self.robot_id!r}: only a travelling robot can be delayed, not "
+                f"{self.phase.name}"
+            )
+        assert self.until_tick is not None  # guaranteed by the travelling-phase invariant
+        if until_tick < self.until_tick:
+            raise RobotStateError(
+                f"robot {self.robot_id!r}: a delay cannot move the end from {self.until_tick} "
+                f"to {until_tick}"
+            )
+        return replace(self, until_tick=until_tick)
 
     def reposition(self, route: Route, *, tick: int, until_tick: int) -> "RobotState":
         """Start driving ``route`` to a holding spot, with no order (D24).
