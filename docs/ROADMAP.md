@@ -11,7 +11,7 @@ quality dropping.
 | **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | **Done** (2026-11-04) |
 | **M3** Optimization | Look-ahead and multi-order sequencing over a bounded horizon: insertion heuristic and CP-SAT, compared in simulation | **Done** (2026-11-05) |
 | **M4** Traffic v0.2 | Reservation table, safe-interval path planning (SIPP), prioritized planning, conflict checking, holding spots, measured cost of congestion | **Done** (2026-11-05) |
-| **M5** Portfolio v1 | Benchmarks at 3–5, 10 and 25 robots, documentation, visualization, honest limitations | Not started |
+| **M5** Portfolio v1 | Scaling benchmark with traffic at 3, 5, 10 and 25 robots, decision latency, figures and animation, portfolio README, consolidated limitations | In progress (planned 2026-11-05) |
 
 **MVP definition (M2):** the engine takes a synthetic warehouse map and a seeded stream of transport orders
 and dispatches the orders to N identical robots. The simulator executes them with correct integer travel
@@ -226,6 +226,45 @@ dispatch policies are then compared again, with and without traffic, to measure 
   understates the value of planning.
 - The 25-robot benchmark of the original plan will test whether prioritized planning and the station
   layout still cope.
+
+## M5: plan (2026-11-05)
+
+**Goal.** Present what exists, honestly and reproducibly:
+- how the engine scales;
+- how fast it decides;
+- what its behaviour looks like;
+- where its limits are.
+
+Every number and every figure comes from a committed script.
+
+**Increments:**
+1. **Scaling benchmark with traffic.**
+   - Fleets of 3, 5, 10 and 25 robots on the large map.
+   - Two loads per fleet: 20 and 30 orders per robot per hour, roughly moderate and high
+     utilization.
+   - Greedy, `insertion-fair` and `cpsat-fair`, on 20 paired seeds.
+   - It also measures **decision latency**: the wall time of each dispatch decision, the policy plus
+     the traffic planning that executes it.
+   - Per-run results are also written as CSV, for the figures.
+2. **Visualization** (`viz/`, matplotlib):
+   - the map with robot trajectories;
+   - a chart of the scaling results, drawn from the CSV;
+   - a short animation of a run with traffic.
+
+   A figure script regenerates them all into `docs/figures/`.
+3. **Portfolio documentation.**
+   - The README becomes the landing page: what the engine does, headline results with figures, how to
+     reproduce every number, and the architecture.
+   - A consolidated `docs/LIMITATIONS.md`.
+   - The project overview distinguishes what is built from what is Phase 2.
+
+**Acceptance criteria:**
+- The scaling benchmark is recorded verbatim. Every order is delivered and every run with traffic has
+  zero conflicts. Decision latency is reported per policy and fleet size.
+- Every figure is produced by a committed script from simulation output; no image is edited by hand.
+- A reader can reproduce every reported number with the commands in the README.
+- No document implies real deployment or control of physical robots, and the limitations are stated
+  in one place.
 
 ## Phase 2 backlog (after M5, or earlier if time allows)
 
