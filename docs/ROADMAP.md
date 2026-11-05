@@ -347,7 +347,7 @@ how it is scheduled changes what the fleet delivers. The battery parameters are 
 that charging matters within a one-hour run (D26).
 
 **Increments:**
-1. **Energy model.**
+1. **Energy model.** Done 2026-11-05.
    - Integer energy units.
    - Each edge driven drains energy in proportion to its length.
    - A robot standing idle at a charger charges at a fixed rate.

@@ -987,6 +987,32 @@ of delays doesn't depend on earlier outcomes.
 - **Planning.** `cpsat-fair` held up best: its lead over greedy grew to 412 s at moderate load, and to
   984 s at high load.
 
+### 13.6 Batteries and charging (`domain/energy.py`, D26, Phase 2)
+
+**Energy model.** Battery levels are integers, as time is (D6): one unit is the energy of driving one
+millimetre. Every edge therefore drains a whole number of units, its length in millimetres, and
+comparisons are exact.
+- A robot standing idle at a charger gains a fixed number of units per tick, up to its capacity.
+- The default battery is synthetic, chosen so that charging matters within a one-hour run. It lasts
+  one hour of driving (3,600,000 units) and charges fully in 20 minutes (300 units per tick).
+- Start levels are seeded, uniform between 30% and 100%.
+
+**Why no battery can run empty.** Only robots above the low threshold (25% by default) receive jobs.
+That threshold must cover the most driving a robot can need before it reaches a charger:
+- a job: to the pickup, to the drop-off and to a holding spot;
+- then the drive to a charger.
+
+That is four drives between endpoints, each at most the longest shortest route between two endpoints
+on the map. `safe_low_m` computes this bound, and `EnergyModel` refuses a threshold below it. On the
+large map the bound is 456 m, 13% of the battery, so the 25% threshold leaves a margin of 444 m.
+
+**Testing.**
+- The unit conversions, drains and charging are checked by hand, including the cap at full charge
+  and partial ticks.
+- Start levels are seeded and stay within bounds.
+- On a hand map the safety bound is exactly 16 m. A battery whose threshold falls below it is refused,
+  and one exactly at it is accepted.
+
 ---
 
 ## 14. Interview notes

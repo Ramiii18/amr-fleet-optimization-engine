@@ -16,6 +16,7 @@ src/amr_optimizer/
   domain/      timing.py     TimeModel (integer ticks), TravelTimes (per-edge travel ticks)
                orders.py     TransportOrder
                robots.py     RobotState and the robot state machine (ALLOWED_TRANSITIONS)
+               energy.py     BatterySpec, EnergyModel: integer energy units, safety bound (Phase 2)
   scenario/    model.py      Scenario: validated input of one simulation run
                generator.py  seeded order stream (Bernoulli arrivals), fleet placement
   sim/         simulator.py  discrete-event loop, executor, invariant checks; free flow or traffic
