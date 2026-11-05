@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from amr_optimizer.dispatch import GreedyDispatch
 from amr_optimizer.domain import (
     OrderId,
     RobotId,
@@ -18,7 +19,7 @@ from amr_optimizer.domain import (
     TransportOrder,
 )
 from amr_optimizer.routing import Route
-from amr_optimizer.scenario import Scenario
+from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario
 from amr_optimizer.sim import (
     Assignment,
     DispatchSnapshot,
@@ -29,7 +30,7 @@ from amr_optimizer.sim import (
     simulate,
 )
 from amr_optimizer.sim.simulator import _Simulation
-from amr_optimizer.warehouse import NodeId, WarehouseGraph
+from amr_optimizer.warehouse import PRESETS, NodeId, WarehouseGraph, generate_grid_warehouse
 
 A, B, C = NodeId("A"), NodeId("B"), NodeId("C")
 R1, R2 = RobotId("R1"), RobotId("R2")
@@ -367,3 +368,30 @@ def test_decision_interval_must_be_positive(line_graph: WarehouseGraph) -> None:
         simulate(
             _scenario(line_graph, {R1: A}, []), FirstComeFirstServed(), decision_interval_ticks=0
         )
+
+
+# --- decision latency ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("traffic", [False, True])
+def test_every_decision_is_timed_once(traffic: bool) -> None:
+    class Counting:
+        name = "counting-test"
+
+        def __init__(self) -> None:
+            self.calls = 0
+            self.greedy = GreedyDispatch()
+
+        def assign(self, snapshot: DispatchSnapshot) -> Sequence[Assignment]:
+            self.calls += 1
+            return self.greedy.assign(snapshot)
+
+    graph = generate_grid_warehouse(PRESETS["small"])
+    scenario = generate_scenario(graph, ScenarioSpec(robots=3, duration_s=900), seed=1)
+    policy = Counting()
+
+    result = simulate(scenario, policy, traffic=traffic)
+
+    assert policy.calls > 0
+    assert len(result.decision_seconds) == policy.calls
+    assert all(seconds >= 0 for seconds in result.decision_seconds)

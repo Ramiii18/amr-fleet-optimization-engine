@@ -34,6 +34,7 @@ After every tick the simulator checks its invariants and raises
 
 import heapq
 import itertools
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -87,6 +88,12 @@ class SimulationResult:
     traffic: bool = False
     moves_out_of_the_way: int = 0  # idle robots moved off an assigned pickup (traffic)
     deferred_assignments: int = 0  # assignments postponed to break a cycle (traffic)
+    decision_seconds: tuple[float, ...] = ()  # wall time of each decision; see below
+
+    # ``decision_seconds`` measures, for every call of the policy, the wall time from building
+    # the snapshot to the end of executing the decision (with traffic, including the planning
+    # of every itinerary). It depends on the machine and its load, unlike everything else in
+    # the result, and nothing in the simulation reads it.
 
     @property
     def all_delivered(self) -> bool:
@@ -165,6 +172,7 @@ class _Simulation:
         self._plans: dict[RobotId, PlannedJob | PlannedMove] = {}
         self._last_prune = 0
         self.moves = self.deferred = 0
+        self._decision_seconds: list[float] = []
         self.robots: dict[RobotId, RobotState] = {r.robot_id: r for r in scenario.robots}
         self._tracks: dict[RobotId, list[Visit]] = {
             r.robot_id: [Visit(r.node, 0, FOREVER)] for r in scenario.robots
@@ -277,6 +285,7 @@ class _Simulation:
                 self._next_round = (self.now // self.interval + 1) * self.interval
                 self._push(self._next_round, _DecisionRound())
             return
+        started = time.perf_counter()
         orders = tuple(self.pending.values())
         ready: Mapping[RobotId, tuple[int, NodeId]] = MappingProxyType({})
         if self.traffic is not None:
@@ -301,6 +310,7 @@ class _Simulation:
                 self._start_job(assignment)
         else:
             self._execute_with_traffic(assignments)
+        self._decision_seconds.append(time.perf_counter() - started)
 
     def _check_assignments(self, assignments: Sequence[Assignment], offered: set[OrderId]) -> None:
         """Validate the whole decision before executing any part of it."""
@@ -511,6 +521,7 @@ class _Simulation:
             traffic=self.traffic is not None,
             moves_out_of_the_way=self.moves,
             deferred_assignments=self.deferred,
+            decision_seconds=tuple(self._decision_seconds),
         )
 
 

@@ -38,7 +38,7 @@ src/amr_optimizer/
                compare.py    paired_difference: per-seed differences with a t confidence interval
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
 scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py,
-               compare_traffic.py
+               compare_traffic.py, benchmark_scaling.py
 scenarios/maps small.json (45 nodes), medium.json (179), large.json (461)
 tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkable graphs)
 ```
