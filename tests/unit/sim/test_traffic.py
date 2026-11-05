@@ -163,6 +163,36 @@ def test_with_traffic_the_second_robot_waits_until_the_corridor_is_clear() -> No
     assert [r.node for r in result.robots] == [P1, P2] and all(r.is_idle for r in result.robots)
 
 
+def test_two_robots_delivering_to_one_station_take_turns() -> None:
+    # R1 stands on A and R2 on B; both orders go to station S1. R1 is planned first: it loads
+    # at A, unloads at S1 during [25, 30] and leaves through W at tick 40 for P1. R2 loads at B,
+    # waits at E until 21 so that it reaches W at 41, one tick after R1 has passed, and
+    # unloads at S1 during [51, 56]. Its holding spot is P2: A and P1 are taken, B is a
+    # pending pickup at the time of planning.
+    orders = [TransportOrder(O1, A, S1, 0), TransportOrder(O2, B, S1, 0)]
+    scenario = _scenario({R1: A, R2: B}, orders)
+    decision = [Assignment(R1, O1), Assignment(R2, O2)]
+
+    free = simulate(scenario, FirstThenGreedy(decision))
+    result = simulate(scenario, FirstThenGreedy(decision), traffic=True)
+
+    assert "vertex" in _conflicts(free)  # in free flow both robots end up idle on S1
+    assert result.trajectories[R1] == _path(
+        (A, 0, 5), (W, 15, 15), (S1, 25, 30), (W, 40, 40), (P1, 50, 96)
+    )
+    assert result.trajectories[R2] == _path(
+        (B, 0, 5),
+        (E, 15, 21),
+        (W, 41, 41),
+        (S1, 51, 56),
+        (W, 66, 66),
+        (E, 86, 86),
+        (P2, 96, 96),
+    )
+    assert _delivered(result) == {O1: 30, O2: 56}
+    assert _conflicts(result) == []
+
+
 def test_an_idle_robot_on_an_assigned_pickup_moves_out_of_the_way() -> None:
     # R1 stands idle on A. R2 is given O1, which picks up at A: R1 first moves to the nearest
     # free endpoint (P1; S1 is a station and P2 is held by R2), then R2 is planned around it.
