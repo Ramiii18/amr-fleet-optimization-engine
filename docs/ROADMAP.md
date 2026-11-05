@@ -282,16 +282,44 @@ Every number and every figure comes from a committed script.
 needs Node.js, which is not part of the toolchain. The documented, pre-validated palette slots were
 used unchanged (LIMITATIONS.md).
 
-## Phase 2 backlog (after M5, or earlier if time allows)
+## Phase 2 plan (2026-11-05)
 
-- **From M4:** mutex zones (groups of nodes and corridors with capacity 1); random delays with an
-  execution policy that keeps the planned order of robots at each resource (an action dependency
-  graph); traffic-aware cost estimates for the planners; a fleet-wide path planner (for example
-  conflict-based search) instead of prioritized planning.
+Phase 2 started on request after M5. Its milestones are ordered by what they add to the evidence and
+by what they build on:
 
-- Battery model, charging policy, charger queueing
-- Robot faults, blocked corridors, event-driven replanning
-- FastAPI service with background jobs for CPU-bound solving; Docker (requires WSL2)
-- Local search / Large Neighbourhood Search for dispatch
-- Animated visualization
-- A mock adapter shaped like VDA 5050 messages, validated against the published specification
+| Milestone | Content | Why in this place | Status |
+|---|---|---|---|
+| **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | In progress |
+| **P2** Battery and charging | Battery model, charging policy, chargers as shared resources, a CP-SAT charger schedule against a threshold rule | The largest part of the original scope still missing; a different CP-SAT model (intervals, capacity) | Not started |
+| **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | Not started |
+| **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | Not started |
+
+**P1 increments:**
+1. **Executor.** Execute a set of conflict-free timed paths under random delays:
+   - *naively*, keeping each robot's own schedule;
+   - *in order*, where every robot uses every node and corridor in the planned order of robots.
+
+   A robot that would reach an occupied node waits at the end of its corridor. Tested on hand cases
+   and random plans: with no delays the plans are reproduced exactly; with delays, ordered execution
+   has zero conflicts and always finishes.
+2. **Delays in the fleet simulator.** Movement is executed edge by edge, phases end at actual
+   arrivals, and new itineraries join the planned order of the robots already moving. With no delays,
+   the M5 results must reproduce exactly.
+3. **Comparison.** Delay levels × execution policies × dispatch policies:
+   - conflicts (expected under naive execution);
+   - the cost of delays (under ordered execution).
+
+**P1 acceptance criteria:**
+- Ordered execution has zero conflicts and delivers every order at every delay level, on random plans
+  and generated runs.
+- With no delays, it reproduces the plans, and the M5 results, exactly.
+- Naive execution's conflicts are measured and reported, not hidden.
+
+## Phase 2 backlog (unordered)
+
+- **From M4:** mutex zones (groups of nodes and corridors with capacity 1); traffic-aware cost
+  estimates for the planners; a fleet-wide path planner (for example conflict-based search) instead
+  of prioritized planning.
+- Local search / Large Neighbourhood Search for dispatch.
+- A mock adapter shaped like VDA 5050 messages, validated against the published specification.
+- Done in M5: animated visualization.

@@ -400,3 +400,43 @@ local pass predicts a CI pass.
 - Added in M4.3: two idle robots assigned each other's spots would each wait for the other to be
   planned first. The simulator breaks such a cycle by postponing one assignment and moving that robot
   out of the way, and it counts these postponements.
+
+## D25: Plans are executed in the planned order of robots at every node and corridor; a delayed robot's followers wait, at the end of their corridor if needed
+**Status:** Accepted (2026-11-05)
+**Why:**
+- With delays, planned times are no longer met.
+  - Keeping each robot's own times (naive execution) causes conflicts.
+  - Replanning every robot at every delay is expensive, and it changes decisions.
+  - Keeping the *order* in which robots use each node and corridor is enough for safety. This is the
+    idea of the temporal plan graph of MAPF-POST (Hönig et al., ICAPS 2016) and of the action
+    dependency graph (Hönig et al., IEEE RA-L 2019).
+- **Rules, applied to a conflict-free plan:**
+  - A robot leaves a node no earlier than planned, and not before its service there is done. It
+    enters the next corridor only when every robot planned earlier on that corridor has left it.
+  - It enters the next node only when every robot planned earlier at that node has left it, one tick
+    later at the earliest (D23). Until then it waits at the end of its corridor, still occupying the
+    corridor.
+- **Why wait at the end of the corridor, not before departing?** A plan may let a robot drive towards
+  a node that another robot will leave before it arrives. Requiring the node to be empty before
+  departing would add waiting even without delays. With the wait at the end of the corridor, no
+  delays means every event happens at its planned time, so plans are reproduced exactly.
+- **No deadlock.** Every waiting relation points from an event planned earlier to one planned later:
+  - leaving a corridor comes before another robot enters it;
+  - leaving a node comes before another robot arrives there;
+  - each robot's own events follow its path, and driving takes at least one tick.
+
+  So the dependencies form a directed acyclic graph, and the earliest-planned pending event can
+  always happen.
+- **Lifelong operation.** A newly planned itinerary joins each resource's order by its planned times.
+  The argument holds even when robots are behind schedule, because all dependencies still point
+  forward in planned time.
+- **Delay model.** Each time a robot drives an edge, with probability p it takes extra time drawn
+  uniformly from a range. Each robot has its own named random stream, so all policies see the same
+  sequence of delays per robot, as far as their paths allow (D14).
+
+**Consequences:**
+- A delay propagates only to robots planned after the delayed one on shared resources, never to robots
+  planned before it.
+- Robots never leave a node earlier than planned, so slack in a plan is not used to catch up.
+- A robot may stop inside a corridor, before its end node. The model counts it as occupying the
+  corridor; physical stopping distances are not modelled.
