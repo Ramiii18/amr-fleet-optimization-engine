@@ -1121,6 +1121,53 @@ or moved off one (R robots, C chargers).
 - Top-ups ignore demand: a robot may drive to a charger just before an order arrives near where it
   stood.
 
+### 13.7 Breakdowns and replanning (`traffic/execution.py`, D28, Phase 2)
+
+**Why replanning needs re-timing.** Ordered execution (13.5) is deadlock-free for one reason: every
+plan was reserved against every other in one clock, planned time, and every queue follows it, so
+every wait points forward in that clock. Late robots make planned times stale.
+- **A plan made in real time against stale plans is outside that clock.** It can be queued ahead of
+  a robot that is physically ahead of it, and the two can then wait for each other.
+- **Example.** Robot X waits in corridor c to enter node m, where robot B has broken down. B is
+  replanned in real time and leaves m through c. Now B waits for X to leave c, and X waits for B to
+  leave m.
+
+**Re-timing (`retime`).** Compute the earliest schedule of every remaining plan from the current
+state, in the planned order, assuming no further delays.
+- **Input:** each robot's remaining plan, from the visit it stands on or has just left, and its
+  progress there:
+  - when it arrived, and, if it is in the corridor after the visit, when it left;
+  - the earliest tick of its next event: reaching the end of its corridor (a breakdown makes this
+    later), or leaving its visit once any service is done.
+- **The computation** is the one pass of `execute_plans`, with the events that already happened
+  fixed. Events are taken in planned order:
+  - an arrival waits for the robots planned earlier at the node to leave, plus one tick of
+    clearance;
+  - a departure waits for the robots planned earlier on the corridor to leave it, for any service,
+    and for the planned departure.
+
+  Nothing pending happens before now. Resources that robots have finished with only give their
+  last leaving tick.
+- **Why it is correct.** Every dependency still points forward in the planned order, so one pass in
+  that order is a longest-path computation in a directed acyclic graph.
+- **What it guarantees.** The result keeps every route and the order at every resource. Successive
+  uses of a resource are therefore separated in the new times, and the re-timed plans are mutually
+  conflict-free: one clock again, matching reality as of now.
+- **Cost:** O(E log E) for E remaining events, dominated by the sort.
+
+**Testing.**
+- **Hand cases:**
+  - a robot on schedule is unchanged;
+  - a breakdown ahead makes the follower wait exactly the repair time, at the corridor entrance;
+  - service and the current tick hold a robot standing at a node;
+  - a node needs a tick of clearance after the last robot left it.
+- **Oracle.** Random SIPP-planned fleets are executed in order, with and without delays, and cut at
+  3 random ticks each, over 450 cuts in all. Re-timing from the state at the cut must reproduce,
+  visit for visit, the ordered execution in which nothing is delayed after the cut. The re-timed
+  plans are checked conflict-free.
+- **Mutations.** Removing the node order or the corridor order from `retime` makes the oracle fail.
+  Removing the clearance after robots that have left fails a hand case.
+
 ---
 
 ## 14. Interview notes

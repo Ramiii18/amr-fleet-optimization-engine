@@ -5,8 +5,10 @@ from amr_optimizer.traffic.execution import (
     NO_DELAYS,
     DelayModel,
     ExecutionPolicy,
+    Progress,
     ResourceOrder,
     execute_plans,
+    retime,
 )
 from amr_optimizer.traffic.paths import (
     FOREVER,
@@ -36,6 +38,7 @@ __all__ = [
     "Itinerary",
     "ItineraryPlanner",
     "Occupancy",
+    "Progress",
     "Reservation",
     "ReservationConflictError",
     "ReservationTable",
@@ -47,5 +50,6 @@ __all__ = [
     "execute_plans",
     "find_conflicts",
     "path_conflicts",
+    "retime",
     "validate_timed_path",
 ]

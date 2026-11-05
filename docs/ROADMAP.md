@@ -291,7 +291,7 @@ by what they build on:
 |---|---|---|---|
 | **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | **Done** (2026-11-05) |
 | **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | **Done** (2026-11-05) |
-| **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | Not started |
+| **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | In progress |
 | **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | Not started |
 
 **P1 increments:**
@@ -411,6 +411,51 @@ that charging matters within a one-hour run (D26).
   out-of-service machinery can be reused: hidden from dispatch, with an expected return.
 - A blocked corridor needs what P1 and P2 avoided: replanning itineraries that are already being
   executed.
+
+## P3: plan (2026-11-05)
+
+**Goal.** Robots break down while driving, and the fleet replans around them. Breakdowns are
+*announced*: when a robot breaks down, the fleet manager learns it, and how long the repair will
+take, at once. Delays (P1) are not announced.
+
+**The problem replanning has to solve.** Ordered execution is deadlock-free because every plan
+was reserved against every other in one clock, planned time, and every queue follows that clock
+(D25). Robots that run late make planned times stale. A robot replanned in real time against stale
+plans can be queued ahead of a robot that is physically ahead of it on one resource and behind it on
+another, and the two then wait for each other forever. Replanning therefore re-times first (D28):
+1. Compute the earliest schedule of every remaining plan from the current state, in the planned
+   order. This is the one-pass longest-path computation of `execute_plans`, started mid-run.
+2. Rebuild the reservation table and the queues from that schedule. All plans are again in one
+   clock, and that clock matches reality as of now.
+3. Replan the delayed robots with SIPP against it.
+
+**Three recovery policies**, so that the comparison separates the effects:
+- `wait`: nothing changes; robots behind a broken one wait (ordered execution, as in P1).
+- `retime`: re-time at every breakdown, so that new jobs are planned knowing about it.
+- `replan`: re-time, then replan every delayed robot; a new plan is kept only if it reaches its
+  last stop earlier.
+
+**Increments:**
+1. **Re-timing.** Done 2026-11-05. `retime` in `traffic/execution.py`: the earliest schedule of
+   the remaining plans from a state reached mid-run. Oracle: cutting an ordered execution at any tick and
+   re-timing the rest reproduces it.
+2. **Breakdowns in the simulator.** A seeded breakdown model (a share of edge traversals, a
+   repair time range); `wait` and `retime`. With every job assigned at the start, `retime` must
+   reproduce `wait` exactly: re-timing alone moves no robot.
+3. **Replanning.** `replan`: robots in a corridor are committed to its end, so each delayed robot
+   replans from the next node it will stand on, through its remaining stops. Hand cases (a robot
+   detours around a broken one and arrives earlier than by waiting) and generated runs (every
+   order delivered, zero conflicts, reproducible).
+4. **Comparison.** Breakdown levels × recovery policies × greedy and `cpsat-fair`.
+
+Blocked corridors without a robot (a closed aisle) reuse the same machinery and follow if the
+breakdown results justify it; otherwise they go to the backlog.
+
+**Acceptance criteria:**
+- Every order is delivered and every run is conflict-free, under every recovery policy.
+- Re-timing reproduces ordered execution (oracle), and moves no robot by itself.
+- Without breakdowns, all earlier results reproduce exactly.
+- The comparison reports the cost of breakdowns and the paired effect of each recovery policy.
 
 ## Phase 2 backlog (unordered)
 

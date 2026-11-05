@@ -514,3 +514,45 @@ local pass predicts a CI pass.
   charging.
 - **Separate KPIs.** Trips when low and top-ups are counted separately, and charger occupancy is
   measured (`ChargingKpis`).
+
+## D28: Breakdowns are announced; recovery re-times every plan in the planned order, then replans the delayed robots with SIPP
+**Status:** Accepted (2026-11-05)
+**Why:**
+- **Announced faults.** A robot that breaks down stops in its corridor for a repair time. The fleet
+  manager learns of the breakdown and of the repair time at once. Delays (D25) are not announced, so
+  the two model different things: small unknown slowdowns, and rare known stops.
+- **Safety needs nothing new.** Ordered execution (D25) already keeps every robot behind a broken one
+  waiting. The baseline policy, `wait`, is exactly that.
+- **Replanning in real time against stale plans can deadlock.**
+  - Ordered execution is deadlock-free because every plan was reserved against every other in one
+    clock (planned time), and every queue follows it: every wait points forward in that clock.
+  - A plan made in real time against plans whose times are stale is not in that clock. It can be
+    queued ahead of a robot that is physically ahead of it on one resource, and behind that robot on
+    another resource.
+  - Example: robot X waits in corridor c to enter node m, where robot B is broken. B is replanned
+    in real time and leaves m through c. B waits for X to leave c, and X waits for B to leave m.
+- **Re-timing restores one clock.**
+  - The earliest schedule of every remaining plan is computed from the current state, in the planned
+    order, assuming no further delays. This is the one-pass longest-path computation of ordered
+    execution, started mid-run.
+  - The order at every resource is kept, so the re-timed plans are mutually conflict-free. Their
+    clock is one that matches reality as of now.
+  - The reservation table and the queues are rebuilt from them.
+- **Replanning in that clock.**
+  - Each delayed robot, in the order of its next event, gives up the rest of its plan.
+  - It plans again with SIPP from the next node it will stand on, through its remaining stops,
+    against the re-timed table.
+  - The new plan is kept only if it reaches the robot's last stop earlier. Every plan is again
+    reserved against all others in one clock, so the D25 argument still holds.
+- **Three policies separate the effects:**
+  - `wait`;
+  - `retime`: new jobs are planned knowing about the breakdown;
+  - `replan`: plans already being executed change too.
+
+**Consequences:**
+- **Robots in a corridor are committed.** Replanning starts at the end of the corridor, never in the
+  middle.
+- **Re-timing is a prediction.** It assumes no further delays or breakdowns, and is refreshed at the
+  next breakdown.
+- **A changed route changes no logged distance.** The distances in the event log are those planned at
+  assignment and loading; the trajectories record what was actually driven.
