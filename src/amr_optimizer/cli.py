@@ -15,6 +15,7 @@ from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.metrics import RunKpis, compute_kpis
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import simulate
+from amr_optimizer.traffic import NO_DELAYS, DelayModel, ExecutionPolicy
 from amr_optimizer.warehouse import PRESETS, WarehouseGraph, generate_grid_warehouse, load_graph
 
 
@@ -41,6 +42,25 @@ def _parser() -> argparse.ArgumentParser:
         "--traffic",
         action="store_true",
         help="robots plan around each other's reservations (M4); default is free flow",
+    )
+    parser.add_argument(
+        "--delay-share",
+        type=float,
+        default=0.0,
+        help="with --traffic: the share of edge traversals that are delayed (0 to 1)",
+    )
+    parser.add_argument(
+        "--delay-s",
+        type=float,
+        nargs=2,
+        default=(1.0, 5.0),
+        metavar=("MIN", "MAX"),
+        help="with --delay-share: the range of extra seconds of a delayed edge (default 1 5)",
+    )
+    parser.add_argument(
+        "--naive",
+        action="store_true",
+        help="with --traffic: robots keep their own schedules under delays (conflicts possible)",
     )
     parser.add_argument("--json", action="store_true", help="print the KPIs as JSON")
     return parser
@@ -70,16 +90,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.round_s < 0:
         _parser().error("--round-s must be non-negative")
+    if (args.delay_share or args.naive) and not args.traffic:
+        _parser().error("--delay-share and --naive need --traffic")
+    if not 0 <= args.delay_share <= 1:
+        _parser().error("--delay-share must be between 0 and 1")
     spec = ScenarioSpec(
         robots=args.robots, orders_per_hour=args.orders_per_hour, duration_s=args.duration_s
     )
     graph = _load_map(args.map)
     scenario = generate_scenario(graph, spec, seed=args.seed)
     interval = scenario.time_model.to_ticks(args.round_s) or None
+    low, high = (scenario.time_model.to_ticks(s) for s in args.delay_s)
+    if not 1 <= low <= high:
+        _parser().error("--delay-s needs 0 < MIN <= MAX")
+    delays = DelayModel(args.delay_share, low, high) if args.delay_share else NO_DELAYS
+    execution = ExecutionPolicy.NAIVE if args.naive else ExecutionPolicy.ORDERED
 
     started = time.perf_counter()
     result = simulate(
-        scenario, POLICIES[args.policy](), decision_interval_ticks=interval, traffic=args.traffic
+        scenario,
+        POLICIES[args.policy](),
+        decision_interval_ticks=interval,
+        traffic=args.traffic,
+        delays=delays,
+        delay_seed=args.seed,
+        execution=execution,
     )
     elapsed = time.perf_counter() - started
     kpis = compute_kpis(result)
@@ -94,6 +129,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{kpis.orders} orders"
     )
     mode = "with traffic (reservations)" if args.traffic else "free flow (no traffic)"
+    if args.delay_share:
+        kind = "naive" if args.naive else "ordered"
+        mode += f", {args.delay_share:.0%} of edges delayed, {kind} execution"
     print(f"Policy:   {kpis.policy}, {rounds}, {mode}")
     print(
         f"Delivered {kpis.delivered} of {kpis.orders} orders in {kpis.duration_s:.1f} s of "

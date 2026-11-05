@@ -59,3 +59,30 @@ def test_invalid_arguments_exit_with_usage_error(bad: list[str]) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main([*SMALL_RUN, *bad])
     assert exit_info.value.code == 2
+
+
+def test_delays_can_be_switched_on_with_traffic(capsys: pytest.CaptureFixture[str]) -> None:
+    run = [*SMALL_RUN, "--traffic", "--delay-share", "0.3"]
+
+    assert main(run) == 0
+    out = capsys.readouterr().out
+    assert "30% of edges delayed, ordered execution" in out
+    assert "conflicts                 0" in out
+
+    assert main([*run, "--naive", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["delivered"] > 0
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        ["--delay-share", "0.2"],  # needs --traffic
+        ["--traffic", "--delay-share", "1.5"],
+        ["--traffic", "--delay-share", "0.2", "--delay-s", "5", "1"],
+    ],
+)
+def test_bad_delay_options_are_rejected(bad: list[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main([*SMALL_RUN, *bad])
+
+    assert exit_info.value.code == 2
