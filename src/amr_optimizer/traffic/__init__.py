@@ -16,17 +16,21 @@ from amr_optimizer.traffic.reservations import (
     ReservationConflictError,
     ReservationTable,
 )
+from amr_optimizer.traffic.sipp import Itinerary, ItineraryPlanner, Stop
 
 __all__ = [
     "FOREVER",
     "Conflict",
     "Corridor",
     "InvalidTimedPathError",
+    "Itinerary",
+    "ItineraryPlanner",
     "Occupancy",
     "Reservation",
     "ReservationConflictError",
     "ReservationTable",
     "Resource",
+    "Stop",
     "TimedPath",
     "Visit",
     "find_conflicts",

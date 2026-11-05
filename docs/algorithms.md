@@ -785,6 +785,60 @@ and the simulator, so it shares nothing with them except the definition of an oc
 - On 300 random scenarios of four random paths each, the table accepts a path exactly when the
   independent checker finds it conflict-free.
 
+### 13.2 Safe-interval path planning for itineraries (`traffic/sipp.py`, D24)
+
+**Problem.** Plan a robot's whole job as one conflict-free timed path. The robot drives from where it
+stands to a sequence of stops, each with a service time (loading, unloading), and ends with a hold at
+the last stop. It must avoid every reservation already in the table, waiting where needed, and finish
+as early as possible.
+
+**Why not search over (node, tick)?** At 0.1 s ticks, an edge takes 10 to 40 ticks, and waits can be
+long. A search over (node, tick) states expands every tick of every wait.
+
+**Safe intervals (Phillips and Likhachev, ICRA 2011).** A node's ticks fall into a few *safe
+intervals*: maximal stretches in which no other robot is there. The search runs over (stage, node,
+safe interval) and keeps the earliest arrival in each. Within an interval, arriving earlier is never
+worse, because the robot can wait there. So keeping only the earliest arrival per state loses nothing:
+SIPP finds the same earliest itinerary as a search over every tick, with far fewer states.
+
+**One step.** From node u, reached at tick t inside safe interval [s_u, e_u], to a safe interval
+[s_v, e_v] of a neighbour v over an edge of τ ticks, depart at the earliest d with:
+- d ≥ t and d ≥ s_v − τ;
+- the corridor free during (d, d + τ). A single pass over the corridor's sorted reservations pushes d
+  past any that overlap;
+- d ≤ e_u (the robot waits at u until it leaves) and d + τ ≤ e_v.
+
+**Stops.** At the current stage's stop, the robot may start its service. It stays for the service
+time inside the same safe interval, then moves on to the next stage. The last stop is a hold, so the
+search can finish only in a safe interval that never ends. That is why another robot's hold on the
+goal makes the itinerary impossible, and the planner then returns `None`.
+
+**Heuristic.** A* with the free-flow time to the current stop, plus everything that comes after it:
+later services and the free-flow trips between later stops. Free-flow distances come from one
+backwards Dijkstra per stop node, cached. Waiting only adds time, so the heuristic never
+overestimates. It is a shortest-path distance plus a constant per stage, so it is also consistent.
+
+**Cost.** Proportional to the number of (stage, node, safe interval) states reached, times their
+degree, with a log factor for the heap. Measured on the large map, planning 30 whole jobs one after
+another (prioritized, each against the earlier ones): 1.4 ms per job on average, at most 3.1 ms,
+expanding 156 states on average.
+
+**Testing.**
+- By hand:
+  - free flow;
+  - waiting at the start because an oncoming robot needs the corridor, and then the node beyond it
+    (arrival at tick 33 instead of 20);
+  - services at a stop, at the start, and at the node of the final hold;
+  - a held goal, which gives `None`;
+  - malformed requests.
+- Against a brute-force search over (stage, node, tick) states on 300 random 3 × 3 grids, with random
+  reservations and holds of other robots:
+  - 288 itineraries were possible, and SIPP's arrival equals the brute force's in each;
+  - in the 12 impossible cases, both agree that there is no itinerary;
+  - 126 of the itineraries needed a wait away from any stop;
+  - every planned path drives real edges in their exact travel times, and the independent checker
+    finds no conflict with the reservations.
+
 ---
 
 ## 14. Interview notes
@@ -918,6 +972,20 @@ total. The weight that makes this lexicographic follows from an upper bound on c
 there is nothing to tune. At high load, the worst case dropped by 80–100 s against greedy, and P95 was
 the best of all variants. About a fifth to two fifths of the mean gain was given up. A useful side
 effect: the solver proved optimality far more often, because the dominant term has a tight bound.
+
+**What does SIPP buy over space-time A\*?**
+The same optimal earliest-arrival result, from far fewer states. Space-time A* searches over (node,
+tick), so a 10 s wait at 0.1 s ticks costs 100 expansions. SIPP searches over (node, safe interval),
+so the same wait is one transition. This is correct because arriving earlier within a safe interval
+is never worse when the robot may wait. On this project's maps that brings a whole-job plan down to a
+couple of milliseconds.
+
+**Why can prioritized planning get stuck, and why doesn't it here?**
+In general, a robot planned early can block one planned later, for example by parking on its only
+route or its goal, and prioritized planning has no way to undo that. Here, robots stop only at
+dead-end endpoints, and goals are endpoints that no one else holds or plans to visit. So no hold
+blocks a route or a goal, and every other reservation eventually ends. A plan therefore always
+exists. This is the well-formed infrastructure argument of Čáp et al. (ICAPS 2015).
 
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and

@@ -32,6 +32,7 @@ src/amr_optimizer/
   traffic/     paths.py      TimedPath, Visit, Corridor, Occupancy (closed at nodes, open on corridors)
                reservations.py  ReservationTable: reservations, holds, safe intervals (M4)
                conflicts.py  independent conflict checker (vertex, head-on, following)
+               sipp.py       ItineraryPlanner: safe-interval path planning through stops to a hold
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile
                compare.py    paired_difference: per-seed differences with a t confidence interval
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
