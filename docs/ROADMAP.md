@@ -10,7 +10,7 @@ quality dropping.
 | **M1** Routing library | Warehouse graph, Dijkstra, A*, map generator, JSON maps, tests, comparison | **Done** (2026-11-03) |
 | **M2** MVP v0.1 | Robot/order domain model, discrete-event simulator, greedy and Hungarian dispatch, KPIs, scenario generator, GitHub + CI | **Done** (2026-11-04) |
 | **M3** Optimization | Look-ahead and multi-order sequencing over a bounded horizon: insertion heuristic and CP-SAT, compared in simulation | **Done** (2026-11-05) |
-| **M4** Traffic v0.2 | Space-time A*, reservation table, prioritized planning, conflict tests, mutex zones, deadlock detection | Not started |
+| **M4** Traffic v0.2 | Reservation table, safe-interval path planning (SIPP), prioritized planning, conflict checking, holding spots, measured cost of congestion | In progress (planned 2026-11-05) |
 | **M5** Portfolio v1 | Benchmarks at 3–5, 10 and 25 robots, documentation, visualization, honest limitations | Not started |
 
 **MVP definition (M2):** the engine takes a synthetic warehouse map and a seeded stream of transport orders
@@ -150,6 +150,50 @@ re-plan when a prediction turns out wrong, and report the cost of congestion sep
   fallback is counted, not hidden.
 - CP-SAT earns its place only if it beats the insertion heuristic with a confidence interval that
   excludes zero. If it doesn't, the result says so, and the heuristic is the recommendation.
+
+## M4: plan (2026-11-05)
+
+**Goal.** Robots stop passing through each other. Every robot's movement becomes a timed path that
+reserves nodes and corridors, so no two robots are ever in the same place at the same time. The
+dispatch policies are then compared again, with and without traffic, to measure the cost of congestion
+(the M3 finding).
+
+**Model (D23, D24).**
+- **Resources.** A node holds at most one robot at a time. So does a corridor (a pair of directed
+  edges between two nodes), in either direction, which rules out head-on, swap and following
+  conflicts on one corridor.
+- **Prioritized planning.** When a robot gets a job, its whole itinerary is planned at once, against
+  the reservations of all robots planned before it:
+  - drive to the pickup and load;
+  - drive to the drop-off and unload;
+  - drive to a free holding spot nearby, and stay there.
+- **Holding spots.** Robots stop only at endpoints: storage, stations, chargers and parking, which
+  are dead-end spurs on every generated map. Stations are never used for parking. An idle robot that
+  stands on a pickup another robot needs is moved to another free endpoint.
+- **Search.** Safe-interval path planning (SIPP) finds the earliest itinerary, waiting where needed.
+  It searches over intervals in which a node is free, so it doesn't step through every 0.1 s tick.
+
+**Increments:**
+1. **Reservations and conflict checking.** Timed paths, a reservation table for nodes and corridors
+   (including open-ended holds), and an independent checker that finds every conflict between paths.
+2. **SIPP itinerary planner.** Earliest-arrival timed paths through waypoints with service times,
+   ending in a hold. Checked against a brute-force search over (node, tick) states on small graphs.
+3. **Traffic-aware simulator.** Itineraries planned at assignment, holding spots, moves off needed
+   endpoints, executed trajectories recorded. Every run is checked for conflicts by the independent
+   checker.
+4. **Comparison.** Every policy with and without traffic, on paired seeds. The planning policies use
+   the planned availability of busy robots.
+5. **Stretch, else Phase 2.** Mutex zones (groups of nodes and corridors with capacity 1), and random
+   delays with an execution policy that keeps the planned order of robots at each resource.
+
+**Acceptance criteria:**
+- SIPP's arrival time equals the brute-force optimum on at least 200 small random instances, and its
+  paths never conflict with the existing reservations.
+- Head-on, swap, intersection and station-contention cases are tested by hand.
+- With traffic, every generated run delivers every order, is reproducible, and has zero conflicts in
+  its executed trajectories, as found by the independent checker.
+- The comparison reports each policy's cost of congestion with paired confidence intervals. A planning
+  failure, which the design rules out, would stop the run with an error rather than be hidden.
 
 ## Phase 2 backlog (after M5, or earlier if time allows)
 

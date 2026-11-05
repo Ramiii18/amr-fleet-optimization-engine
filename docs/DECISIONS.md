@@ -339,3 +339,61 @@ local pass predicts a CI pass.
 - With the weight, CP-SAT's objective has much larger coefficients. The gaps reported for stopped
   solves are relative to this weighted cost, so they are not comparable with the gaps of the
   total-completion variant.
+
+## D23: Traffic resources are nodes and corridors, each holding one robot; time intervals are exact
+**Status:** Accepted (2026-11-05)
+**Why:**
+- **Nodes.** A robot at node v from its arrival tick a to its departure tick d occupies v during the
+  *closed* interval [a, d]. Two robots may never share a node at the same tick, so the next robot can
+  arrive at d + 1 at the earliest. That leaves one tick (0.1 s) of clearance.
+- **Corridors.** A robot driving from u to v, departing at d and arriving at d + τ, occupies the
+  corridor {u, v} during the *open* interval (d, d + τ). The corridor is the same resource in both
+  directions (D8 deferred this to now). One robot per corridor rules out head-on and swap conflicts,
+  and also a robot catching up with another on the same corridor.
+- **Integer ticks (D6)** make every overlap test exact. The open/closed convention makes "one robot
+  leaves the corridor at v at tick t, another enters it from u at tick t" legal, because they are at
+  different nodes. "One leaves node u at t, another arrives at u at t" is illegal.
+
+**Consequences:**
+- This is conservative. A two-metre aisle segment carries one robot at a time, even when two robots
+  could safely follow each other. Throughput limits caused by this are part of the measured cost of
+  congestion, not hidden.
+- Robots are points that occupy nodes and corridors, with no footprint, acceleration or turning
+  (ARCHITECTURE, "not modelled"). Certified safety functions remain out of scope.
+
+## D24: Prioritized itinerary planning with SIPP, holding spots on dead-end endpoints, and moves off needed endpoints
+**Status:** Accepted (2026-11-05)
+**Why:**
+- **Prioritized planning.** Robots plan one at a time, in decision order, against all existing
+  reservations. This is first come, first served. It is not optimal for the fleet, but it is simple
+  and fast, and it is the standard baseline in the lifelong multi-agent pickup-and-delivery literature.
+  That setting is lifelong multi-agent path finding with task assignment, as in Ma et al.'s Token
+  Passing (AAMAS 2017).
+- **Whole itinerary at assignment.** Pickup and load, drop-off and unload, then a holding spot. All
+  the reservations of a job, except the final hold, are therefore finite and known when it is planned.
+  A station's next visitor can be planned right away, to arrive after the previous robot has left.
+- **Holding spots.** After unloading, a robot drives to the nearest free endpoint (a dead-end spur)
+  and holds it until its next plan. Stations are never used for parking, so they never stay blocked.
+  An idle robot standing on a pickup that another robot is assigned to is first moved to another free
+  endpoint.
+- **Why planning cannot fail (D9 layout, the well-formed infrastructure of Čáp et al., ICAPS 2015).**
+  - Endpoints are leaves, so no path passes through another robot's endpoint.
+  - Every reservation except the holds at endpoints is finite.
+  - A plan's goals are endpoints that no one else holds or plans to visit.
+  - So after the last finite reservation everything is free, and SIPP always finds a path.
+  - There are always free endpoints: the large map has 221 for at most 10 robots.
+
+  A planning failure is therefore a bug, and it raises an error.
+- **SIPP rather than a search over (node, tick).** At 0.1 s ticks, an edge takes 10 to 40 ticks, and a
+  search over (node, tick) would expand every tick of every wait. SIPP searches over safe intervals:
+  maximal time windows in which a node is free. It finds the earliest arrival, because arriving earlier
+  in an interval is never worse when waiting is allowed (Phillips and Likhachev, ICRA 2011).
+
+**Consequences:**
+- The holding-spot move after each delivery adds a short trip. It is part of the measured traffic
+  cost.
+- Orders whose pickup is reserved by a busy robot are hidden from the dispatch policies until it is
+  free. Among orders that share a pickup, only the oldest is offered. So a decision never sends two
+  robots to one pickup.
+- The simulator executes plans exactly, because it has no disturbances yet. Robustness to delays,
+  where plans and execution diverge, is a stretch goal (ROADMAP M4, increment 5).
