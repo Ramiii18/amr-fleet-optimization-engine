@@ -19,10 +19,14 @@ Usage (from the repository root):
 
 import argparse
 import json
+import platform
 import statistics
+import subprocess
 import sys
 import time
 from collections import Counter
+from datetime import date
+from importlib.metadata import version
 from pathlib import Path
 
 from amr_optimizer.domain import TimeModel, TravelTimes
@@ -35,6 +39,20 @@ from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse
 MAP = "large"
 
 
+def git_commit() -> str:
+    try:
+        output = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=Path(__file__).resolve().parent,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+    return output.stdout.strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--robots", type=int, nargs="+", default=[5, 10, 25])
@@ -43,7 +61,16 @@ def main() -> int:
     args = parser.parse_args()
 
     graph = generate_grid_warehouse(PRESETS[MAP])
-    print(f"VDA 5050 {VERSION} demo: map {MAP}, one job per robot, seeds 0-{args.seeds - 1}")
+    print(f"VDA 5050 {VERSION} demo, {date.today().isoformat()}")
+    print(
+        f"Environment: Python {platform.python_version()}, {platform.platform()}, "
+        f"amr-fleet-optimization-engine {version('amr-fleet-optimization-engine')} "
+        f"(commit {git_commit()})"
+    )
+    print(
+        f"Settings: map {MAP}, one SIPP-planned job per robot at tick 0, seeds 0-{args.seeds - 1}, "
+        f"1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading"
+    )
     print()
     print(
         "| Robots | Jobs | Messages per run | Conflicts | Late: mean s | Late: P95 s | Late: max s "

@@ -158,3 +158,17 @@ def test_a_later_use_of_an_intersection_is_released_only_after_the_earlier_one()
     run = _run(1)
 
     assert _conflicts(run) == 0
+
+
+def test_jobs_sent_together_all_join_the_planned_order_before_any_release() -> None:
+    # A regression test: on the large map, seed 10, robot R10's job is planned through an
+    # intersection before R08's. When jobs were released one by one, R08 was released before
+    # R10's job had joined the planned order, and passed the intersection first.
+    graph = generate_grid_warehouse(PRESETS["large"])
+    scenario = generate_scenario(graph, ScenarioSpec(robots=10, orders_per_hour=600), seed=10)
+    traffic = TrafficControl(scenario, TravelTimes(graph, speed_mps=1.0, time_model=TimeModel(0.1)))
+
+    run = run_jobs(scenario, first_jobs(scenario, traffic), map_id="large")
+
+    assert len(run.delivered_at) == len(run.planned_at) == 10
+    assert _conflicts(run) == 0

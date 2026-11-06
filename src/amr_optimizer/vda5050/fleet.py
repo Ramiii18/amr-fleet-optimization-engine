@@ -14,7 +14,7 @@ corridors the robot has left.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from amr_optimizer.domain import RobotId
+from amr_optimizer.domain import RobotId, TransportOrder
 from amr_optimizer.scenario import Scenario
 from amr_optimizer.sim.traffic_control import TrafficControl
 from amr_optimizer.traffic import FOREVER, Corridor, ResourceOrder, TimedPath, Visit
@@ -71,22 +71,30 @@ class FleetControl:
             self._robots[robot] = _Robot(str(robot), HeaderCounter(manufacturer, str(robot)))
         self.delivered_at: dict[str, int] = {}  # order id -> tick its drop was reported finished
 
-    def assign(self, tick: int, job: Job) -> None:
-        """Send ``job`` as a new order. Its path must start where the robot stands."""
-        robot = self._robots[job.robot]
-        actions: dict[int, list[Action]] = {}
-        load = (("loadId", job.order_id),)
-        if job.pickup is not None:
-            actions[job.pickup] = [Action("pick", f"{job.order_id}-pick", "HARD", load)]
-        if job.dropoff is not None:
-            actions[job.dropoff] = [Action("drop", f"{job.order_id}-drop", "HARD", load)]
-            robot.drop_action = f"{job.order_id}-drop"
-        robot.route = route_of(job.path, self._graph, self._map_id, actions)
-        robot.order_id, robot.update_id = job.order_id, 0
-        robot.base_end, robot.reached, robot.left = 0, 0, False
-        self._order.add(job.robot, job.path, include_start=False)
-        robot.base_end = self._releasable(job.robot)
-        self._send(tick, robot, start=0)
+    def assign(self, tick: int, jobs: Sequence[Job]) -> None:
+        """Send ``jobs`` as new orders. Each path must start where its robot stands.
+
+        Every job joins the planned order before any base is released: otherwise a robot could
+        be released through a node at which a job sent after it, in the same call, is planned
+        earlier (a bug the larger demo runs found).
+        """
+        for job in jobs:
+            robot = self._robots[job.robot]
+            actions: dict[int, list[Action]] = {}
+            load = (("loadId", job.order_id),)
+            if job.pickup is not None:
+                actions[job.pickup] = [Action("pick", f"{job.order_id}-pick", "HARD", load)]
+            if job.dropoff is not None:
+                actions[job.dropoff] = [Action("drop", f"{job.order_id}-drop", "HARD", load)]
+                robot.drop_action = f"{job.order_id}-drop"
+            robot.route = route_of(job.path, self._graph, self._map_id, actions)
+            robot.order_id, robot.update_id = job.order_id, 0
+            robot.base_end, robot.reached, robot.left = 0, 0, False
+            self._order.add(job.robot, job.path, include_start=False)
+        for job in jobs:
+            robot = self._robots[job.robot]
+            robot.base_end = self._releasable(job.robot)
+            self._send(tick, robot, start=0)
 
     def receive(self, tick: int) -> None:
         """Read every robot's new state messages, and note what each robot has left."""
@@ -188,16 +196,24 @@ class FleetRun:
 
 def first_jobs(scenario: Scenario, traffic: TrafficControl, limit: int | None = None) -> list[Job]:
     """One job per robot at tick 0, planned with SIPP as the simulator does: the i-th robot
-    takes the i-th order whose pickup no earlier job uses and nobody stands on."""
-    jobs: list[Job] = []
-    pickups = {robot.node for robot in scenario.robots}
-    orders = iter(scenario.orders)
-    for robot in scenario.robots[:limit]:
-        order = next((o for o in orders if o.pickup not in pickups), None)
-        if order is None:
+    takes the i-th order whose pickup no earlier job uses and nobody stands on.
+
+    As in the simulator, no robot is sent to park after its job on the pickup of another job
+    (``avoid``): it would hold that pickup before the other robot gets there.
+    """
+    robots = scenario.robots[:limit]
+    taken = {robot.node for robot in scenario.robots}
+    chosen: list[TransportOrder] = []
+    for order in scenario.orders:
+        if len(chosen) == len(robots):
             break
-        pickups.add(order.pickup)
-        planned = traffic.plan_job(robot, order, 0, frozenset())
+        if order.pickup not in taken:
+            taken.add(order.pickup)
+            chosen.append(order)
+    avoid = frozenset(order.pickup for order in chosen)
+    jobs: list[Job] = []
+    for robot, order in zip(robots, chosen, strict=False):
+        planned = traffic.plan_job(robot, order, 0, avoid)
         pickup, dropoff, _ = planned.stop_visits
         jobs.append(Job(robot.robot_id, str(order.id), planned.path, pickup, dropoff))
     return jobs
@@ -234,8 +250,7 @@ def run_jobs(
     }
     for vehicle in vehicles.values():
         vehicle.connect(0)
-    for job in jobs:
-        fleet.assign(0, job)
+    fleet.assign(0, jobs)
     tick = 0
     while True:
         for vehicle in vehicles.values():

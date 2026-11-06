@@ -1610,6 +1610,16 @@ published under the MIT license with JSON schemas. Two of its rules shape everyt
     passed.
   - Now a later use of a resource is released only once the earlier one has been left. A run that
     used to fail is kept as a regression test.
+- **Two more problems the full demo found** (25 robots on the large map):
+  - **Jobs sent together.** Fleet control released each job's base as soon as the job was added. A
+    robot could then be released through a node at which a job added after it, at the same tick, was
+    planned earlier. Now every job of a call joins the planned order before any base is released. A
+    job sent later is planned after the existing ones, so it cannot come first.
+  - **Parking on a pickup.** `first_jobs` planned every job without avoiding the other jobs' pickups
+    as holding spots. One robot parked on another job's pickup, which then had no plan. As in the
+    simulator, holding spots now avoid the pickups of the jobs being sent.
+
+  Both are covered by tests that fail without the fix.
 
 **Testing.**
 - **A hand case, tick for tick.** A robot stops at its decision point until the robot ahead has left
