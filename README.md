@@ -13,8 +13,8 @@ traffic. Blue robots are driving to a pickup, orange ones carry a load, and blac
 
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning project:
 > it does not control physical robots, has not been deployed in any real fleet, and is not a safety
-> system. Milestones M1 to M5 and Phase 2's P1 (delays), P2 (batteries and charging) and P3
-> (breakdowns and replanning) are complete; see the [roadmap](docs/ROADMAP.md).
+> system. Milestones M1 to M5 and Phase 2 (P1 delays, P2 batteries and charging, P3 breakdowns and
+> replanning, P4 an HTTP service) are complete; see the [roadmap](docs/ROADMAP.md).
 
 ## Results at a glance
 
