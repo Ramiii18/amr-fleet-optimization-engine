@@ -172,3 +172,18 @@ def test_jobs_sent_together_all_join_the_planned_order_before_any_release() -> N
 
     assert len(run.delivered_at) == len(run.planned_at) == 10
     assert _conflicts(run) == 0
+
+
+def test_no_robot_parks_on_the_pickup_of_another_job() -> None:
+    # A regression test: on the large map with 25 robots, seed 2, planning every job without
+    # avoiding the other jobs' pickups sent one robot to park on another job's pickup, which then
+    # had no itinerary.
+    graph = generate_grid_warehouse(PRESETS["large"])
+    scenario = generate_scenario(graph, ScenarioSpec(robots=25, orders_per_hour=600), seed=2)
+    traffic = TrafficControl(scenario, TravelTimes(graph, speed_mps=1.0, time_model=TimeModel(0.1)))
+
+    jobs = first_jobs(scenario, traffic)
+
+    assert len(jobs) == 25
+    pickups = {job.path.visits[job.pickup].node for job in jobs if job.pickup is not None}
+    assert pickups.isdisjoint(job.path.end.node for job in jobs)
