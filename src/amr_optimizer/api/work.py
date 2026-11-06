@@ -5,13 +5,26 @@ process pool. Requests are converted to the engine's own types in this module an
 """
 
 import functools
+import math
 import time
 from collections.abc import Mapping
+from dataclasses import asdict
 from types import MappingProxyType
 
-from amr_optimizer.api.models import TICK_S, Assignment, PlanRequest, PlanResponse
+from amr_optimizer.api.models import (
+    TICK_S,
+    Assignment,
+    Disturbance,
+    Number,
+    PlanRequest,
+    PlanResponse,
+    SimulationOutcome,
+    SimulationRequest,
+)
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.domain import (
+    BatterySpec,
+    ChargingPolicy,
     OrderId,
     OrderValidationError,
     RobotId,
@@ -20,7 +33,10 @@ from amr_optimizer.domain import (
     TransportOrder,
     TravelTimes,
 )
-from amr_optimizer.sim import DispatchSnapshot, TravelPlanner
+from amr_optimizer.metrics import compute_charging_kpis, compute_kpis
+from amr_optimizer.scenario import ScenarioSpec, generate_scenario
+from amr_optimizer.sim import DispatchSnapshot, TravelPlanner, simulate
+from amr_optimizer.traffic import NO_DELAYS, DelayModel, Recovery
 from amr_optimizer.warehouse import PRESETS, NodeId, WarehouseGraph, generate_grid_warehouse
 
 
@@ -86,4 +102,56 @@ def decide(request: PlanRequest) -> PlanResponse:
         tick=request.tick,
         assignments=[Assignment(robot=a.robot_id, order=a.order_id) for a in assignments],
         compute_ms=elapsed_ms,
+    )
+
+
+def _model(disturbance: Disturbance | None, time_model: TimeModel) -> DelayModel:
+    if disturbance is None:
+        return NO_DELAYS
+    low, high = (time_model.to_ticks(s) for s in (disturbance.min_s, disturbance.max_s))
+    return DelayModel(disturbance.share, low, high)
+
+
+def _json_safe(values: Mapping[str, object]) -> dict[str, Number]:
+    """KPIs for JSON, which has no NaN: an undefined KPI (nothing delivered) becomes null."""
+    safe: dict[str, Number] = {}
+    for key, value in values.items():
+        if isinstance(value, float) and not math.isfinite(value):
+            safe[key] = None
+        elif isinstance(value, float | int | str):
+            safe[key] = value
+    return safe
+
+
+def simulate_job(request: SimulationRequest) -> SimulationOutcome:
+    """A whole run, as `amr-sim` runs it: every random stream is seeded by ``request.seed``."""
+    spec = ScenarioSpec(
+        robots=request.robots,
+        orders_per_hour=request.orders_per_hour,
+        duration_s=request.duration_s,
+    )
+    scenario = generate_scenario(preset_graph(request.map), spec, seed=request.seed)
+    time_model = scenario.time_model
+    started = time.perf_counter()
+    result = simulate(
+        scenario,
+        POLICIES[request.policy](),
+        traffic=request.traffic,
+        delays=_model(request.delays, time_model),
+        delay_seed=request.seed,
+        battery=BatterySpec() if request.charging else None,
+        battery_seed=request.seed,
+        charging=ChargingPolicy(request.charging) if request.charging else ChargingPolicy.WHEN_LOW,
+        breakdowns=_model(request.breakdowns, time_model),
+        breakdown_seed=request.seed,
+        recovery=Recovery(request.recovery),
+    )
+    kpis = compute_kpis(result)
+    charging = compute_charging_kpis(result) if result.battery else None
+    return SimulationOutcome(
+        kpis=_json_safe(asdict(kpis) | {"empty_share": kpis.empty_share}),
+        charging=_json_safe(asdict(charging)) if charging else None,
+        breakdowns=result.breakdowns,
+        replans=result.replans,
+        compute_s=time.perf_counter() - started,
     )

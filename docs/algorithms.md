@@ -1507,3 +1507,21 @@ CPU-bound planning stall the server, and without letting the web layer leak into
 - Busy robots never start a job. A look-ahead policy can leave an order for a busy robot.
 - Invalid requests get 422 with the expected reason.
 - One test runs through the real process pool, so requests and results do cross process boundaries.
+
+**Simulation jobs (P4.2).**
+- **The protocol.** `POST /simulations` validates a run (the same options as `amr-sim`, each seeded by
+  one seed) and answers 202 at once with a job id. The run goes to the process pool.
+  `GET /simulations/{id}` reports the job's status, read from its future: queued, running, done with
+  the KPIs, or failed with the error's type and message.
+- **Bounds.** At most 8 jobs are queued or running; one more is refused with 429. Only the last 100
+  finished jobs are kept. A run has at most 50 robots, 1,000 orders per hour and 2 hours of orders.
+- **JSON has no NaN.** A KPI that is undefined, such as the completion time of a run that delivered
+  nothing, is returned as null.
+- **Testing.**
+  - A job with traffic, delays, batteries, breakdowns and replanning reports exactly the KPIs, counts
+    of breakdowns and replans, and charging trips of the same run made directly.
+  - With stand-in executors whose futures never run: a full queue answers 429, and a failing job
+    reports its error and no result.
+  - Undefined KPIs come back as null.
+  - Invalid requests get 422 with their reason.
+  - One job runs through the real process pool.

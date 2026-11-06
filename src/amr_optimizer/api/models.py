@@ -4,7 +4,8 @@ Times are integer ticks of 0.1 s, as everywhere in the engine (D6). Every collec
 bound, so that one request cannot occupy the service for long.
 """
 
-from typing import Self
+from datetime import datetime
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -19,6 +20,18 @@ NAME = Field(min_length=1, max_length=40)
 
 class _Model(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+def _check_map(value: str) -> str:
+    if value not in PRESETS:
+        raise ValueError(f"unknown map {value!r}; choose one of {sorted(PRESETS)}")
+    return value
+
+
+def _check_policy(value: str) -> str:
+    if value not in POLICIES:
+        raise ValueError(f"unknown policy {value!r}; choose one of {sorted(POLICIES)}")
+    return value
 
 
 class RobotIn(_Model):
@@ -54,16 +67,12 @@ class PlanRequest(_Model):
     @field_validator("map")
     @classmethod
     def _known_map(cls, value: str) -> str:
-        if value not in PRESETS:
-            raise ValueError(f"unknown map {value!r}; choose one of {sorted(PRESETS)}")
-        return value
+        return _check_map(value)
 
     @field_validator("policy")
     @classmethod
     def _known_policy(cls, value: str) -> str:
-        if value not in POLICIES:
-            raise ValueError(f"unknown policy {value!r}; choose one of {sorted(POLICIES)}")
-        return value
+        return _check_policy(value)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
@@ -118,3 +127,86 @@ class Health(_Model):
     status: str
     version: str
     tick_s: float
+
+
+# --- simulation jobs -------------------------------------------------------------------------
+
+MAX_SIM_ROBOTS = 50
+MAX_DURATION_S = 7200.0
+MAX_ORDERS_PER_HOUR = 1000.0
+Charging = Literal["when-low", "opportunistic", "opportunistic-early"]
+RecoveryName = Literal["wait", "retime", "replan"]
+JobStatus = Literal["queued", "running", "done", "failed"]
+
+
+class Disturbance(_Model):
+    """Delays or breakdowns: a share of corridor entries, and a range of extra seconds."""
+
+    share: float = Field(gt=0, le=1)
+    min_s: float = Field(gt=0, le=600)
+    max_s: float = Field(gt=0, le=600)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.max_s < self.min_s:
+            raise ValueError("max_s must be at least min_s")
+        return self
+
+
+class SimulationRequest(_Model):
+    """A whole simulated run on a generated scenario, as `amr-sim` runs it."""
+
+    map: str = "large"
+    policy: str = "greedy"
+    robots: int = Field(default=5, ge=1, le=MAX_SIM_ROBOTS)
+    orders_per_hour: float = Field(default=60.0, gt=0, le=MAX_ORDERS_PER_HOUR)
+    duration_s: float = Field(default=3600.0, gt=0, le=MAX_DURATION_S)
+    seed: int = Field(default=0, ge=0, le=2**31 - 1)
+    traffic: bool = True
+    delays: Disturbance | None = None
+    charging: Charging | None = None
+    breakdowns: Disturbance | None = None
+    recovery: RecoveryName = "wait"
+
+    @field_validator("map")
+    @classmethod
+    def _known_map(cls, value: str) -> str:
+        return _check_map(value)
+
+    @field_validator("policy")
+    @classmethod
+    def _known_policy(cls, value: str) -> str:
+        return _check_policy(value)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        needs_traffic = [
+            name for name in ("delays", "charging", "breakdowns") if getattr(self, name) is not None
+        ]
+        if needs_traffic and not self.traffic:
+            raise ValueError(f"{', '.join(needs_traffic)} need traffic")
+        if self.recovery != "wait" and self.breakdowns is None:
+            raise ValueError("a recovery policy needs breakdowns")
+        return self
+
+
+Number = float | int | str | None
+
+
+class SimulationOutcome(_Model):
+    """What a finished run produced. KPIs that are undefined (nothing delivered) are null."""
+
+    kpis: dict[str, Number]
+    charging: dict[str, Number] | None
+    breakdowns: int
+    replans: int
+    compute_s: float = Field(description="wall time of the run, in the worker process")
+
+
+class Job(_Model):
+    id: str
+    status: JobStatus
+    submitted_at: datetime
+    request: SimulationRequest
+    result: SimulationOutcome | None = None
+    error: str | None = None

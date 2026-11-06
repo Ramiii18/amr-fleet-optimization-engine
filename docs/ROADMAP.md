@@ -499,7 +499,7 @@ The engine itself does not change.
    - Pydantic models at the boundary only (D3); every CPU-bound call runs in worker processes.
    - Tests through the HTTP test client: the endpoint's decision equals the policy's decision on the
      same snapshot; invalid input gets a 422 with a reason.
-2. **Simulation jobs.**
+2. **Simulation jobs.** Done 2026-11-06.
    - `POST /simulations` answers 202 with a job id, and `GET /simulations/{id}` gives the job's
      status and its KPIs. The queue is bounded.
    - Tests: a job's KPIs equal a direct run's; a failing job reports its error; a full queue gets a

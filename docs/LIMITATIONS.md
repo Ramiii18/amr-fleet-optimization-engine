@@ -116,6 +116,8 @@ limits in mind.
 - **One decision per `/plan` request, from a snapshot the client describes.** Busy robots are given
   only as "free at this node from this tick". The service keeps no state between decisions: no
   reservations, no traffic, no plans being executed.
+- **Jobs live in memory.** Simulation jobs are lost when the server stops. Only the last 100 finished
+  jobs are kept, and a running job cannot be cancelled.
 
 ## Evaluation
 
