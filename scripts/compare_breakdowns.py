@@ -23,11 +23,15 @@ confidence intervals:
 - **vs greedy**: the mean completion time of the policy minus greedy, under the same breakdowns
   and recovery.
 
+With ``--csv``, one row per run is also written to a CSV file, for `scripts/make_figures.py`.
+
 Usage (from the repository root):
     .venv\\Scripts\\python.exe scripts\\compare_breakdowns.py [--seeds 20] [--jobs 8]
+        [--csv docs/results/breakdowns.csv]
 """
 
 import argparse
+import csv
 import functools
 import os
 import platform
@@ -36,7 +40,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 from importlib.metadata import version
 from pathlib import Path
@@ -169,7 +173,32 @@ def rows(robots: int, rate: float, results: list[dict[Key, Run]]) -> list[str]:
     return lines
 
 
-def run(seeds: int, duration_s: float, jobs: int) -> int:
+def write_csv(path: Path, results: dict[tuple[int, float, int], dict[Key, Run]]) -> None:
+    """One row per run: configuration, seed, breakdown level, recovery, and every KPI."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    first = next(iter(next(iter(results.values())).values()))
+    fields = list(asdict(first.kpis))  # starts with policy, robots
+    header = ["orders_per_hour", "seed", "breakdowns_level", "recovery", "breakdowns", "replans"]
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file, lineterminator="\n")
+        writer.writerow([*header, *fields])
+        for (_, rate, seed), runs in sorted(results.items()):
+            for (_, level, recovery), run in runs.items():
+                values = asdict(run.kpis)
+                writer.writerow(
+                    [
+                        f"{rate:g}",
+                        seed,
+                        level,
+                        "-" if level == NONE else recovery.value,
+                        run.breakdowns,
+                        run.replans,
+                        *(f"{v:.6g}" if isinstance(v, float) else v for v in values.values()),
+                    ]
+                )
+
+
+def run(seeds: int, duration_s: float, jobs: int, csv_path: Path | None = None) -> int:
     print(f"Breakdown comparison, {date.today().isoformat()}")
     print(
         f"Environment: Python {platform.python_version()}, {platform.platform()}, "
@@ -209,6 +238,9 @@ def run(seeds: int, duration_s: float, jobs: int) -> int:
     print()
     print(f"{conflicts} conflicts in {len(runs)} runs.")
     print(f"{len(runs)} runs in {elapsed:.1f} s.")
+    if csv_path is not None:
+        write_csv(csv_path, results)
+        print(f"Per-run results written to {csv_path.as_posix()}.")
     if undelivered or conflicts:
         print(f"WARNING: {undelivered} undelivered orders, {conflicts} conflicts.")
         return 1
@@ -221,8 +253,9 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, default=20)
     parser.add_argument("--duration-s", type=float, default=3600.0)
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 1))
+    parser.add_argument("--csv", type=Path, default=None, help="also write one row per run")
     args = parser.parse_args()
-    sys.exit(run(args.seeds, args.duration_s, args.jobs))
+    sys.exit(run(args.seeds, args.duration_s, args.jobs, args.csv))
 
 
 if __name__ == "__main__":
