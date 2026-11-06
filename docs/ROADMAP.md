@@ -557,7 +557,7 @@ as a protocol:
 2. **Orders from plans.** Done 2026-11-06. An engine itinerary becomes an order: nodes with positions, edges,
    `pick` and `drop` actions at the stops. Order updates extend the base from the stitching node.
    Tests check the specification's rules on sequence ids, base and horizon, and updates.
-3. **Mock robots and fleet control.** Mock vehicles drive only their base, run actions for their
+3. **Mock robots and fleet control.** Done 2026-11-06. Mock vehicles drive only their base, run actions for their
    service time, and report state on every event. A fleet-control bridge releases bases under the
    planned order. Tests:
    - a hand case where a robot stops at its decision point until the robot ahead has passed;

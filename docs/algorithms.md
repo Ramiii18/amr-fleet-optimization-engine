@@ -1581,3 +1581,45 @@ published under the MIT license with JSON schemas. Two of its rules shape everyt
 - **Broken rules:** each rule is broken on purpose, and the break is detected.
 - **Generated jobs:** SIPP-planned jobs on the medium map become orders and chains of updates with
   random base lengths. Every message follows the rules and validates against the schema.
+
+**Mock robots and fleet control (P5.3).**
+- **The bus.** JSON text on the specification's topics, kept in a log. Messages wait on their topic
+  until taken, as on a broker.
+- **A mock robot.**
+  - It accepts a new order only where it stands, and an update only if it passes the update rules;
+    anything else is refused with an error.
+  - It drives only its released base, at constant speed, and stops at the decision point.
+  - It runs its node's actions one after another for their handling time (`pick` for the loading
+    time, `drop` for the unloading time).
+  - It publishes its state on every event (an order received, a departure, an arrival, an action that
+    changes), and at least every 30 s.
+- **Fleet control.**
+  - It sends each job as an order, and adds the job's itinerary to the planned order of robots (D25).
+  - It extends a robot's base, with an order update, by the next edge and its end node, whenever the
+    robot is first in the planned order of both.
+  - It knows the robots only from their state messages. A state gives the last node reached and
+    whether the robot is driving again, and from that fleet control marks which nodes and corridors
+    the robot has left.
+- **Why it cannot deadlock.** Every wait is for a robot planned earlier on the same resource, as in
+  ordered execution. The only difference is where a robot waits: at the node before, because the
+  specification lets robots stop only at nodes.
+- **A bug the generated runs found.** A route can use a resource twice: into a pickup's dead-end spur
+  and back out through the same intersection, which another robot may pass in between.
+  - While the robot's first use of that intersection was released but not yet left, the robot itself
+    headed its queue. So fleet control also released the way back, before the other robot had
+    passed.
+  - Now a later use of a resource is released only once the earlier one has been left. A run that
+    used to fail is kept as a regression test.
+
+**Testing.**
+- **A hand case, tick for tick.** A robot stops at its decision point until the robot ahead has left
+  the next node. Its order update goes out at the tick that robot reports leaving.
+- **Refused messages.** The mock robot refuses an order that does not start where it stands, and an
+  update that does not start at the stitching node.
+- **Generated runs on the medium map**, 8 robots with one SIPP-planned job each, 4 seeds:
+  - every job is reported delivered;
+  - the robots' trajectories have zero conflicts;
+  - every message in the log validates against the official schemas;
+  - every order and update fleet control sent follows the rules;
+  - every job is delivered at least one tick later than planned (the latency of the first message);
+  - runs are reproducible.
