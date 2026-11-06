@@ -292,7 +292,7 @@ by what they build on:
 | **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | **Done** (2026-11-05) |
 | **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | **Done** (2026-11-05) |
 | **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | **Done** (2026-11-06) |
-| **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | Not started |
+| **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | In progress |
 
 **P1 increments:**
 1. **Executor.** Done 2026-11-05. Execute a set of conflict-free timed paths under random delays:
@@ -485,6 +485,33 @@ breakdown results already show what recovery is worth.)
 
 **What shapes P4:** the engine now has every part of the original scope except the service layer.
 P4 wraps it in an API. Docker needs WSL2, a system install that is the owner's decision.
+
+## P4: plan (2026-11-06)
+
+**Goal.** The engine as a service, for engineering breadth: a planning endpoint (one dispatch
+decision per request) and simulation jobs (a whole run in the background), packaged in a container.
+The engine itself does not change.
+
+**Increments:**
+1. **Planning endpoint.** Done 2026-11-06.
+   - A FastAPI app (`amr_optimizer.api`): health, maps, policies, and `POST /plan`, which takes a
+     snapshot of the fleet and returns the chosen policy's assignments.
+   - Pydantic models at the boundary only (D3); every CPU-bound call runs in worker processes.
+   - Tests through the HTTP test client: the endpoint's decision equals the policy's decision on the
+     same snapshot; invalid input gets a 422 with a reason.
+2. **Simulation jobs.**
+   - `POST /simulations` answers 202 with a job id, and `GET /simulations/{id}` gives the job's
+     status and its KPIs. The queue is bounded.
+   - Tests: a job's KPIs equal a direct run's; a failing job reports its error; a full queue gets a
+     429.
+3. **Container.** A Dockerfile, and a CI job on Linux that builds the image and smoke-tests it.
+   Docker is verified in CI. Running it locally needs WSL2, which is the owner's decision.
+
+**Acceptance criteria:**
+- Every endpoint is tested, and decisions and KPIs through the API equal those of direct calls.
+- No CPU-bound work runs on the server's event loop.
+- Inputs are validated and bounded. An error is a 4xx with a reason, never a stack trace.
+- The image builds and answers in CI.
 
 ## Phase 2 backlog (unordered)
 

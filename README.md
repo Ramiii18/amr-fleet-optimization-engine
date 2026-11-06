@@ -83,11 +83,12 @@ Requires Python 3.13 and Git (Windows PowerShell shown; on Linux or macOS use `p
 git clone https://github.com/Ramiii18/amr-fleet-optimization-engine.git
 cd amr-fleet-optimization-engine
 py -3.13 -m venv .venv
-.venv\Scripts\python.exe -m pip install -e ".[dev,viz]"
+.venv\Scripts\python.exe -m pip install -e ".[dev,viz,api]"
 
 .venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 300 --policy cpsat-fair --traffic
 .venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 200 --policy cpsat-fair --traffic --charging opportunistic
 .venv\Scripts\amr-sim.exe --help   # every option; --json prints the KPIs as JSON
+.venv\Scripts\amr-api.exe          # the HTTP service; API docs at http://127.0.0.1:8000/docs
 ```
 
 ## Reproducing every number
@@ -125,6 +126,7 @@ In short:
 - prioritized planning is not fleet-optimal;
 - batteries are synthetic, and charging follows simple threshold rules;
 - breakdowns are announced with their exact repair time, and closed aisles are not modelled;
+- the HTTP service is a local demonstration: no authentication, and jobs live in memory;
 - everything was evaluated on one synthetic map with uniform demand.
 
 The full list is in [docs/LIMITATIONS.md](docs/LIMITATIONS.md).

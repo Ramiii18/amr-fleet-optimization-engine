@@ -44,6 +44,10 @@ src/amr_optimizer/
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile;
                              compute_charging_kpis for runs with batteries (Phase 2)
                compare.py    paired_difference: per-seed differences with a t confidence interval
+  api/         models.py     Pydantic request and response models: the only place Pydantic is used
+               work.py       CPU-bound work for worker processes: requests -> engine types -> results
+               app.py        FastAPI app: health, maps, policies, /plan; a process pool per app
+               serve.py      `amr-api`: runs the service with Uvicorn (`api` extra; Phase 2)
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
 scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py,
                compare_traffic.py, benchmark_scaling.py, make_figures.py, compare_delays.py,
@@ -56,7 +60,8 @@ tests/         unit/, oracle/ (NetworkX comparisons), conftest.py (hand-checkabl
 
 **Dependency direction:** `dispatch` → `sim` → `traffic`, `scenario` → `domain` → `routing` →
 `warehouse`. Dispatch policies implement the interface in `sim/policy.py`; the simulator never imports a
-policy. `traffic` knows nothing about the simulator.
+policy. `traffic` knows nothing about the simulator. `api` sits on top of everything and nothing imports
+it (D29).
 
 **Runtime dependencies:** numpy and scipy, for optimal assignment (D16), and OR-Tools, for the CP-SAT
 planner (D20). Everything else is the standard library.
@@ -81,9 +86,9 @@ planner (D20). Everything else is the standard library.
 | `sim` | Discrete-event kernel, plan executor, invariant checks, event log | **Exists** (M2) |
 | `dispatch` | Greedy, Hungarian, bounded-horizon planning (insertion, CP-SAT); later local search | **Exists** (M2: greedy, Hungarian; M3: planning model, insertion, CP-SAT) |
 | `metrics` | KPI computation | **Exists** (M2) |
-| `traffic` | Timed paths, reservations, conflict checking, SIPP itinerary planning | **Exists** (M4); mutex zones and delays in Phase 2 |
+| `traffic` | Timed paths, reservations, conflict checking, SIPP itinerary planning, ordered execution, re-timing | **Exists** (M4; Phase 2: delays, re-timing); mutex zones in the backlog |
 | `viz` | Figures and animations of maps, runs and benchmark results (optional extra, matplotlib) | **Exists** (M5) |
-| `energy`, `api` | Battery model, FastAPI service | Phase 2 |
+| `api` | HTTP service: planning and, in P4.2, simulation jobs (optional extra, FastAPI and Uvicorn) | **Exists** (Phase 2, P4) |
 
 Each package is created only when it has real code.
 

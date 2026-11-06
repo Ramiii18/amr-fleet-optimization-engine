@@ -569,3 +569,35 @@ local pass predicts a CI pass.
   - Without re-timing the rule never binds, and earlier results reproduce exactly.
 - **A replan can let a waiting robot through.** When a replanned robot leaves a queue, the robot
   behind it may now be first. If that robot is waiting, it is woken; nothing else would wake it.
+
+
+## D29: A FastAPI service whose CPU-bound work runs in worker processes; planning is the pure-function seam
+**Status:** Accepted (2026-11-06)
+**Why:**
+- **The seam was designed for this.** Dispatch policies are functions from a snapshot to
+  assignments (`sim/policy.py`), and the simulator validates what they return (D15). `POST /plan` puts that function behind HTTP. Busy robots are described the way
+  look-ahead planners already see them: available at a node from a tick on, through `planned_ready`
+  and `unavailable` (D18, D26).
+- **Pydantic only at the boundary (D3).** Request and response models live in `api/` and are converted
+  to the core's frozen dataclasses in one place. The core does not import the API.
+- **CPU-bound work never runs on the event loop.** CP-SAT, the planners and the simulator are
+  CPU-bound Python, and threads would contend for the interpreter lock. Every decision and every
+  simulation therefore runs in a process pool, and the async endpoints await it. The pool is created
+  and shut down with the app.
+- **Simulations are jobs.** They take seconds to minutes, so `POST` answers at once with a job id and
+  the client polls. Jobs live in memory, in a bounded queue; when it is full, the answer is 429.
+- **Bounded, validated input.** Robots, orders, duration and rates have upper limits, so that one
+  request cannot occupy the service for long. Maps are chosen by preset name: no client ever passes a
+  file path.
+- **No authentication.** This is a local demonstration service. The server binds to 127.0.0.1 by
+  default, and the limitations say so.
+- **Docker verified in CI.** GitHub's Linux runners have Docker, so CI builds the image and checks
+  that it answers. Local Docker on Windows needs WSL2, which is the owner's decision.
+
+**Consequences:**
+- **New dependencies,** all in an optional `api` extra (FastAPI, Uvicorn), plus httpx for the test
+  client in `dev`. CI installs the extra.
+- **Jobs are lost when the server stops.** That is acceptable for a demonstration; a real service
+  would need a persistent queue.
+- **Decision time over HTTP includes the hop to a worker process.** The latency reported in M5 is the
+  simulator's own measurement, not the service's.

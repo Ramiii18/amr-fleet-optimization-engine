@@ -1475,3 +1475,35 @@ Re-timing alone recovered 43% to 86% of the cost of breakdowns, and replanning 7
 Different order streams vary far more than policies do. Running every policy on the same streams and
 comparing per-seed differences removes that variation. The interval shows whether the remaining
 difference is distinguishable from zero at the sample size used.
+
+---
+
+## 15. The HTTP service (`api/`, D29, Phase 2)
+
+**Problem.** Offer the engine to other programs: one dispatch decision per request, without letting
+CPU-bound planning stall the server, and without letting the web layer leak into the core.
+
+**Approach.**
+- **Pydantic only at the boundary.** Request and response models live in `api/models.py`.
+  `api/work.py` converts a request to the engine's frozen dataclasses, calls the engine, and returns a
+  response model. The core never imports `api`.
+- **A busy robot is "free at node n from tick t".** In the snapshot, it is idle at n but unavailable,
+  with `planned_ready[robot] = (t, n)`. This is exactly how look-ahead planners already see a robot
+  out of service until a known tick (D18, D26).
+  - Greedy and Hungarian therefore ignore busy robots.
+  - Insertion and CP-SAT can plan orders for them and start nothing now. In the test, an order next
+    to a robot that is busy for 10 s waits for it, instead of going to an idle robot far away.
+- **No CPU-bound work on the event loop.** The endpoints are async and await a process pool, which
+  the app creates when it starts and shuts down when it stops. Python threads would contend for the
+  interpreter lock; processes do not.
+- **Errors.** Validation errors are 422s with their reason: unknown map, policy or node, duplicate
+  ids, a busy robot ready before the snapshot's tick, an order not yet released, too many robots or
+  orders, unknown fields. Engine errors such as an order with the same pickup and drop-off are
+  converted to 422s as well. Nothing returns a stack trace.
+
+**Testing.**
+- For every registered policy and 4 generated snapshots with idle and busy robots, the endpoint's
+  assignments equal the policy's own decision on a snapshot built independently of the API code.
+- Busy robots never start a job. A look-ahead policy can leave an order for a busy robot.
+- Invalid requests get 422 with the expected reason.
+- One test runs through the real process pool, so requests and results do cross process boundaries.

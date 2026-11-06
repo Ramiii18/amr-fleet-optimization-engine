@@ -37,7 +37,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,viz]"
+          python -m pip install -e ".[dev,viz,api]"
 
       - name: Lint (ruff)
         run: python -m ruff check .

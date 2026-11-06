@@ -1,7 +1,7 @@
 # Project metadata, dependencies and tool configuration, all in one file (PEP 517/518/621).
 #
 # Development install, from the repository root:
-#     .venv\Scripts\python.exe -m pip install -e ".[dev]"
+#     .venv\Scripts\python.exe -m pip install -e ".[dev,viz,api]"
 
 [build-system]
 requires = ["setuptools>=77"] # 77+ understands the SPDX `license` expression below
@@ -31,11 +31,17 @@ dev = [
     "scipy-stubs", # type stubs so mypy strict can check the code that calls scipy
     "ruff>=0.8",
     "mypy>=1.13",
+    "httpx2>=2.16", # the HTTP client behind the test client of FastAPI (Starlette) for api/ tests
 ]
 viz = ["matplotlib>=3.11"] # figures and animations (viz/, scripts/make_figures.py); 3.11 is tested
+api = [ # the HTTP service (api/, D29); the versions tested
+    "fastapi>=0.162",
+    "uvicorn>=0.54",
+]
 
 [project.scripts]
 amr-sim = "amr_optimizer.cli:main" # the command-line runner, also `python -m amr_optimizer`
+amr-api = "amr_optimizer.api.serve:main" # the HTTP service (needs the `api` extra)
 
 # --- Packaging: "src layout". The importable package lives in src/amr_optimizer. ---
 [tool.setuptools.packages.find]

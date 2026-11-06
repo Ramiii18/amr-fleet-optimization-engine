@@ -16,7 +16,6 @@ limits in mind.
   - blocked aisles: corridors closed without a robot in them (P3 added breakdowns and replanning);
   - order priorities and deadlines;
   - mutex zones;
-  - an API service;
   - containerized deployment.
 
   See the [roadmap](ROADMAP.md).
@@ -107,6 +106,16 @@ limits in mind.
   benchmark processes sharing the CPU. Deterministic limits keep plans reproducible, but they bound
   work, not wall time. A production system would need wall-clock limits, at the cost of
   reproducibility.
+
+## The HTTP service (Phase 2, P4)
+
+- **A local demonstration, not a production service.** There is no authentication and no rate
+  limiting beyond bounded request sizes. The server binds to 127.0.0.1 by default (D29).
+- **Maps by preset name only.** Clients cannot send their own maps. That keeps file paths out of
+  requests, but limits the service to the generated layouts.
+- **One decision per `/plan` request, from a snapshot the client describes.** Busy robots are given
+  only as "free at this node from this tick". The service keeps no state between decisions: no
+  reservations, no traffic, no plans being executed.
 
 ## Evaluation
 
