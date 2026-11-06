@@ -75,13 +75,13 @@ Milestones M1 to M5 are complete:
 Phase 2 added:
 - delays during execution, survived by keeping the planned order of robots (P1);
 - batteries, shared chargers and three charging policies, with charger utilization (P2);
-- announced robot breakdowns, with re-timing and replanning during execution (P3).
+- announced robot breakdowns, with re-timing and replanning during execution (P3);
+- an HTTP service for dispatch decisions and simulation jobs, packaged as a container image (P4).
 
 Some goals above are **not built yet** and are in the Phase 2 backlog:
 - blocked aisles (corridors closed without a robot);
 - order priorities and deadlines;
-- mutex zones;
-- an API service.
+- mutex zones.
 
 What exists is summarized in the [README](../README.md); its limits are listed in
 [LIMITATIONS.md](LIMITATIONS.md). See [ROADMAP.md](ROADMAP.md) for milestones and

@@ -292,7 +292,7 @@ by what they build on:
 | **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | **Done** (2026-11-05) |
 | **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | **Done** (2026-11-05) |
 | **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | **Done** (2026-11-06) |
-| **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | In progress |
+| **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | **Done** (2026-11-06) |
 
 **P1 increments:**
 1. **Executor.** Done 2026-11-05. Execute a set of conflict-free timed paths under random delays:
@@ -504,8 +504,8 @@ The engine itself does not change.
      status and its KPIs. The queue is bounded.
    - Tests: a job's KPIs equal a direct run's; a failing job reports its error; a full queue gets a
      429.
-3. **Container.** Written 2026-11-06; verified when CI first runs it. A Dockerfile, and a CI job
-   on Linux that builds the image and smoke-tests it.
+3. **Container.** Done 2026-11-06, verified in CI (run 42189424602). A Dockerfile, and a CI job on
+   Linux that builds the image and smoke-tests it.
    Docker is verified in CI. Running it locally needs WSL2, which is the owner's decision.
 
 **Acceptance criteria:**
@@ -513,6 +513,26 @@ The engine itself does not change.
 - No CPU-bound work runs on the server's event loop.
 - Inputs are validated and bounded. An error is a 4xx with a reason, never a stack trace.
 - The image builds and answers in CI.
+
+## P4 acceptance
+
+- **Every endpoint tested, and decisions and KPIs through the API equal direct calls:** met.
+  - `/plan` matches every registered policy's own decision on 4 snapshots each.
+  - A simulation job with every feature on reports the KPIs of the same run made directly.
+  - Health, maps, policies, the job list, 404s, 422s and 429 are tested.
+- **No CPU-bound work on the event loop:** met. Decisions and runs go to a process pool of spawned
+  workers. Two tests and the CI container run go through real worker processes.
+- **Inputs validated and bounded, errors as 4xx with a reason:** met. Every bound and cross-field
+  rule has a test that checks the reason; a failing job reports its error type and message, never
+  a stack trace.
+- **The image builds and answers in CI:** met (run 42189424602). It runs as an unprivileged user and
+  answers `/health` and a CP-SAT decision from `/plan`.
+
+**Finding:** the pure-function seam designed in M1 made the service small. `/plan` is a
+conversion from JSON to a snapshot and back, and busy robots needed no new concept: they are robots
+out of service until a known tick, which the look-ahead planners already understood.
+
+**After P4:** the roadmap is complete. What remains is the unordered backlog below.
 
 ## Phase 2 backlog (unordered)
 
