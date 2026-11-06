@@ -107,6 +107,22 @@ limits in mind.
   work, not wall time. A production system would need wall-clock limits, at the cost of
   reproducibility.
 
+## The VDA 5050 adapter (Phase 2, P5)
+
+- **A mock, checked against the specification, not against robots.** Messages follow VDA 5050 3.0.0,
+  and the tests validate them against its official schemas. No real robot, broker or vendor
+  implementation was involved, and none was tested against.
+- **One job per robot.** Fleet control sends each robot one planned job. Continuous dispatch through
+  the adapter was not built.
+- **Ideal messaging.** There is no network latency, no message loss and no reconnection: messages
+  arrive in the tick they are sent.
+- **Ideal mock robots.** They have constant speed and exact positions, and report no errors.
+  - Instant actions, factsheets, visualization, zones and corridors are not used.
+  - The mock robots report a constant charge.
+- **Stopping only at nodes costs time.** As the specification requires, robots wait at nodes, not at
+  the end of corridors. Measured: 0.6 to 8.5 s later than planned on average, more with more robots
+  (benchmarks).
+
 ## The HTTP service (Phase 2, P4)
 
 - **A local demonstration, not a production service.** There is no authentication and no rate

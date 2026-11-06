@@ -14,7 +14,8 @@ traffic. Blue robots are driving to a pickup, orange ones carry a load, and blac
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning project:
 > it does not control physical robots, has not been deployed in any real fleet, and is not a safety
 > system. Milestones M1 to M5 and Phase 2 (P1 delays, P2 batteries and charging, P3 breakdowns and
-> replanning, P4 an HTTP service) are complete; see the [roadmap](docs/ROADMAP.md).
+> replanning, P4 an HTTP service, P5 a VDA 5050-shaped adapter) are complete; see the
+> [roadmap](docs/ROADMAP.md).
 
 ## Results at a glance
 
@@ -32,6 +33,7 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | **Plans stay safe when robots are delayed** | Robots that keep the planned order of robots at every node and corridor had 0 conflicts in 240 runs with random delays. Keeping each robot's own schedule would have caused 149 to 531 per run. Delays cost capacity, steeply under load, and planning matters even more: with 20% of edges delayed, `cpsat-fair` beats greedy by 412 to 984 s of mean completion time. |
 | **Charging policy matters, and the best one at moderate load fails at high load** | With synthetic batteries, topping up idle robots cuts mean completion time by 26 s and the worst case by 70 to 75 s at moderate load, against charging only when low. Returning low robots to work as soon as they pass the low threshold looks even better at moderate load. At high load it makes robots thrash: about 200 charging trips per run instead of 11 to 13, and a worst case 520 to 600 s worse, which the mean does not show. |
 | **Replanning around breakdowns recovers most of their cost** | Without recovery, 8 to 15 breakdowns per run raise mean completion time by 95 to 902 s, because robots queue behind a broken one. Re-timing every plan, so that new jobs are planned around it, recovers 43% to 86% of that cost. Replanning the delayed robots too recovers 75% to 96%, and cuts the worst case by 216 to 4,953 s. Replanning safely needed re-timing first, to keep execution deadlock-free; a stress test found two subtle bugs before the benchmark ran. |
+| **The plans speak the industry's robot interface** | The engine's plans run on mock robots through VDA 5050 3.0.0 orders and state messages. Every message validates against the specification's official schemas. Fleet control releases each robot's route under the planned order of robots and knows robots only from their reports. Over 800 jobs: zero conflicts, every job delivered, 0.6 to 8.5 s later than planned on average, because robots may stop only at nodes. |
 | **Decisions are fast enough for online use** | Every decision took under 1 s (`cpsat-fair` P95 up to 265 ms at 25 robots); greedy and insertion take a few milliseconds. Measured on a laptop. |
 
 <picture>
@@ -52,6 +54,7 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | **Simulation** (`domain/`, `scenario/`, `sim/`) | Seeded order streams, an explicit robot state machine, a discrete-event simulator with invariant checks after every tick; batteries, shared chargers and three charging policies | Integer time in 0.1 s ticks, pure-function dispatch interface, common random numbers across policies; integer energy, a safety threshold derived from the map, hysteresis |
 | **Dispatch** (`dispatch/`) | Greedy; optimal matching; receding-horizon planning of every robot and the oldest 10 orders, by cheapest insertion or CP-SAT | Linear assignment (scipy); CP-SAT giant-tour circuit with symmetry breaking and a deterministic time limit; lexicographic worst-first objective |
 | **Traffic** (`traffic/`) | One robot per node and per corridor; each job planned as one timed path; robots park on free dead-end spots; under random delays, plans are executed in the planned order of robots; after a breakdown, plans are re-timed and delayed robots replanned | Safe-interval path planning (SIPP), reservation tables, prioritized planning, completeness on well-formed layouts, deadlock-free ordered execution (temporal plan graph), re-timing as a longest path from a mid-run state |
+| **Robot interface** (`vda5050/`) | VDA 5050 3.0.0 orders, states and updates; mock robots; fleet control that releases bases under the planned order | Base and horizon as ordered execution, the official JSON schemas as the test oracle |
 | **Service** (`api/`) | An HTTP API for dispatch decisions and background simulation jobs, with a Dockerfile | FastAPI with Pydantic at the boundary only, a process pool for CPU-bound work, bounded queues |
 | **Evaluation** (`metrics/`, `viz/`) | KPIs from the event log, conflict counts from trajectories, paired statistics, figures and animation | Nearest-rank percentiles, t confidence intervals, colour-vision-safe palette |
 
@@ -132,6 +135,7 @@ docker run --rm -p 127.0.0.1:8000:8000 amr-engine
 | Delays and robust execution | `compare_delays.py` | about 10 min | [benchmarks](docs/benchmarks.md#delays-robust-execution-and-its-cost-phase-2-p1-2026-11-05) |
 | Batteries and charging policies | `compare_charging.py` | about 6 min | [benchmarks](docs/benchmarks.md#batteries-and-charging-policies-phase-2-p2-2026-11-05) |
 | Breakdowns and replanning | `compare_breakdowns.py --csv docs/results/breakdowns.csv` | about 16 min | [benchmarks](docs/benchmarks.md#breakdowns-re-timing-and-replanning-phase-2-p3-2026-11-06) |
+| Plans through VDA 5050 messages | `vda5050_demo.py` | under 1 min | [benchmarks](docs/benchmarks.md#vda-5050-plans-executed-through-messages-phase-2-p5-2026-11-06) |
 | Figures and animation | `make_figures.py` | about 25 s | [docs/figures](docs/figures/) |
 
 The comparison scripts run in parallel worker processes (`--jobs`, default 8). The KPIs don't depend

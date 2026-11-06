@@ -76,7 +76,9 @@ Phase 2 added:
 - delays during execution, survived by keeping the planned order of robots (P1);
 - batteries, shared chargers and three charging policies, with charger utilization (P2);
 - announced robot breakdowns, with re-timing and replanning during execution (P3);
-- an HTTP service for dispatch decisions and simulation jobs, packaged as a container image (P4).
+- an HTTP service for dispatch decisions and simulation jobs, packaged as a container image (P4);
+- a mock interface shaped like VDA 5050 3.0.0: the engine's plans executed by mock robots through
+  orders and state messages, validated against the official schemas (P5).
 
 Some goals above are **not built yet** and are in the Phase 2 backlog:
 - blocked aisles (corridors closed without a robot);

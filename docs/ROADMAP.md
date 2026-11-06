@@ -293,7 +293,7 @@ by what they build on:
 | **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | **Done** (2026-11-05) |
 | **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | **Done** (2026-11-06) |
 | **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | **Done** (2026-11-06) |
-| **P5** VDA 5050-shaped adapter (from the backlog) | Mock robots and a fleet-control bridge that execute the engine's plans through VDA 5050 3.0.0 messages | Shows how plans reach robots; the industry's open interface | In progress |
+| **P5** VDA 5050-shaped adapter (from the backlog) | Mock robots and a fleet-control bridge that execute the engine's plans through VDA 5050 3.0.0 messages | Shows how plans reach robots; the industry's open interface | **Done** (2026-11-06) |
 
 **P1 increments:**
 1. **Executor.** Done 2026-11-05. Execute a set of conflict-free timed paths under random delays:
@@ -571,6 +571,27 @@ as a protocol:
 - The specification's rules hold for every order and update.
 - Plans executed through messages finish every job, with zero conflicts.
 - The cost of node-only stopping is measured and reported, not assumed.
+
+## P5 acceptance
+
+- **Every message validates against the official 3.0.0 schemas:** met. Every message type, and
+  every message of the generated test runs, validates against the vendored official schemas, with
+  no field the specification does not define.
+- **The specification's rules hold for every order and update:** met. Each rule is broken on purpose
+  in a test and detected. Every order and update fleet control sent in the test runs follows them.
+- **Plans executed through messages finish every job, with zero conflicts:** met. In the hand case,
+  the generated test runs and 60 demo runs (800 jobs), every job is reported delivered, with zero
+  conflicts.
+
+  Three bugs were found on the way, each now covered by a test that fails without its fix:
+  - a robot's second use of an intersection was released too early;
+  - jobs sent together were released before all had joined the planned order;
+  - robots could park on another job's pickup.
+- **The cost of node-only stopping is measured:** met. Jobs finish later than planned by 0.6 s on
+  average with 5 robots, 1.9 s with 10 and 8.5 s with 25, and by at most 27.1 s.
+
+**Finding:** ordered execution maps directly onto the specification's base and horizon. The cost of
+the only difference, where robots wait, was measured.
 
 ## Phase 2 backlog (unordered)
 

@@ -912,3 +912,86 @@ source of the chart below (`scripts/make_figures.py`).
   A re-timed plan can stay pessimistic after a robot ahead of it is replanned faster, until the next
   breakdown (13.7).
 - One map, 10 robots, two loads, 20 seeds, Windows only.
+
+## VDA 5050: plans executed through messages (Phase 2, P5, 2026-11-06)
+
+**Command:** `.venv\Scripts\python.exe scripts\vda5050_demo.py` with the defaults: 5, 10 and 25 robots,
+20 seeds each.
+
+**Setup.**
+- The large map. Every robot gets one job at tick 0, planned with SIPP as the simulator plans it.
+- Fleet control sends each job as a VDA 5050 3.0.0 order and releases the robot's base under the
+  planned order of robots: the next edge and its end node, once the robot is first in the planned
+  order of both (D30).
+- Mock robots drive their base, pick and drop for the handling times, and report their state.
+- Fleet control follows them only through those state messages, as in real deployments.
+- **"Late"** is the tick at which a robot reports its drop action finished, minus the planned end of
+  unloading. It includes one tick of message latency at the start, and one more wherever a robot
+  waits for an order update.
+
+```text
+VDA 5050 3.0.0 demo, 2026-11-06
+Environment: Python 3.13.1, Windows-11-10.0.26200-SP0, amr-fleet-optimization-engine 0.0.1 (commit d2ace48)
+Settings: map large, one SIPP-planned job per robot at tick 0, seeds 0-19, 1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading
+
+| Robots | Jobs | Messages per run | Conflicts | Late: mean s | Late: P95 s | Late: max s | Run time per run s |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 100 | 1423 | 0 | 0.6 | 4.1 | 6.4 | 0.25 |
+| 10 | 200 | 2880 | 0 | 1.9 | 6.4 | 10.5 | 0.57 |
+| 25 | 500 | 7700 | 0 | 8.5 | 19.8 | 27.1 | 1.47 |
+
+Messages by topic, all runs: connection 800, order 17676, state 221581
+Every job was reported delivered.
+```
+
+**What the messages look like.** These are excerpts from the first run, with arrays shortened.
+- An order update to robot R01 at tick 11. It starts at the stitching node, the last node of the
+  previous base (sequence id 6). It releases one more node and keeps the rest of the route as
+  horizon:
+
+  ```json
+  {"headerId": 1, "timestamp": "2026-01-01T00:00:01.100Z", "version": "3.0.0",
+   "manufacturer": "synthetic", "serialNumber": "R01", "orderId": "O00001", "orderUpdateId": 1,
+   "nodes": [{"nodeId": "X00-03", "sequenceId": 6, "released": true, "actions": [],
+              "nodePosition": {"x": 0.0, "y": 6.0, "mapId": "large"}},
+             {"nodeId": "X00-04", "sequenceId": 8, "released": true, "actions": [], ...},
+             {"nodeId": "X00-05", "sequenceId": 10, "released": false, "actions": [], ...}, ...],
+   "edges": [...]}
+  ```
+- R01's state at tick 31, driving. It reports the last node reached and the nodes still to come,
+  released and not:
+
+  ```json
+  {"headerId": 4, "orderId": "O00001", "orderUpdateId": 1, "lastNodeId": "X00-02",
+   "lastNodeSequenceId": 4, "driving": true,
+   "nodeStates": [{"nodeId": "X00-03", "sequenceId": 6, "released": true},
+                  {"nodeId": "X00-04", "sequenceId": 8, "released": true},
+                  {"nodeId": "X00-05", "sequenceId": 10, "released": false}, ...], ...}
+  ```
+
+### Reading the results
+
+- **Safe and complete.** All 800 jobs are reported delivered, with zero conflicts in the robots'
+  trajectories. Every message of the test runs validates against the official 3.0.0 schemas
+  (tests).
+- **Stopping only at nodes costs time, more with more robots.** Jobs finish later than planned:
+  - by 0.6 s on average with 5 robots (P95 4.1 s), 1.9 s with 10 (P95 6.4 s), and 8.5 s with 25
+    (P95 19.8 s);
+  - by at most 27.1 s.
+
+  A robot whose next node is still occupied waits at the node before, and with it the robots
+  queued behind it. The simulator's robots enter the corridor and wait at its end instead (D25).
+- **Mostly state messages.** 221,581 of the 240,057 messages are states: each robot reports on
+  every event (an arrival, a departure, an action) and at least every 30 s. There were 17,676 orders
+  and order updates, about 22 per job.
+
+### What this does not show
+
+- **No real communication.** There is no broker, network latency, message loss or reconnection.
+  Messages arrive in the tick they are sent.
+- **One job per robot.** Continuous dispatch through the adapter (new orders as robots become free)
+  was not built. The simulator remains the place for whole-hour runs.
+- **Ideal mock robots.** They have constant speed and exact positions, and report no errors.
+  - Instant actions, factsheets, visualization, zones and the corridor feature of 3.0.0 are not used.
+  - The adapter was not tested against any real VDA 5050 implementation.
+- One map, three fleet sizes, 20 seeds, Windows only.
