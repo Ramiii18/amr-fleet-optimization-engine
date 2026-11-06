@@ -181,3 +181,15 @@ def test_planning_runs_in_worker_processes() -> None:
     assert [(a["robot"], a["order"]) for a in response.json()["assignments"]] == [
         (a.robot_id, a.order_id) for a in expected
     ]
+
+
+def test_planning_requests_beyond_the_admission_limit_are_refused() -> None:
+    request = {"robots": [{"id": "R1", "node": "X01-01"}]}
+    with (
+        ThreadPoolExecutor(max_workers=1) as pool,
+        TestClient(create_app(executor=pool, max_pending_plans=0)) as client,
+    ):
+        response = client.post("/plan", json=request)
+
+    assert response.status_code == 429
+    assert "too many planning requests" in response.text

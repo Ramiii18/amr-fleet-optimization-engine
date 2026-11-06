@@ -332,6 +332,10 @@ class ResourceOrder:
         """The tick each resource was last left."""
         return self._left_at
 
+    def users(self, resource: Resource) -> tuple[RobotId, ...]:
+        """Every robot still to use ``resource``, in the planned order."""
+        return tuple(entry[2] for entry in self._queues.get(resource, ()))
+
     def next_user(self, resource: Resource) -> RobotId | None:
         queue = self._queues.get(resource)
         return queue[0][2] if queue else None

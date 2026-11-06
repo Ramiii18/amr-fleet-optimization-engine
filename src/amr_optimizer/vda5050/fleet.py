@@ -23,6 +23,12 @@ from amr_optimizer.vda5050.mock import Message, MessageBus, MockVehicle, clock
 from amr_optimizer.vda5050.orders import order_message, route_of
 from amr_optimizer.warehouse import NodeId, WarehouseGraph
 
+STALL_TICKS = 6_000  # 10 simulated minutes without any robot moving: a run has stalled
+
+
+class StalledError(RuntimeError):
+    """No robot moved for `STALL_TICKS`: fleet control is waiting on a cycle it cannot release."""
+
 
 @dataclass(frozen=True, slots=True)
 class Job:
@@ -47,6 +53,7 @@ class _Robot:
     reached: int = 0  # route index of the last node reached
     left: bool = False  # whether it has left that node again
     drop_action: str | None = None
+    finished: set[str] = field(default_factory=set)  # action ids reported finished
 
 
 class FleetControl:
@@ -70,6 +77,7 @@ class FleetControl:
             self._order.add(robot, TimedPath((Visit(node, 0, FOREVER),)), include_start=True)
             self._robots[robot] = _Robot(str(robot), HeaderCounter(manufacturer, str(robot)))
         self.delivered_at: dict[str, int] = {}  # order id -> tick its drop was reported finished
+        self.rotations = 0  # robots released as part of a cyclic wait (D31)
 
     def assign(self, tick: int, jobs: Sequence[Job]) -> None:
         """Send ``jobs`` as new orders. Each path must start where its robot stands.
@@ -113,6 +121,63 @@ class FleetControl:
                 start, robot.base_end = robot.base_end, end
                 robot.update_id += 1
                 self._send(tick, robot, start=start)
+        self._release_rotations(tick)
+
+    def _ready_to_leave(self, robot: _Robot) -> bool:
+        """Standing at its decision point, with every action there finished."""
+        if robot.route is None or robot.left or robot.reached != robot.base_end:
+            return False
+        actions = robot.route[0][robot.reached].actions
+        return all(a.action_id in robot.finished for a in actions)
+
+    def _release_rotations(self, tick: int) -> None:
+        """Release cyclic waits as one rotation (D31).
+
+        A robot can stop only at a node, so robots standing on a cycle of nodes, each waiting
+        for the node the next one stands on, would wait forever: each next node is released only
+        once its occupant has left it. When every robot of such a cycle is ready to leave, is
+        first on its next corridor, and is the next user of its next node after that node's
+        occupant, all of them are released one step at once. They leave in the same tick, and
+        each reaches its next node at least one tick after the robot ahead has left it.
+        """
+        blocker: dict[RobotId, RobotId] = {}
+        for robot_id, robot in self._robots.items():
+            if not self._ready_to_leave(robot) or robot.route is None:
+                continue
+            nodes = robot.route[0]
+            if robot.base_end + 1 >= len(nodes):
+                continue
+            here, there = (
+                NodeId(nodes[robot.base_end].node_id),
+                NodeId(nodes[robot.base_end + 1].node_id),
+            )
+            if self._order.next_user(Corridor.between(here, there)) != robot_id:
+                continue
+            users = self._order.users(there)
+            if len(users) < 2 or users[1] != robot_id:
+                continue
+            occupant = self._robots[users[0]]
+            if not self._ready_to_leave(occupant) or occupant.route is None:
+                continue
+            if NodeId(occupant.route[0][occupant.reached].node_id) == there:
+                blocker[robot_id] = users[0]
+        seen: set[RobotId] = set()
+        for start in blocker:
+            chain: list[RobotId] = []
+            current: RobotId | None = start
+            while current is not None and current in blocker and current not in seen:
+                if current in chain:
+                    break
+                chain.append(current)
+                current = blocker[current]
+            if current is not None and current in chain:
+                for member in chain[chain.index(current) :]:
+                    robot = self._robots[member]
+                    robot.base_end += 1
+                    robot.update_id += 1
+                    self._send(tick, robot, start=robot.base_end - 1)
+                    self.rotations += 1
+            seen.update(chain)
 
     def _releasable(self, robot_id: RobotId) -> int:
         """The last node the robot may be released to.
@@ -175,6 +240,7 @@ class FleetControl:
                 self._order.leave(Corridor.between(here, there), robot_id, tick)
                 robot.reached, robot.left = robot.reached + 1, False
         done = {a.action_id for a in state.action_states if a.action_status == "FINISHED"}
+        robot.finished = done
         if robot.drop_action in done and robot.order_id not in self.delivered_at:
             self.delivered_at[robot.order_id] = tick
 
@@ -251,7 +317,8 @@ def run_jobs(
     for vehicle in vehicles.values():
         vehicle.connect(0)
     fleet.assign(0, jobs)
-    tick = 0
+    tick, last_change = 0, 0
+    progress: tuple[int, int] | None = None
     while True:
         for vehicle in vehicles.values():
             vehicle.receive(tick)
@@ -263,6 +330,11 @@ def run_jobs(
             vehicle.step(tick)
         fleet.receive(tick)
         fleet.release(tick)
+        signature = (sum(len(v.track) for v in vehicles.values()), len(fleet.delivered_at))
+        if signature != progress:
+            progress, last_change = signature, tick
+        elif tick - last_change > STALL_TICKS:
+            raise StalledError(f"no robot has moved since tick {last_change}")
     trajectories = {}
     for robot_id, vehicle in vehicles.items():
         *done, last = vehicle.track

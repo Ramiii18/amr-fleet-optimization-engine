@@ -39,6 +39,7 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 MAX_PENDING_JOBS = 8  # queued or running; a new job beyond that is refused (429)
+MAX_PENDING_PLANS = 32  # planning requests in progress; one more is refused (429)
 MAX_KEPT_JOBS = 100  # finished jobs kept for polling; the oldest are forgotten first
 
 
@@ -75,11 +76,13 @@ def create_app(
     executor: Executor | None = None,
     workers: int = 2,
     max_pending_jobs: int = MAX_PENDING_JOBS,
+    max_pending_plans: int = MAX_PENDING_PLANS,
 ) -> FastAPI:
     """The service. Without ``executor``, it runs CPU-bound work in its own pool of ``workers``
     processes; tests may pass another executor, which the app then does not shut down. At most
     ``max_pending_jobs`` simulation jobs are queued or running at a time."""
     jobs: dict[str, _JobEntry] = {}
+    plans_in_progress = [0]  # planning requests waiting for or running in the pool
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -134,8 +137,17 @@ def create_app(
 
     @app.post("/plan")
     async def plan(body: PlanRequest, request: Request) -> PlanResponse:
-        """One dispatch decision: which idle robot starts which pending order now."""
-        return await in_worker(request, work.decide, body)
+        """One dispatch decision: which idle robot starts which pending order now.
+
+        Planning shares the worker pool with simulation jobs, so it has its own admission limit:
+        beyond ``max_pending_plans`` requests in progress, a new one is refused with 429."""
+        if plans_in_progress[0] >= max_pending_plans:
+            raise HTTPException(status_code=429, detail="too many planning requests in progress")
+        plans_in_progress[0] += 1
+        try:
+            return await in_worker(request, work.decide, body)
+        finally:
+            plans_in_progress[0] -= 1
 
     @app.post("/simulations", status_code=202)
     async def submit(body: SimulationRequest, request: Request) -> Job:

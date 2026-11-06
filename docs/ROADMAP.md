@@ -590,6 +590,10 @@ as a protocol:
 - **The cost of node-only stopping is measured:** met. Jobs finish later than planned by 0.6 s on
   average with 5 robots, 1.9 s with 10 and 8.5 s with 25, and by at most 27.1 s.
 
+**Correction (2026-11-06, D31):** an external review reproduced a deadlock that the tests had
+not covered, on a ring where robots wait for each other's nodes. Fleet control now releases such
+cycles as one rotation, and a stalled run raises an error. The ring case is a regression test.
+
 **Finding:** ordered execution maps directly onto the specification's base and horizon. The cost of
 the only difference, where robots wait, was measured.
 

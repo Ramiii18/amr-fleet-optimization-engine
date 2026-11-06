@@ -995,3 +995,64 @@ Every job was reported delivered.
   - Instant actions, factsheets, visualization, zones and the corridor feature of 3.0.0 are not used.
   - The adapter was not tested against any real VDA 5050 implementation.
 - One map, three fleet sizes, 20 seeds, Windows only.
+
+## Direct paired contrasts and recovery intervals (reanalysis, 2026-11-06)
+
+**Command:** `.venv\Scripts\python.exe scripts\paired_contrasts.py`. It runs no simulation: it reads
+the committed per-run results `docs/results/scaling.csv` and `docs/results/breakdowns.csv`. It was
+prompted by an external review that computed some of these contrasts itself.
+
+**What it adds.**
+- **Direct contrasts.** Two comparisons were reported only as differences of estimates against a
+  common baseline: CP-SAT against insertion with traffic, and replanning against re-timing. Here
+  they are paired per seed, with 95% t intervals.
+- **Intervals for the recovery percentages.** These are ratios of averages: (wait - recovery) /
+  (wait - no breakdowns). Their intervals come from a paired bootstrap (seeds resampled whole,
+  10,000 times, random seed 0).
+- **Exploratory.** Each interval is for one configuration, with no adjustment for multiple
+  comparisons.
+
+**Definitions used across the benchmarks.**
+- "Completion max s" and "worst case" are the **mean over seeds of each run's maximum** completion
+  time. They are not the largest completion time observed across all runs, and not a bound.
+- "P95" is likewise the mean of per-run P95 values.
+
+```text
+cpsat-fair minus insertion-fair, mean completion (scaling.csv, paired by seed):
+
+| Robots | Orders/h | Seeds | Difference (95% CI) |
+|---:|---:|---:|---|
+| 3 | 60 | 20 | -3.5 s [-5.7, -1.3] |
+| 3 | 90 | 20 | -21.6 s [-33.0, -10.2] |
+| 5 | 100 | 20 | -0.1 s [-1.0, +0.8] |
+| 5 | 150 | 20 | -24.0 s [-34.0, -14.0] |
+| 10 | 200 | 20 | -0.5 s [-1.0, +0.1] |
+| 10 | 300 | 20 | -20.2 s [-27.9, -12.6] |
+| 25 | 500 | 20 | +0.0 s [-0.5, +0.6] |
+| 25 | 750 | 20 | -22.5 s [-29.1, -15.9] |
+
+replan minus retime, and recovery fractions with bootstrap intervals (breakdowns.csv):
+
+| Orders/h | Policy | Breakdowns | replan - retime (95% CI) | Recovered by retime (95% CI) | Recovered by replan (95% CI) |
+|---:|---|---|---|---|---|
+| 200 | cpsat-fair | 0.1% of entries | -16.5 s [-22.7, -10.3] | 73% [64%, 80%] | 90% [87%, 93%] |
+| 200 | cpsat-fair | 0.5% of entries | -233.8 s [-301.8, -165.8] | 57% [52%, 63%] | 91% [89%, 92%] |
+| 200 | greedy | 0.1% of entries | -24.5 s [-32.8, -16.2] | 86% [83%, 89%] | 96% [95%, 97%] |
+| 200 | greedy | 0.5% of entries | -407.6 s [-507.8, -307.5] | 65% [59%, 70%] | 92% [89%, 94%] |
+| 300 | cpsat-fair | 0.1% of entries | -131.6 s [-168.9, -94.4] | 59% [52%, 65%] | 84% [82%, 86%] |
+| 300 | cpsat-fair | 0.5% of entries | -617.8 s [-688.9, -546.8] | 43% [39%, 47%] | 75% [73%, 77%] |
+| 300 | greedy | 0.1% of entries | -199.9 s [-242.9, -157.0] | 66% [63%, 69%] | 88% [86%, 90%] |
+| 300 | greedy | 0.5% of entries | -839.3 s [-939.7, -738.9] | 53% [50%, 57%] | 81% [80%, 83%] |
+```
+
+### Reading the results
+
+- **CP-SAT beats insertion with traffic, now tested directly.** At high load the lead is 20.2 to
+  24.0 s, and every interval excludes zero. At moderate load there is no detectable difference.
+  The earlier "20 to 24 s, estimated as a difference" is confirmed.
+- **Replanning beats re-timing, now tested directly.** The difference ranges from 16.5 s
+  (`cpsat-fair`, 0.1%, moderate load) to 839.3 s (greedy, 0.5%, high load), and all eight
+  intervals exclude zero.
+- **Recovery fractions with intervals.**
+  - Re-timing recovers 43% [39%, 47%] to 86% [83%, 89%] of the cost of breakdowns.
+  - Replanning recovers 75% [73%, 77%] to 96% [95%, 97%].

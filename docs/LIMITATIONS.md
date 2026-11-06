@@ -119,6 +119,9 @@ limits in mind.
 - **Ideal mock robots.** They have constant speed and exact positions, and report no errors.
   - Instant actions, factsheets, visualization, zones and corridors are not used.
   - The mock robots report a constant charge.
+- **Progress is not proved.** Node-only stopping can create cyclic waits. Fleet control resolves
+  rotations, robots waiting for each other around a cycle (D31), and raises an error on any other
+  stall. There is no general proof that every plan completes under the adapter's rules.
 - **Stopping only at nodes costs time.** As the specification requires, robots wait at nodes, not at
   the end of corridors. Measured: 0.6 to 8.5 s later than planned on average, more with more robots
   (benchmarks).

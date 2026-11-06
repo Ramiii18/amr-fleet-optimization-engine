@@ -627,7 +627,10 @@ local pass predicts a CI pass.
   a node, and releases an edge only together with both its nodes. Fleet control therefore releases
   the next edge and its end node only when the robot is first in the planned order of both.
   - This is stricter than D25, which lets a robot enter a corridor and wait at its end.
-  - Every wait still points forward in planned time, so execution cannot deadlock.
+  - **Corrected (D31):** this was claimed deadlock-free because every wait points forward in
+    planned time. That is wrong. Waiting at the node before, not at the corridor's end, adds
+    dependencies that can form a cycle. An external review reproduced one: four robots on a ring,
+    each waiting for the node the next one stands on.
 - **Fleet control sees only messages.** It learns positions, actions and progress from state
   messages alone, never from inside the mock robots.
 
@@ -639,3 +642,27 @@ local pass predicts a CI pass.
   required ones.
 - **Stopping only at nodes can make robots later than planned.** Measured in the demo: by 0.6 s
   on average with 5 robots, 1.9 s with 10 and 8.5 s with 25 (benchmarks).
+
+
+## D31: Fleet control releases cyclic waits as one rotation, and a stalled run raises an error
+**Status:** Accepted (2026-11-06)
+**Why:**
+- **The bug, found by an external review.** Under node-only stopping (D30), robots standing on a
+  cycle of nodes, each planned to leave as the robot behind arrives, wait for each other forever.
+  The review's case is a one-way ring of four nodes, with SIPP-planned paths: ordered execution
+  (D25) finishes at tick 30, and the adapter never moves.
+- **The fix: rotate.** When every robot of a cycle is ready to leave (at its decision point, with its
+  actions finished), is first on its next corridor, and is next after the occupant of its next node,
+  fleet control releases all of them one step in the same tick. They leave together, and each
+  reaches its next node at least one tick after the robot ahead has left it. This is how a ring of
+  real robots moves: as one train.
+- **Detection for anything else.** If no robot moves for 10 simulated minutes, the run raises
+  `StalledError`. No general proof of progress under node-only stopping is claimed: rotations
+  resolve the cyclic waits of this kind, and any other stall fails loudly instead of hanging.
+
+**Consequences:**
+- **A failing-first regression test.** The ring case is a test, and it fails with `StalledError`
+  without the rotation.
+- **One more limitation.** A rotation assumes every robot of the cycle actually leaves when released,
+  which the mock robots do. A real robot that does not would need a safety mechanism outside this
+  adapter.

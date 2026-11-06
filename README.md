@@ -27,14 +27,14 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | Finding | Evidence |
 |---|---|
 | **No collisions with traffic management** | 0 conflicts in all 1,840 benchmark runs with traffic management (M4, M5, P1 with ordered execution, P2, P3), checked by an independent checker. The same scenarios in free flow average 61 to 554 conflicts per run, depending on fleet size and load. |
-| **Planning beats greedy dispatch as fleets grow** | At 25 robots and 750 orders/h, mean completion time is 267 s with `cpsat-fair` against 532 s with greedy, and the worst case 496 s against 1,050 s. |
+| **Planning beats greedy dispatch as fleets grow** | At 25 robots and 750 orders/h, mean completion time is 267 s with `cpsat-fair` against 532 s with greedy, and the mean per-run worst case 496 s against 1,050 s. |
 | **Optimizing the same decision bought nothing** | Optimal matching (Hungarian) equals greedy when dispatching at every event, because almost every decision has one robot or one order. The gain came from changing the problem: look-ahead to busy robots and sequencing several orders per robot. |
-| **Exact search adds a measurable increment** | CP-SAT beats a cheapest-insertion heuristic *on the same model* at high load. In free flow the lead is 5 to 12 s, tested directly. With traffic it is 20 to 24 s, estimated as the difference between the two policies' leads over greedy. The model provides most of the gain. |
-| **Optimizing the mean starved some orders; the fix is an objective, not a solver** | Minimizing total completion time made CP-SAT's worst case 210 s worse than greedy's. A worst-first objective (longest lead time first, then the total) made it 80 to 100 s better instead, keeping 62–80% of the gain in mean (free flow, high load). |
+| **Exact search adds a measurable increment** | CP-SAT beats a cheapest-insertion heuristic *on the same model* at high load. In free flow the lead is 5 to 12 s, tested directly. With traffic it is 20 to 24 s, tested directly by pairing seeds. The model provides most of the gain. |
+| **Optimizing the mean starved some orders; the fix is an objective, not a solver** | Minimizing total completion time made CP-SAT's mean per-run worst case 210 s worse than greedy's. A worst-first objective (longest lead time first, then the total) made it 80 to 100 s better instead, keeping 62–80% of the gain in mean (free flow, high load). |
 | **Plans stay safe when robots are delayed** | Robots that keep the planned order of robots at every node and corridor had 0 conflicts in 240 runs with random delays. Keeping each robot's own schedule would have caused 149 to 531 per run. Delays cost capacity, steeply under load, and planning matters even more: with 20% of edges delayed, `cpsat-fair` beats greedy by 412 to 984 s of mean completion time. |
-| **Charging policy matters, and the best one at moderate load fails at high load** | With synthetic batteries, topping up idle robots cuts mean completion time by 26 s and the worst case by 70 to 75 s at moderate load, against charging only when low. Returning low robots to work as soon as they pass the low threshold looks even better at moderate load. At high load it makes robots thrash: about 200 charging trips per run instead of 11 to 13, and a worst case 520 to 600 s worse, which the mean does not show. |
-| **Replanning around breakdowns recovers most of their cost** | Without recovery, 8 to 15 breakdowns per run raise mean completion time by 95 to 902 s, because robots queue behind a broken one. Re-timing every plan, so that new jobs are planned around it, recovers 43% to 86% of that cost. Replanning the delayed robots too recovers 75% to 96%, and cuts the worst case by 216 to 4,953 s. Replanning safely needed re-timing first, to keep execution deadlock-free; a stress test found two subtle bugs before the benchmark ran. |
-| **The plans speak the industry's robot interface** | The engine's plans run on mock robots through VDA 5050 3.0.0 orders and state messages. Every message validates against the specification's official schemas. Fleet control releases each robot's route under the planned order of robots and knows robots only from their reports. Over 800 jobs: zero conflicts, every job delivered, 0.6 to 8.5 s later than planned on average, because robots may stop only at nodes. |
+| **Charging policy matters, and the best one at moderate load fails at high load** | With synthetic batteries, topping up idle robots cuts mean completion time by 26 s and the mean per-run worst case by 70 to 75 s at moderate load, against charging only when low. Returning low robots to work as soon as they pass the low threshold looks even better at moderate load. At high load it makes robots thrash: about 200 charging trips per run instead of 11 to 13, and a mean per-run worst case 520 to 600 s worse, which the mean does not show. |
+| **Replanning around breakdowns recovers most of their cost** | Without recovery, 8 to 15 breakdowns per run raise mean completion time by 95 to 902 s, because robots queue behind a broken one. Re-timing every plan, so that new jobs are planned around it, recovers 43% to 86% of that cost. Replanning the delayed robots too recovers 75% to 96% (bootstrap intervals in the benchmarks), and cuts the mean per-run worst case by 216 to 4,953 s. Replanning safely needed re-timing first, to keep execution deadlock-free; a stress test found two subtle bugs before the benchmark ran. |
+| **The plans speak the industry's robot interface** | The engine's plans run on mock robots through VDA 5050 3.0.0 orders and state messages. Every message validates against the specification's official schemas. Fleet control releases each robot's route under the planned order of robots and knows robots only from their reports. Over 800 jobs: zero conflicts, every job delivered, 0.6 to 8.5 s later than planned on average, because robots may stop only at nodes. An external review found a deadlock on a ring of robots waiting for each other; it is fixed and kept as a test. |
 | **Decisions are fast enough for online use** | Every decision took under 1 s (`cpsat-fair` P95 up to 265 ms at 25 robots); greedy and insertion take a few milliseconds. Measured on a laptop. |
 
 <picture>
@@ -82,11 +82,11 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
   quietly wrong KPIs.
 - **The specification as oracle.** Every VDA 5050 message is validated against the specification's
   official JSON schemas, not against this project's own types.
-- **Stress runs as bug finders.** Bugs that stress runs and larger demos found are kept as regression
-  tests, each shown to fail without its fix. There are five so far, all documented in the decisions
-  and the algorithms guide:
+- **Stress runs and review as bug finders.** Bugs that stress runs, larger demos and an external
+  review found are kept as regression tests, each shown to fail without its fix. There are six so
+  far, all documented in the decisions and the algorithms guide:
   - two in replanning;
-  - three in the VDA 5050 fleet control.
+  - four in the VDA 5050 fleet control, among them a deadlock.
 - **Reproducibility.** Every run is deterministic, a pinned scenario is checked on Windows and Linux
   in CI, and earlier benchmark tables reproduce exactly after later changes.
 - **Checks on every commit:** over 1,500 tests, ruff, and mypy in strict mode, and a Docker build in CI.
@@ -144,10 +144,15 @@ docker run --rm -p 127.0.0.1:8000:8000 amr-engine
 | Batteries and charging policies | `compare_charging.py` | about 6 min | [benchmarks](docs/benchmarks.md#batteries-and-charging-policies-phase-2-p2-2026-11-05) |
 | Breakdowns and replanning | `compare_breakdowns.py --csv docs/results/breakdowns.csv` | about 16 min | [benchmarks](docs/benchmarks.md#breakdowns-re-timing-and-replanning-phase-2-p3-2026-11-06) |
 | Plans through VDA 5050 messages | `vda5050_demo.py` | under 1 min | [benchmarks](docs/benchmarks.md#vda-5050-plans-executed-through-messages-phase-2-p5-2026-11-06) |
+| Direct paired contrasts, recovery intervals | `paired_contrasts.py` (reads the committed CSVs) | about 2 s | [benchmarks](docs/benchmarks.md#direct-paired-contrasts-and-recovery-intervals-reanalysis-2026-11-06) |
 | Figures and animation | `make_figures.py` | about 25 s | [docs/figures](docs/figures/) |
 
 The comparison scripts run in parallel worker processes (`--jobs`, default 8). The KPIs don't depend
 on the machine or on parallelism. Run times and decision latencies do.
+
+The exact package versions the benchmarks used are pinned in `constraints.txt`: install with
+`-c constraints.txt` to reproduce them. Deterministic solver limits do not guarantee identical
+results after a library upgrade.
 
 The four checks run before every commit:
 

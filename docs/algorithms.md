@@ -1600,9 +1600,17 @@ published under the MIT license with JSON schemas. Two of its rules shape everyt
   - It knows the robots only from their state messages. A state gives the last node reached and
     whether the robot is driving again, and from that fleet control marks which nodes and corridors
     the robot has left.
-- **Why it cannot deadlock.** Every wait is for a robot planned earlier on the same resource, as in
-  ordered execution. The only difference is where a robot waits: at the node before, because the
-  specification lets robots stop only at nodes.
+- **Progress, corrected (D31).** This section first claimed that fleet control cannot deadlock,
+  because every wait is for a robot planned earlier. That was wrong.
+  - Waiting at the node before a corridor, not at its end, adds dependencies, and they can form a
+    cycle.
+  - An external review built one: four robots on a one-way ring of four nodes, each standing on a
+    ring node and waiting for the node the next robot stands on. Ordered execution finishes it at
+    tick 30; fleet control never moved.
+  - **Now:** when every robot of such a cycle is ready to leave, first on its next corridor, and next
+    after its next node's occupant, all are released one step together, and they move as a train.
+  - **Anything else** that stops all progress for 10 simulated minutes raises `StalledError`. No
+    general progress proof is claimed.
 - **A bug the generated runs found.** A route can use a resource twice: into a pickup's dead-end spur
   and back out through the same intersection, which another robot may pass in between.
   - While the robot's first use of that intersection was released but not yet left, the robot itself

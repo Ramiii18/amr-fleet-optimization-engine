@@ -187,3 +187,61 @@ def test_no_robot_parks_on_the_pickup_of_another_job() -> None:
     assert len(jobs) == 25
     pickups = {job.path.visits[job.pickup].node for job in jobs if job.pickup is not None}
     assert pickups.isdisjoint(job.path.end.node for job in jobs)
+
+
+def test_robots_waiting_on_each_other_around_a_ring_rotate_together() -> None:
+    # The counterexample of an external review: a one-way ring C0 -> C1 -> C2 -> C3 -> C0 with a
+    # start spur and a destination spur at every ring node. Robot i drives S_i -> C_i -> C_i+1 ->
+    # D_i+1, planned with SIPP one after another: all four stand on the ring at tick 10, each
+    # planned to leave as the robot behind arrives. Robots can stop only at nodes, so each waits
+    # for the next robot's node, and without a joint release none ever moves (D31).
+    from amr_optimizer.traffic import ItineraryPlanner, ReservationTable, Stop
+
+    ring = [NodeId(f"C{i}") for i in range(4)]
+    corners = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    starts_at = [(-1.0, 0.0), (2.0, 0.0), (2.0, 1.0), (-1.0, 1.0)]
+    ends_at = [(0.0, -1.0), (1.0, -1.0), (1.0, 2.0), (0.0, 2.0)]
+    nodes, edges = [], []
+    for i, c in enumerate(ring):
+        s, d = NodeId(f"S{i}"), NodeId(f"D{i}")
+        nodes += [
+            warehouse.Node(c, *corners[i]),
+            warehouse.Node(s, *starts_at[i], warehouse.NodeKind.PARKING),
+            warehouse.Node(d, *ends_at[i], warehouse.NodeKind.PARKING),
+        ]
+        edges.append(warehouse.Edge(c, ring[(i + 1) % 4], 1.0))
+        edges += [warehouse.Edge(u, v, 1.0) for a in (s, d) for u, v in ((a, c), (c, a))]
+    graph = warehouse.WarehouseGraph(nodes, edges)
+    robots = [RobotId(f"R{i}") for i in range(4)]
+    planner = ItineraryPlanner(TravelTimes(graph, speed_mps=1.0, time_model=TimeModel(0.1)))
+    table = ReservationTable()
+    for i, robot in enumerate(robots):
+        table.reserve(robot, TimedPath((Visit(NodeId(f"S{i}"), 0, FOREVER),)))
+    jobs = []
+    for i, robot in enumerate(robots):
+        table.end_hold(robot, 0)
+        itinerary = planner.plan(table, NodeId(f"S{i}"), 0, [Stop(NodeId(f"D{(i + 1) % 4}"))])
+        assert itinerary is not None
+        table.reserve(robot, itinerary.path)
+        assert [v.node for v in itinerary.path.visits] == [
+            f"S{i}",
+            f"C{i}",
+            f"C{(i + 1) % 4}",
+            f"D{(i + 1) % 4}",
+        ]
+        jobs.append(Job(robot, f"J{i}", itinerary.path))
+    scenario = Scenario(
+        graph=graph,
+        time_model=TimeModel(0.1),
+        speed_mps=1.0,
+        load_ticks=0,
+        unload_ticks=0,
+        robots=tuple(RobotState.idle(r, NodeId(f"S{i}")) for i, r in enumerate(robots)),
+        orders=(),
+    )
+
+    run = run_jobs(scenario, jobs, map_id="ring")
+
+    for i, robot in enumerate(robots):
+        assert run.trajectories[robot].end.node == f"D{(i + 1) % 4}"
+    assert _conflicts(run) == 0
