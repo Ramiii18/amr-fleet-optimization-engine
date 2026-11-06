@@ -48,6 +48,8 @@ src/amr_optimizer/
                work.py       CPU-bound work for worker processes: requests -> engine types -> results
                app.py        FastAPI app: health, maps, policies, /plan; a process pool per app
                serve.py      `amr-api`: runs the service with Uvicorn (`api` extra; Phase 2)
+  vda5050/     messages.py   VDA 5050 3.0.0 messages (order, state, instant actions, connection),
+                             topics, headers; plain dataclasses with to_json/from_json (Phase 2)
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
 scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py,
                compare_traffic.py, benchmark_scaling.py, make_figures.py, compare_delays.py,

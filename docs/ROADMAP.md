@@ -293,6 +293,7 @@ by what they build on:
 | **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | **Done** (2026-11-05) |
 | **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | **Done** (2026-11-06) |
 | **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | **Done** (2026-11-06) |
+| **P5** VDA 5050-shaped adapter (from the backlog) | Mock robots and a fleet-control bridge that execute the engine's plans through VDA 5050 3.0.0 messages | Shows how plans reach robots; the industry's open interface | In progress |
 
 **P1 increments:**
 1. **Executor.** Done 2026-11-05. Execute a set of conflict-free timed paths under random delays:
@@ -534,6 +535,43 @@ out of service until a known tick, which the look-ahead planners already underst
 
 **After P4:** the roadmap is complete. What remains is the unordered backlog below.
 
+## P5: plan (2026-11-06)
+
+**Goal.** Show how the engine's plans would reach real robots, with a mock adapter shaped like the
+VDA 5050 interface, version 3.0.0 (the latest release, March 2026). No real robot, broker or
+vendor software is involved. Every message is validated against the specification's published
+JSON schemas.
+
+**The mapping that matters.** In VDA 5050, fleet control sends a robot an order as alternating
+nodes and edges, and *releases* only a prefix of it, the base. The robot stops at the last
+released node until an order update extends the base. That is ordered execution (D25) expressed
+as a protocol:
+- fleet control releases the next edge and its end node only when the robot is first in the
+  planned order of both;
+- it learns where robots are only from their state messages.
+
+**Increments:**
+1. **Messages and validation.** Done 2026-11-06. Order, state, instant actions and connection messages, the
+   topic layout, and the header (ids per topic, timestamps). Tests validate every message against
+   the official schemas.
+2. **Orders from plans.** An engine itinerary becomes an order: nodes with positions, edges,
+   `pick` and `drop` actions at the stops. Order updates extend the base from the stitching node.
+   Tests check the specification's rules on sequence ids, base and horizon, and updates.
+3. **Mock robots and fleet control.** Mock vehicles drive only their base, run actions for their
+   service time, and report state on every event. A fleet-control bridge releases bases under the
+   planned order. Tests:
+   - a hand case where a robot stops at its decision point until the robot ahead has passed;
+   - generated runs: every pick and drop finished, zero conflicts, every message valid.
+
+   A demo script writes the message log, and measures how much later than planned the robots
+   finish, given that they may stop only at nodes.
+
+**Acceptance criteria:**
+- Every message validates against the official 3.0.0 schemas.
+- The specification's rules hold for every order and update.
+- Plans executed through messages finish every job, with zero conflicts.
+- The cost of node-only stopping is measured and reported, not assumed.
+
 ## Phase 2 backlog (unordered)
 
 - **From P2:** a CP-SAT schedule of charging slots over a horizon (intervals with charger capacity),
@@ -552,5 +590,4 @@ out of service until a known tick, which the look-ahead planners already underst
   estimates for the planners; a fleet-wide path planner (for example conflict-based search) instead
   of prioritized planning.
 - Local search / Large Neighbourhood Search for dispatch.
-- A mock adapter shaped like VDA 5050 messages, validated against the published specification.
 - Done in M5: animated visualization.

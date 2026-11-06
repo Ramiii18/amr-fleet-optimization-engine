@@ -32,6 +32,8 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "httpx2>=2.16", # the HTTP client behind the test client of FastAPI (Starlette) for api/ tests
+    "jsonschema>=4.26", # validates VDA 5050 messages against the official schemas (tests only)
+    "types-jsonschema", # type stubs so mypy can check those tests
 ]
 viz = ["matplotlib>=3.11"] # figures and animations (viz/, scripts/make_figures.py); 3.11 is tested
 api = [ # the HTTP service (api/, D29); the versions tested

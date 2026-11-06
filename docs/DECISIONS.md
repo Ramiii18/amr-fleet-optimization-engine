@@ -601,3 +601,40 @@ local pass predicts a CI pass.
   would need a persistent queue.
 - **Decision time over HTTP includes the hop to a worker process.** The latency reported in M5 is the
   simulator's own measurement, not the service's.
+
+
+## D30: A mock VDA 5050 3.0.0 interface: plain dataclasses, the official schemas as the test oracle, bases released under the planned order
+**Status:** Accepted (2026-11-06)
+**Why:**
+- **The latest version, read at the source.** VDA 5050 3.0.0 was released in March 2026 in the
+  specification's public repository, under the MIT license. Its JSON schemas and text were read
+  directly, not recalled. Version 3.0.0 differs from 2.x in ways that matter here: edges no longer
+  name their start and end nodes, and battery state became `powerSupply`.
+- **Plain frozen dataclasses with `to_json`.** The messages are produced and read by this package
+  only, so they need no Pydantic and no new runtime dependency.
+- **The official schemas are the oracle.** The tests validate every message against the
+  specification's own schemas, not against this package's types. That check is independent of the
+  code it checks.
+  - The four schemas used are vendored under `tests/data/vda5050/3.0.0/`, unchanged, with the MIT
+    license and their source.
+  - The published `order.schema` has one trailing comma, which strict JSON rejects. The test loader
+    removes trailing commas before parsing.
+  - `jsonschema` is a dev dependency only.
+- **Actions.** `pick` and `drop` are the specification's predefined actions. It gives them no
+  `blockingType`, so this adapter uses `HARD`: the robot stands still and does nothing else, as it
+  does while loading in the simulator.
+- **Bases follow the planned order (D25), at nodes.** The specification lets a robot stop only at
+  a node, and releases an edge only together with both its nodes. Fleet control therefore releases
+  the next edge and its end node only when the robot is first in the planned order of both.
+  - This is stricter than D25, which lets a robot enter a corridor and wait at its end.
+  - Every wait still points forward in planned time, so execution cannot deadlock.
+- **Fleet control sees only messages.** It learns positions, actions and progress from state
+  messages alone, never from inside the mock robots.
+
+**Consequences:**
+- **A mock, not an integration.** There is no MQTT broker: messages go through an in-memory bus,
+  with topics named as the specification requires.
+- **The mock robots are as simple as the simulator's robots.** They have constant speed, no
+  battery model (a constant charge is reported), no errors, and no safety fields beyond the
+  required ones.
+- **Stopping only at nodes can make robots later than planned.** The demo measures by how much.
