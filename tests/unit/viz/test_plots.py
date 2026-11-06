@@ -10,7 +10,7 @@ from amr_optimizer.dispatch import GreedyDispatch
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import SimulationResult, simulate
 from amr_optimizer.viz import DARK, LIGHT, Theme, animate_run, map_figure, plot_map, plot_robots
-from amr_optimizer.viz.plots import scaling_figure
+from amr_optimizer.viz.plots import recovery_figure, scaling_figure
 from amr_optimizer.warehouse import PRESETS, NodeKind, generate_grid_warehouse
 
 THEMES = [LIGHT, DARK]
@@ -89,4 +89,44 @@ def test_an_animation_can_be_saved(run: SimulationResult, tmp_path: Path) -> Non
     animation.save(path, writer="pillow", fps=2)
 
     assert path.stat().st_size > 0
+    plt.close(figure)
+
+
+@pytest.mark.parametrize("theme", THEMES, ids=["light", "dark"])
+def test_the_recovery_figure_has_a_bar_per_policy_and_a_baseline_per_group(theme: Theme) -> None:
+    rows = []
+    for rate in (200, 300):
+        for policy in ("greedy", "cpsat-fair"):
+            for seed in range(2):
+                base = {"orders_per_hour": str(rate), "policy": policy, "seed": str(seed)}
+                rows.append(
+                    base | {"breakdowns_level": "none", "recovery": "-", "completion_mean_s": "100"}
+                )
+                for level in ("0.1% of entries", "0.5% of entries"):
+                    for i, recovery in enumerate(("wait", "retime", "replan")):
+                        value = str(300 - 50 * i + seed)
+                        rows.append(
+                            base
+                            | {
+                                "breakdowns_level": level,
+                                "recovery": recovery,
+                                "completion_mean_s": value,
+                            }
+                        )
+
+    figure = recovery_figure(rows, theme)
+
+    assert len(figure.axes) == 2
+    for ax in figure.axes:
+        assert len(ax.patches) == 4 * 3  # 4 groups of 3 recovery policies
+        assert len(ax.lines) == 4  # one "no breakdowns" mark per group
+        assert ax.get_ylim()[0] == 0
+        tops = sorted(
+            round(float(np.asarray(patch.get_path().vertices)[:, 1].max()), 3)
+            for patch in ax.patches
+        )
+        assert tops == [200.5] * 4 + [250.5] * 4 + [300.5] * 4  # means over the two seeds
+        assert {round(float(np.asarray(line.get_ydata())[0]), 3) for line in ax.lines} == {100.0}
+    legend_texts = [t.get_text() for t in figure.legends[0].get_texts()]
+    assert legend_texts == ["wait", "retime", "replan", "no breakdowns"]
     plt.close(figure)

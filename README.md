@@ -39,6 +39,11 @@ seeded scenarios and reports paired differences with 95% confidence intervals
   <img alt="Mean completion time with traffic by fleet size: at 30 orders per robot per hour, greedy rises to 532 s at 25 robots while insertion-fair and cpsat-fair stay below 300 s" src="docs/figures/scaling-light.png">
 </picture>
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/recovery-dark.png">
+  <img alt="Mean completion time under breakdowns, by recovery policy: in every configuration waiting is slowest, re-timing recovers a large share, and replanning brings the fleet closest to its time without breakdowns" src="docs/figures/recovery-light.png">
+</picture>
+
 ## What's inside
 
 | Area | What it does | Key ideas |
@@ -126,7 +131,7 @@ docker run --rm -p 127.0.0.1:8000:8000 amr-engine
 | Scaling, 3 to 25 robots | `benchmark_scaling.py --csv docs/results/scaling.csv` | about 8.5 min | [benchmarks](docs/benchmarks.md#scaling-with-traffic-3-to-25-robots-m5-2026-11-05) |
 | Delays and robust execution | `compare_delays.py` | about 10 min | [benchmarks](docs/benchmarks.md#delays-robust-execution-and-its-cost-phase-2-p1-2026-11-05) |
 | Batteries and charging policies | `compare_charging.py` | about 6 min | [benchmarks](docs/benchmarks.md#batteries-and-charging-policies-phase-2-p2-2026-11-05) |
-| Breakdowns and replanning | `compare_breakdowns.py` | about 16.5 min | [benchmarks](docs/benchmarks.md#breakdowns-re-timing-and-replanning-phase-2-p3-2026-11-06) |
+| Breakdowns and replanning | `compare_breakdowns.py --csv docs/results/breakdowns.csv` | about 16 min | [benchmarks](docs/benchmarks.md#breakdowns-re-timing-and-replanning-phase-2-p3-2026-11-06) |
 | Figures and animation | `make_figures.py` | about 25 s | [docs/figures](docs/figures/) |
 
 The comparison scripts run in parallel worker processes (`--jobs`, default 8). The KPIs don't depend

@@ -13,6 +13,7 @@ from amr_optimizer.viz.plots import (
     map_figure,
     plot_map,
     plot_robots,
+    recovery_figure,
     scaling_figure,
 )
 
@@ -28,5 +29,6 @@ __all__ = [
     "plot_map",
     "plot_robots",
     "position_at",
+    "recovery_figure",
     "scaling_figure",
 ]

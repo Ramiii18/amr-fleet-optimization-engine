@@ -138,4 +138,5 @@ limits in mind.
 - **The palette validator was not run.** The figures use the first three colours of the reference
   palette unchanged. The palette documents them as validated for colour-vision deficiency in light and
   dark mode, but the validator script was not run here, because it needs Node.js, which is not part of
-  the project's toolchain.
+  the project's toolchain. The recovery chart uses three steps of the palette's blue ramp, within the
+  limits it documents for ordered series; that was not validated by the script either.

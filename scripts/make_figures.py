@@ -2,6 +2,9 @@
 
 - ``scaling-{light,dark}.png``: mean completion time by fleet size, per load and policy, from
   the per-run results of ``scripts/benchmark_scaling.py`` (``docs/results/scaling.csv``).
+- ``recovery-{light,dark}.png``: mean completion time under each recovery policy from
+  breakdowns, from the per-run results of ``scripts/compare_breakdowns.py``
+  (``docs/results/breakdowns.csv``).
 - ``map-{light,dark}.png``: the large map during one run with traffic, every robot coloured by
   what it is doing.
 - ``traffic.gif``: two minutes of that run, one frame per simulated second.
@@ -21,11 +24,12 @@ from matplotlib import pyplot as plt
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import simulate
-from amr_optimizer.viz import DARK, LIGHT, animate_run, map_figure, scaling_figure
+from amr_optimizer.viz import DARK, LIGHT, animate_run, map_figure, recovery_figure, scaling_figure
 from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "docs" / "results" / "scaling.csv"
+BREAKDOWNS = ROOT / "docs" / "results" / "breakdowns.csv"
 FIGURES = ROOT / "docs" / "figures"
 ROBOTS, ORDERS_PER_HOUR, SEED, POLICY = 10, 300.0, 0, "cpsat-fair"
 SNAPSHOT_TICK = 9_000  # 15 minutes in: the fleet is busy
@@ -41,6 +45,13 @@ def main() -> None:
     for name, theme in (("light", LIGHT), ("dark", DARK)):
         figure = scaling_figure(rows, theme)
         figure.savefig(FIGURES / f"scaling-{name}.png", dpi=DPI, facecolor=theme.surface)
+        plt.close(figure)
+
+    with BREAKDOWNS.open(encoding="utf-8") as file:
+        breakdown_rows = list(csv.DictReader(file))
+    for name, theme in (("light", LIGHT), ("dark", DARK)):
+        figure = recovery_figure(breakdown_rows, theme)
+        figure.savefig(FIGURES / f"recovery-{name}.png", dpi=DPI, facecolor=theme.surface)
         plt.close(figure)
 
     graph = generate_grid_warehouse(PRESETS["large"])

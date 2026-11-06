@@ -852,6 +852,15 @@ Settings: map large, orders released for 3600 s, seeds 0-19, 1 m/s, 0.1 s ticks,
 Every order was delivered in every run.
 ```
 
+**Per-run results and figure.** Run again with `--csv docs/results/breakdowns.csv` at commit
+`c31a58a`, the comparison reproduced every row of this table exactly. Those per-run results are the
+source of the chart below (`scripts/make_figures.py`).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/recovery-dark.png">
+  <img alt="Mean completion time under breakdowns, by recovery policy, for each load, breakdown level and dispatch policy" src="figures/recovery-light.png">
+</picture>
+
 ### Reading the results
 
 - **Safe and complete.**
