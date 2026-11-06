@@ -47,6 +47,7 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | **Simulation** (`domain/`, `scenario/`, `sim/`) | Seeded order streams, an explicit robot state machine, a discrete-event simulator with invariant checks after every tick; batteries, shared chargers and three charging policies | Integer time in 0.1 s ticks, pure-function dispatch interface, common random numbers across policies; integer energy, a safety threshold derived from the map, hysteresis |
 | **Dispatch** (`dispatch/`) | Greedy; optimal matching; receding-horizon planning of every robot and the oldest 10 orders, by cheapest insertion or CP-SAT | Linear assignment (scipy); CP-SAT giant-tour circuit with symmetry breaking and a deterministic time limit; lexicographic worst-first objective |
 | **Traffic** (`traffic/`) | One robot per node and per corridor; each job planned as one timed path; robots park on free dead-end spots; under random delays, plans are executed in the planned order of robots; after a breakdown, plans are re-timed and delayed robots replanned | Safe-interval path planning (SIPP), reservation tables, prioritized planning, completeness on well-formed layouts, deadlock-free ordered execution (temporal plan graph), re-timing as a longest path from a mid-run state |
+| **Service** (`api/`) | An HTTP API for dispatch decisions and background simulation jobs, with a Dockerfile | FastAPI with Pydantic at the boundary only, a process pool for CPU-bound work, bounded queues |
 | **Evaluation** (`metrics/`, `viz/`) | KPIs from the event log, conflict counts from trajectories, paired statistics, figures and animation | Nearest-rank percentiles, t confidence intervals, colour-vision-safe palette |
 
 The [algorithms guide](docs/algorithms.md) explains each component: the problem, the approach, its
@@ -89,6 +90,29 @@ py -3.13 -m venv .venv
 .venv\Scripts\amr-sim.exe --map large --robots 10 --orders-per-hour 200 --policy cpsat-fair --traffic --charging opportunistic
 .venv\Scripts\amr-sim.exe --help   # every option; --json prints the KPIs as JSON
 .venv\Scripts\amr-api.exe          # the HTTP service; API docs at http://127.0.0.1:8000/docs
+```
+
+## The service
+
+`amr-api` serves the engine over HTTP (FastAPI, [D29](docs/DECISIONS.md)). Interactive documentation is
+at `/docs`.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /health`, `/maps`, `/maps/{name}`, `/policies` | Version, preset maps with their nodes, dispatch policies |
+| `POST /plan` | One dispatch decision. The client sends a fleet snapshot (idle robots, busy robots free at a node from a tick, pending orders) and gets the policy's assignments back. |
+| `POST /simulations`, `GET /simulations/{id}` | A whole simulated run in the background. The first call answers 202 with a job id; the second gives the job's status and, when it is done, its KPIs. |
+
+- **No CPU-bound work on the event loop.** Every decision and every run happens in worker processes.
+- **Bounded input.** Requests are validated and bounded, and errors are 4xx answers with a reason.
+- **A local demonstration.** The server binds to 127.0.0.1 and has no authentication.
+
+As a container (Docker Desktop on Windows needs WSL2). The CI workflow builds this image on Linux,
+starts it, and checks that it answers:
+
+```powershell
+docker build -t amr-engine .
+docker run --rm -p 127.0.0.1:8000:8000 amr-engine
 ```
 
 ## Reproducing every number

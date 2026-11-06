@@ -1525,3 +1525,14 @@ CPU-bound planning stall the server, and without letting the web layer leak into
   - Undefined KPIs come back as null.
   - Invalid requests get 422 with their reason.
   - One job runs through the real process pool.
+
+**The container (P4.3).**
+- **The image.** Python 3.13 slim, with only `pyproject.toml`, the readme, the license and `src/`
+  copied in; it installs the package with the `api` extra and runs as an unprivileged user.
+- **Listening.** Inside the container the server listens on every interface, because a published port
+  must reach it. The documented `docker run` publishes it on 127.0.0.1 only.
+- **Spawned workers.** Worker processes are spawned, not forked, on every platform. Forking a process
+  that already runs threads, as a server does, is unsafe; and spawning behaves on Linux as on Windows.
+- **Verification.** CI builds the image on Linux, checks that it runs as an unprivileged user, starts
+  it, and checks `/health` and a CP-SAT decision from `/plan`. Locally, the same non-editable install
+  in a fresh environment served both requests through spawned workers.

@@ -6,6 +6,7 @@ when it stops. The interactive API documentation is served at ``/docs``.
 """
 
 import asyncio
+import multiprocessing
 import uuid
 from collections.abc import AsyncIterator, Callable
 from concurrent.futures import Executor, Future, ProcessPoolExecutor
@@ -82,7 +83,10 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        pool = executor or ProcessPoolExecutor(max_workers=workers)
+        # Spawned, not forked, workers: forking a process that already runs threads (the server's)
+        # is unsafe, and spawning behaves the same on Linux as on Windows.
+        spawn = multiprocessing.get_context("spawn")
+        pool = executor or ProcessPoolExecutor(max_workers=workers, mp_context=spawn)
         app.state.executor = pool
         try:
             yield

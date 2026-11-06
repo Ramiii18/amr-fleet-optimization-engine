@@ -50,3 +50,36 @@ jobs:
 
       - name: Tests (pytest)
         run: python -m pytest
+
+  container:
+    # The service as a container image (D29): build it, start it, and check that it answers.
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: docker build --tag amr-engine:ci .
+
+      - name: Runs as an unprivileged user
+        run: test "$(docker run --rm amr-engine:ci id -u)" = "10001"
+
+      - name: Start
+        run: docker run --detach --name amr --publish 127.0.0.1:8000:8000 amr-engine:ci
+
+      - name: Answers health and a planning request
+        run: |
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          curl --fail --silent --show-error http://127.0.0.1:8000/health
+          curl --fail --silent --show-error --request POST http://127.0.0.1:8000/plan \
+            --header "Content-Type: application/json" \
+            --data '{"policy": "cpsat-fair", "robots": [{"id": "R1", "node": "PK00"}], "orders": [{"id": "O1", "pickup": "S00-02", "dropoff": "ST01", "release_tick": 0}]}' \
+            | tee plan.json
+          grep --quiet '"robot":"R1","order":"O1"' plan.json
+
+      - name: Server log
+        if: always()
+        run: docker logs amr || true

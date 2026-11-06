@@ -504,7 +504,8 @@ The engine itself does not change.
      status and its KPIs. The queue is bounded.
    - Tests: a job's KPIs equal a direct run's; a failing job reports its error; a full queue gets a
      429.
-3. **Container.** A Dockerfile, and a CI job on Linux that builds the image and smoke-tests it.
+3. **Container.** Written 2026-11-06; verified when CI first runs it. A Dockerfile, and a CI job
+   on Linux that builds the image and smoke-tests it.
    Docker is verified in CI. Running it locally needs WSL2, which is the owner's decision.
 
 **Acceptance criteria:**

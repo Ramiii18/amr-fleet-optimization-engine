@@ -1,0 +1,15 @@
+# The image copies only pyproject.toml, README.md, LICENSE and src/ (see Dockerfile). Everything else
+# stays out of the build context, local-only files above all.
+.git
+.github
+.venv
+docs
+tests
+scripts
+scenarios
+**/__pycache__
+**/*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache
+*.egg-info
