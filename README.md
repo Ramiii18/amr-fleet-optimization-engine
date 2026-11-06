@@ -4,7 +4,8 @@
 
 A Python engine that dispatches transport orders to a fleet of autonomous mobile robots (AMRs),
 plans collision-free routes for them on a warehouse graph, and measures the result in a
-reproducible discrete-event simulation.
+reproducible discrete-event simulation. It also serves dispatch decisions over HTTP, and sends its
+plans to mock robots through the VDA 5050 interface.
 
 ![Ten robots on the large map with traffic: robots driving to pickups, carrying loads, and parking](docs/figures/traffic.gif)
 
@@ -12,8 +13,8 @@ reproducible discrete-event simulation.
 traffic. Blue robots are driving to a pickup, orange ones carry a load, and black ones are free.*
 
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning project:
-> it does not control physical robots, has not been deployed in any real fleet, and is not a safety
-> system. Milestones M1 to M5 and Phase 2 (P1 delays, P2 batteries and charging, P3 breakdowns and
+> it does not control physical robots (the VDA 5050 robots are mocks), has not been deployed in any
+> real fleet, and is not a safety system. Milestones M1 to M5 and Phase 2 (P1 delays, P2 batteries and charging, P3 breakdowns and
 > replanning, P4 an HTTP service, P5 a VDA 5050-shaped adapter) are complete; see the
 > [roadmap](docs/ROADMAP.md).
 
@@ -79,9 +80,16 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
   hand.
 - **Invariants** in the state machine and the simulator stop a run with an error, instead of producing
   quietly wrong KPIs.
+- **The specification as oracle.** Every VDA 5050 message is validated against the specification's
+  official JSON schemas, not against this project's own types.
+- **Stress runs as bug finders.** Bugs that stress runs and larger demos found are kept as regression
+  tests, each shown to fail without its fix. There are five so far, all documented in the decisions
+  and the algorithms guide:
+  - two in replanning;
+  - three in the VDA 5050 fleet control.
 - **Reproducibility.** Every run is deterministic, a pinned scenario is checked on Windows and Linux
   in CI, and earlier benchmark tables reproduce exactly after later changes.
-- **Checks on every commit:** over 1,400 tests, ruff, and mypy in strict mode.
+- **Checks on every commit:** over 1,500 tests, ruff, and mypy in strict mode, and a Docker build in CI.
 
 ## Quick start
 
@@ -160,6 +168,7 @@ In short:
 - batteries are synthetic, and charging follows simple threshold rules;
 - breakdowns are announced with their exact repair time, and closed aisles are not modelled;
 - the HTTP service is a local demonstration: no authentication, and jobs live in memory;
+- the VDA 5050 adapter is a mock: no broker, no real robots, one job per robot;
 - everything was evaluated on one synthetic map with uniform demand.
 
 The full list is in [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
