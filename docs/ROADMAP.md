@@ -291,7 +291,7 @@ by what they build on:
 |---|---|---|---|
 | **P1** Delays and robust execution | Random delays while driving; executing plans in the planned order of robots at every node and corridor; naive execution as the baseline | It removes the main limitation of the M4 and M5 traffic results (execution is exact), and it builds the execution layer that P2 and P3 need | **Done** (2026-11-05) |
 | **P2** Battery and charging | Battery model, chargers as shared resources, charging when low against opportunistic charging | The largest part of the original scope still missing | **Done** (2026-11-05) |
-| **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | In progress |
+| **P3** Faults and replanning | Robot breakdowns and blocked corridors, replanning itineraries during execution | Builds on the P1 execution layer | **Done** (2026-11-06) |
 | **P4** Service layer | FastAPI service with background jobs for CPU-bound planning; Docker | Engineering breadth. Docker needs WSL2, a system install that is the owner's decision | Not started |
 
 **P1 increments:**
@@ -437,19 +437,21 @@ another, and the two then wait for each other forever. Replanning therefore re-t
 
 **Increments:**
 1. **Re-timing.** Done 2026-11-05. `retime` in `traffic/execution.py`: the earliest schedule of
-   the remaining plans from a state reached mid-run. Oracle: cutting an ordered execution at any tick and
-   re-timing the rest reproduces it.
-2. **Breakdowns in the simulator.** Done 2026-11-05. A seeded breakdown model (a share of edge traversals, a
-   repair time range); `wait` and `retime`. With every job assigned at the start, `retime` must
-   reproduce `wait` exactly: re-timing alone moves no robot.
-3. **Replanning.** Done 2026-11-05. `replan`: robots in a corridor are committed to its end, so each delayed robot
-   replans from the next node it will stand on, through its remaining stops. Hand cases (a robot
-   detours around a broken one and arrives earlier than by waiting) and generated runs (every
-   order delivered, zero conflicts, reproducible).
-4. **Comparison.** Breakdown levels × recovery policies × greedy and `cpsat-fair`.
+   the remaining plans from a state reached mid-run. Oracle: cutting an ordered execution at any
+   tick and re-timing the rest reproduces it.
+2. **Breakdowns in the simulator.** Done 2026-11-05. A seeded breakdown model (a share of edge
+   traversals, a repair time range); `wait` and `retime`. With every job assigned at the start,
+   `retime` must reproduce `wait` exactly: re-timing alone moves no robot.
+3. **Replanning.** Done 2026-11-05. `replan`: robots in a corridor are committed to its end, so
+   each delayed robot replans from the next node it will stand on, through its remaining stops.
+   Hand cases (a robot detours around a broken one and arrives earlier than by waiting) and
+   generated runs (every order delivered, zero conflicts, reproducible).
+4. **Comparison.** Done 2026-11-06 ([benchmarks.md](benchmarks.md)). Breakdown levels × recovery
+   policies × greedy and `cpsat-fair`.
 
 Blocked corridors without a robot (a closed aisle) reuse the same machinery and follow if the
-breakdown results justify it; otherwise they go to the backlog.
+breakdown results justify it; otherwise they go to the backlog. (They went to the backlog: the
+breakdown results already show what recovery is worth.)
 
 **Acceptance criteria:**
 - Every order is delivered and every run is conflict-free, under every recovery policy.
@@ -457,10 +459,44 @@ breakdown results justify it; otherwise they go to the backlog.
 - Without breakdowns, all earlier results reproduce exactly.
 - The comparison reports the cost of breakdowns and the paired effect of each recovery policy.
 
+## P3 acceptance
+
+- **Every order delivered, every run conflict-free, under every recovery policy:** met.
+  - Hand cases, and the 36 generated test runs under all three policies.
+  - The stress probe: 96 runs, up to 25 robots, with frequent breakdowns and delays.
+  - The 560 benchmark runs.
+
+  It was met only after the stress probe found two bugs in replanning, both now fixed and covered by
+  a regression test (D28): a waiting robot that nobody woke, and robots that ran early.
+- **Re-timing reproduces ordered execution, and moves no robot by itself:** met. The oracle covers
+  over 450 cuts of random fleets. With every plan made at tick 0, `retime` reproduces `wait` exactly.
+- **Without breakdowns, all earlier results reproduce exactly:** met.
+  - 72 runs of the M5 scaling benchmark.
+  - 16 delay runs, identical to the commit before the never-early rule.
+  - The benchmark rows without breakdowns, which match P1.
+- **Cost of breakdowns and the paired effect of each recovery policy:** met.
+
+**Findings:**
+- Without recovery, breakdowns are very expensive, because robots queue behind a broken one. With
+  8 to 15 breakdowns per run, mean completion rises by 95 to 902 s.
+- Re-timing alone recovers 43% to 86% of that cost: new jobs are planned around the broken robot.
+- Replanning recovers 75% to 96% of it, and cuts the worst case by 216 to 4,953 s.
+- With replanning, `cpsat-fair`'s lead over greedy at moderate load falls back to 6 to 57 s.
+
+**What shapes P4:** the engine now has every part of the original scope except the service layer.
+P4 wraps it in an API. Docker needs WSL2, a system install that is the owner's decision.
+
 ## Phase 2 backlog (unordered)
 
 - **From P2:** a CP-SAT schedule of charging slots over a horizon (intervals with charger capacity),
   against the rule-based policies.
+- **From P3:** closed corridors without a robot (a blocked aisle), reusing re-timing and
+  replanning.
+- **From P3:** re-time at every decision, so that plans made under delays stop assuming that late
+  robots are on time (a P1 limitation); and a second replanning pass, so that plans re-timed behind
+  a robot that was then replanned faster are not left pessimistic.
+- **From P3:** give a broken robot's order to another robot when it breaks down on the way to the
+  pickup.
 - **From P2:** make the battery safety argument a proof under traffic. Check each planned itinerary's
   energy against the robot's level, and move low robots only towards a charger.
 

@@ -789,3 +789,117 @@ Every order was delivered in every run.
 - **Battery-blind dispatch.** The policies see when robots out of service will be back, but not battery
   levels. Energy-aware assignment and a CP-SAT charging schedule (backlog) were not tried.
 - One map (5 chargers), 10 robots, 20 seeds, Windows only.
+
+## Breakdowns: re-timing and replanning (Phase 2, P3, 2026-11-06)
+
+**Command:** `.venv\Scripts\python.exe scripts\compare_breakdowns.py` with the defaults: 20 seeds, orders
+released for one hour, 8 worker processes.
+
+**Setup.**
+- The large map with traffic and no delays: 10 robots at 200 orders/h (moderate load) and
+  300 orders/h (high load), as in P1 and P2.
+- Greedy and `cpsat-fair`, each run on the same scenarios:
+  - without breakdowns;
+  - at two breakdown levels, under each recovery policy (D28).
+- **A breakdown** happens when a robot enters a corridor: with probability 0.1% or 0.5% per entry, it
+  stops there for 30 to 180 s. It is announced at once, with its repair time.
+- **The recovery policies:**
+  - `wait`: robots behind the broken robot wait. New jobs are planned as if it had left on time.
+  - `retime`: every plan is re-timed at each breakdown, so new jobs are planned knowing about it.
+  - `replan`: re-timed, then every delayed robot is replanned.
+- **Breakdowns are drawn per robot,** from a stream seeded by the scenario seed, one draw per
+  corridor entry. When routes change, the robots enter different corridors, so the breakdown counts
+  differ slightly between recovery policies.
+
+```text
+Breakdown comparison, 2026-11-06
+Environment: Python 3.13.1, Windows-11-10.0.26200-SP0, ortools 9.15.6755, amr-fleet-optimization-engine 0.0.1 (commit e86e250), 8 worker processes
+Settings: map large, orders released for 3600 s, seeds 0-19, 1 m/s, 0.1 s ticks, 10 s loading and 10 s unloading, traffic on, no delays; a breakdown takes 30 to 180 s to repair
+
+| Robots | Orders/h | Policy | Breakdowns | Recovery | Breakdowns per run | Replans per run | Waiting s | Completion s | Completion P95 s | Completion max s | Conflicts per run | Cost of breakdowns (95% CI) | vs wait (95% CI) | Max: vs wait (95% CI) | vs greedy (95% CI) |
+|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---|---|
+| 10 | 200 | greedy | none | - | 0.0 | 0.0 | 47.8 | 117.5 | 169.9 | 220.2 | 0.0 |  |  |  | baseline |
+| 10 | 200 | greedy | 0.1% of entries | wait | 9.1 | 0.0 | 286.1 | 376.8 | 655.6 | 737.9 | 0.0 | +259.3 s [+166.6, +352.1] |  |  | baseline |
+| 10 | 200 | greedy | 0.1% of entries | retime | 9.2 | 0.0 | 72.8 | 152.7 | 274.1 | 397.2 | 0.0 |  | -224.1 s [-309.7, -138.5] | -340.7 s [-486.6, -194.8] | baseline |
+| 10 | 200 | greedy | 0.1% of entries | replan | 8.7 | 20.4 | 55.0 | 128.2 | 212.6 | 336.5 | 0.0 |  | -248.6 s [-339.6, -157.6] | -401.3 s [-551.1, -251.6] | baseline |
+| 10 | 200 | greedy | 0.5% of entries | wait | 47.4 | 0.0 | 1486.4 | 1614.6 | 3097.2 | 3311.9 | 0.0 | +1497.1 s [+1245.1, +1749.1] |  |  | baseline |
+| 10 | 200 | greedy | 0.5% of entries | retime | 48.6 | 0.0 | 517.3 | 643.3 | 1121.6 | 1292.6 | 0.0 |  | -971.3 s [-1148.6, -794.0] | -2019.3 s [-2317.5, -1721.0] | baseline |
+| 10 | 200 | greedy | 0.5% of entries | replan | 47.5 | 129.8 | 147.8 | 235.7 | 418.1 | 584.9 | 0.0 |  | -1378.9 s [-1607.9, -1149.9] | -2727.0 s [-3100.9, -2353.1] | baseline |
+| 10 | 200 | cpsat-fair | none | - | 0.0 | 0.0 | 43.0 | 112.7 | 155.4 | 198.8 | 0.0 |  |  |  | -4.8 s [-5.9, -3.6] |
+| 10 | 200 | cpsat-fair | 0.1% of entries | wait | 8.4 | 0.0 | 117.4 | 207.6 | 385.9 | 530.2 | 0.0 | +94.9 s [+56.6, +133.1] |  |  | -169.2 s [-242.9, -95.5] |
+| 10 | 200 | cpsat-fair | 0.1% of entries | retime | 8.6 | 0.0 | 58.8 | 138.4 | 250.1 | 355.5 | 0.0 |  | -69.2 s [-103.1, -35.2] | -174.8 s [-238.9, -110.7] | -14.3 s [-22.0, -6.6] |
+| 10 | 200 | cpsat-fair | 0.1% of entries | replan | 8.7 | 14.6 | 49.1 | 121.9 | 189.4 | 314.3 | 0.0 |  | -85.7 s [-122.8, -48.6] | -215.9 s [-284.6, -147.2] | -6.3 s [-9.1, -3.5] |
+| 10 | 200 | cpsat-fair | 0.5% of entries | wait | 41.5 | 0.0 | 674.2 | 813.0 | 1512.8 | 1776.2 | 0.0 | +700.3 s [+548.7, +852.0] |  |  | -801.6 s [-952.8, -650.3] |
+| 10 | 200 | cpsat-fair | 0.5% of entries | retime | 44.8 | 0.0 | 292.5 | 412.7 | 746.0 | 931.2 | 0.0 |  | -400.4 s [-498.2, -302.5] | -845.0 s [-1045.3, -644.6] | -230.6 s [-311.2, -150.1] |
+| 10 | 200 | cpsat-fair | 0.5% of entries | replan | 44.1 | 106.1 | 92.0 | 178.9 | 330.9 | 516.8 | 0.0 |  | -634.1 s [-775.1, -493.1] | -1259.4 s [-1532.1, -986.8] | -56.8 s [-97.9, -15.6] |
+| 10 | 300 | greedy | none | - | 0.0 | 0.0 | 300.9 | 371.7 | 616.1 | 683.5 | 0.0 |  |  |  | baseline |
+| 10 | 300 | greedy | 0.1% of entries | wait | 14.5 | 0.0 | 1179.7 | 1273.5 | 2389.2 | 2585.7 | 0.0 | +901.7 s [+749.7, +1053.8] |  |  | baseline |
+| 10 | 300 | greedy | 0.1% of entries | retime | 14.4 | 0.0 | 594.0 | 678.7 | 1191.4 | 1308.5 | 0.0 |  | -594.8 s [-697.2, -492.3] | -1277.2 s [-1437.3, -1117.2] | baseline |
+| 10 | 300 | greedy | 0.1% of entries | replan | 14.5 | 45.5 | 404.3 | 478.8 | 814.3 | 935.2 | 0.0 |  | -794.7 s [-927.7, -661.7] | -1650.6 s [-1861.9, -1439.2] | baseline |
+| 10 | 300 | greedy | 0.5% of entries | wait | 73.3 | 0.0 | 3266.8 | 3397.5 | 6500.3 | 6847.8 | 0.0 | +3025.8 s [+2755.8, +3295.8] |  |  | baseline |
+| 10 | 300 | greedy | 0.5% of entries | retime | 75.0 | 0.0 | 1653.6 | 1781.9 | 3258.3 | 3494.6 | 0.0 |  | -1615.6 s [-1826.4, -1404.7] | -3353.2 s [-3743.2, -2963.3] | baseline |
+| 10 | 300 | greedy | 0.5% of entries | replan | 74.7 | 234.8 | 854.2 | 942.6 | 1696.7 | 1895.3 | 0.0 |  | -2454.9 s [-2681.8, -2228.0] | -4952.5 s [-5385.7, -4519.3] | baseline |
+| 10 | 300 | cpsat-fair | none | - | 0.0 | 0.0 | 140.9 | 211.9 | 333.9 | 376.1 | 0.0 |  |  |  | -159.9 s [-189.6, -130.2] |
+| 10 | 300 | cpsat-fair | 0.1% of entries | wait | 12.9 | 0.0 | 630.8 | 724.3 | 1243.2 | 1410.3 | 0.0 | +512.5 s [+409.8, +615.2] |  |  | -549.1 s [-650.4, -447.9] |
+| 10 | 300 | cpsat-fair | 0.1% of entries | retime | 13.3 | 0.0 | 340.7 | 423.9 | 700.9 | 805.8 | 0.0 |  | -300.4 s [-376.8, -224.0] | -604.5 s [-753.7, -455.2] | -254.8 s [-295.6, -214.0] |
+| 10 | 300 | cpsat-fair | 0.1% of entries | replan | 13.2 | 34.3 | 217.5 | 292.3 | 476.9 | 596.5 | 0.0 |  | -432.0 s [-519.4, -344.7] | -813.8 s [-968.0, -659.5] | -186.5 s [-217.8, -155.1] |
+| 10 | 300 | cpsat-fair | 0.5% of entries | wait | 63.4 | 0.0 | 1995.7 | 2136.8 | 3993.2 | 4308.5 | 0.0 | +1924.9 s [+1719.6, +2130.2] |  |  | -1260.7 s [-1467.6, -1053.8] |
+| 10 | 300 | cpsat-fair | 0.5% of entries | retime | 67.8 | 0.0 | 1180.4 | 1302.6 | 2372.3 | 2595.3 | 0.0 |  | -834.2 s [-969.7, -698.7] | -1713.1 s [-2001.7, -1424.6] | -479.4 s [-559.4, -399.3] |
+| 10 | 300 | cpsat-fair | 0.5% of entries | replan | 67.2 | 180.2 | 596.8 | 684.7 | 1196.8 | 1407.3 | 0.0 |  | -1452.0 s [-1600.0, -1304.1] | -2901.1 s [-3200.5, -2601.7] | -257.9 s [-283.5, -232.3] |
+
+0 conflicts in 560 runs.
+560 runs in 987.1 s.
+Every order was delivered in every run.
+```
+
+### Reading the results
+
+- **Safe and complete.**
+  - All 560 runs deliver every order, with zero conflicts.
+  - The rows without breakdowns match the P1 rows without delays exactly.
+- **Breakdowns are very expensive without recovery.** Under `wait`, mean completion rises:
+  - with 0.1% of entries (8 to 15 breakdowns per run): by 94.9 s (`cpsat-fair`) and 259.3 s
+    (greedy) at moderate load, and by 512.5 s and 901.7 s at high load;
+  - with 0.5% (42 to 75 per run): by 700.3 s and 1,497.1 s at moderate load, and by 1,924.9 s and
+    3,025.8 s at high load, where the queue grows all hour.
+
+  One broken robot holds its corridor for up to 3 minutes. Every robot planned after it there, and
+  every robot planned after those, waits. Under `wait`, new jobs keep being planned through the
+  broken robot's corridor as if it had left on time, and join the queue.
+- **Re-timing alone recovers a large share** (all intervals exclude zero).
+  - Against `wait`, mean completion falls by 69.2 s (`cpsat-fair`) and 224.1 s (greedy) at 0.1% and
+    moderate load, and by 834.2 s and 1,615.6 s at 0.5% and high load.
+  - Divided by the cost of breakdowns, that is 43% to 86% of it, depending on the configuration
+    (ratios of estimates).
+  - No robot already on its way changes plan under `retime` (13.7). The whole gain comes from new
+    jobs planned around the broken robot instead of behind it.
+- **Replanning recovers most of the cost** (all intervals exclude zero).
+  - Against `wait`, mean completion falls by 85.7 s and 248.6 s at 0.1% and moderate load, and by
+    1,452.0 s and 2,454.9 s at 0.5% and high load.
+  - That is 75% to 96% of the cost of breakdowns (ratios of estimates). At 0.1% and moderate load, the
+    remaining cost is 9 to 11 s (difference of means).
+  - The worst case falls with it, by 215.9 s to 4,952.5 s.
+  - Its lead over `retime` was not tested directly. It is the difference of their estimates against
+    `wait`, from 16.5 s (`cpsat-fair`, 0.1%, moderate load) to 839.3 s (greedy, 0.5%, high load).
+- **Planning matters more when nothing recovers, and less when replanning does.** `cpsat-fair`'s lead
+  over greedy:
+  - under `wait`: from 4.8 s without breakdowns to 169.2 s and 801.6 s at moderate load, and from
+    159.9 s to 549.1 s and 1,260.7 s at high load;
+  - under `replan`: 6.3 s and 56.8 s at moderate load, and 186.5 s and 257.9 s at high load.
+
+  Recovery removes most of what made greedy fall behind.
+
+### What this does not show
+
+- **Breakdowns are announced, with their exact repair time.** A real fleet manager would learn of a
+  breakdown late, with an uncertain repair time. Re-timing would then be based on an estimate.
+- **A broken robot keeps its order.** Its job is not given to another robot, even when it breaks down
+  on the way to the pickup.
+- **Only breakdowns trigger recovery.** Delays (P1) are not announced, so robots that are merely late
+  are not re-timed or replanned until the next breakdown.
+- **The breakdown model is simple.** It uses independent draws per corridor entry and uniform repair
+  times. Breakdowns never happen at a node, or while loading.
+- **Replanning is prioritized.** Robots replan one after another, in the order of their next event.
+  A re-timed plan can stay pessimistic after a robot ahead of it is replanned faster, until the next
+  breakdown (13.7).
+- One map, 10 robots, two loads, 20 seeds, Windows only.

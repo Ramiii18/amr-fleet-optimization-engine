@@ -1456,6 +1456,21 @@ charger after every job: about 200 charging trips per run instead of 11 to 13, a
 600 s worse. The mean completion time did not show it, which is why the benchmarks report the worst
 case too.
 
+**How do you replan robots that are already executing plans, without risking deadlock?**
+Ordered execution is deadlock-free because every plan was made against every other in one clock, and
+every queue follows that clock. Late robots make that clock stale, so replanning in real time can put
+a robot ahead of one that is physically in front of it. So the fleet re-times first:
+- it computes the earliest schedule of every remaining plan from the current state, keeping the order
+  (a longest path in a directed acyclic graph);
+- it rebuilds the reservations from that;
+- then it replans the delayed robots with SIPP against it.
+
+Two things a stress test taught me:
+- robots must never run ahead of their current plan, which plain execution guaranteed for free;
+- a robot that leaves a queue must wake whoever is now first.
+
+Re-timing alone recovered 43% to 86% of the cost of breakdowns, and replanning 75% to 96%.
+
 **Why paired seeds and confidence intervals?**
 Different order streams vary far more than policies do. Running every policy on the same streams and
 comparing per-seed differences removes that variation. The interval shows whether the remaining

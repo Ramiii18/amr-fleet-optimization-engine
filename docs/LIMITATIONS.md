@@ -13,8 +13,7 @@ limits in mind.
   traffic model prevents conflicts at the level of the graph and the schedule, not physical
   collisions.
 - **Not built yet (Phase 2):**
-  - robot faults, blocked aisles and replanning during execution (P1 added random delays and robust
-    execution);
+  - blocked aisles: corridors closed without a robot in them (P3 added breakdowns and replanning);
   - order priorities and deadlines;
   - mutex zones;
   - an API service;
@@ -70,6 +69,28 @@ limits in mind.
     the way. Neither is bounded.
   - An invariant stops the run if a battery would go below zero. It never fired; the lowest level in
     the benchmark was 18.2%.
+
+## Breakdowns and replanning (Phase 2, P3)
+
+- **Announced breakdowns with known repair times.** A breakdown is known the moment it happens, with
+  its exact repair time (D28). A real fleet manager learns late and estimates the repair, so its
+  re-timed plans would be less accurate than here.
+- **A simple breakdown model.** Breakdowns happen only while a robot enters a corridor: independent
+  draws per entry, and uniform repair times of 30 to 180 s. None happens at a node or during loading.
+- **A broken robot keeps its order.** Its job is never reassigned, even when it breaks down on the
+  way to the pickup.
+- **Only breakdowns trigger recovery.** Delays are not announced, so a robot that is merely late is
+  not re-timed or replanned. New plans keep assuming it is on time (P1) until the next breakdown.
+- **Prioritized replanning.** Delayed robots replan one after another, so the order matters.
+  - Each kept plan is better for its own robot, but the fleet as a whole is not optimized.
+  - A plan re-timed behind a robot that is then replanned faster stays pessimistic until the next
+    breakdown.
+- **Distances are as planned.** The empty and loaded distances in the KPIs come from the routes
+  planned at assignment and loading, so a replanned route changes the trajectory but not those
+  distances.
+- **Two bugs that only a stress test found.** Both are fixed and covered by tests (D28). The design
+  argument, one consistent clock and robots never early, is checked by invariants and tests, not
+  proved formally.
 
 ## Dispatch and optimization
 
