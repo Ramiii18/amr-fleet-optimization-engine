@@ -554,7 +554,7 @@ as a protocol:
 1. **Messages and validation.** Done 2026-11-06. Order, state, instant actions and connection messages, the
    topic layout, and the header (ids per topic, timestamps). Tests validate every message against
    the official schemas.
-2. **Orders from plans.** An engine itinerary becomes an order: nodes with positions, edges,
+2. **Orders from plans.** Done 2026-11-06. An engine itinerary becomes an order: nodes with positions, edges,
    `pick` and `drop` actions at the stops. Order updates extend the base from the stitching node.
    Tests check the specification's rules on sequence ids, base and horizon, and updates.
 3. **Mock robots and fleet control.** Mock vehicles drive only their base, run actions for their

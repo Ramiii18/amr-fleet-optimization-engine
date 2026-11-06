@@ -1536,3 +1536,48 @@ CPU-bound planning stall the server, and without letting the web layer leak into
 - **Verification.** CI builds the image on Linux, checks that it runs as an unprivileged user, starts
   it, and checks `/health` and a CP-SAT decision from `/plan`. Locally, the same non-editable install
   in a fresh environment served both requests through spawned workers.
+
+---
+
+## 16. A VDA 5050-shaped interface (`vda5050/`, D30, Phase 2)
+
+**Problem.** Real fleets talk to their robots through an interface such as VDA 5050: fleet control
+sends *orders*, and robots report their *state*. Show how the engine's plans map onto it, and check
+every message against the specification itself.
+
+**The specification, read at the source.** The latest release is version 3.0.0, from March 2026,
+published under the MIT license with JSON schemas. Two of its rules shape everything here:
+- **An order alternates nodes and edges.** The first node has sequence id 0, the first edge 1, and
+  so on. The edge with sequence id n connects nodes n − 1 and n + 1; since 3.0.0, edges no longer
+  name their nodes.
+- **Fleet control releases a prefix of the order: the base.** The robot drives the base and stops at
+  its last node, the decision point. An order update extends the base. It starts at the previous
+  base's last node, the stitching node, with the next order update id.
+
+**Messages (P5.1).**
+- Order, state, instant actions and connection are plain frozen dataclasses with `to_json`, and
+  `from_json` for the messages that are read.
+- Topics follow `interfaceName/majorVersion/manufacturer/serialNumber/topic`. Header ids count per
+  topic, and timestamps are ISO 8601 UTC with milliseconds.
+- **The oracle.** The tests validate every message against the official schemas, vendored with their
+  license. They also reject any field a schema does not define, because the schemas themselves allow
+  unknown fields.
+
+**Orders from plans (P5.2).**
+- **`route_of`** turns an engine itinerary into the route: one node per visit, with its map position
+  and its actions (`pick` at the pickup, `drop` at the drop-off), and one edge per drive, with its
+  length.
+- **`order_message`** releases the route up to a given node: the first order from node 0, an update
+  from the stitching node.
+- **`order_violations` and `update_violations`** check the specification's rules:
+  - one fewer edge than nodes;
+  - continuous sequence ids, with each edge between its nodes;
+  - a released first node, and nothing released after something unreleased;
+  - an edge released only with both its nodes;
+  - an update that continues the same order, from the stitching node, with a higher update id.
+
+**Testing.**
+- **Hand route:** exact ids, sequence ids, positions, lengths, actions and released flags.
+- **Broken rules:** each rule is broken on purpose, and the break is detected.
+- **Generated jobs:** SIPP-planned jobs on the medium map become orders and chains of updates with
+  random base lengths. Every message follows the rules and validates against the schema.
