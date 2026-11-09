@@ -297,6 +297,23 @@ laptop: about 0.8 ms per 30-minute stream (18,000 ticks).
 - Uniform choice of locations: no popularity skew (ABC classes), no waves or peaks over the shift.
 - At most one order per tick. Rates that would need more are rejected rather than silently capped.
 
+**Scenario files (`scenario/io.py`, D32).** Generated scenarios cannot express a particular
+warehouse, fleet or order list. A scenario file can, and it lifts the limits above: any order list,
+put-aways included, waves and peaks, several orders in one tick.
+- **Content.** A map (a preset name, a map file, or a map written inline), each robot's start node,
+  and every order with its release time in seconds. Speed, tick length and handling times are
+  optional, with the defaults of generated scenarios.
+- **Parsing is strict**, as for maps: a missing, unknown or mistyped field raises an error that
+  names its location, such as `orders[3].release_s`. Times are rounded up to ticks (D12). Orders
+  are sorted by release tick; the sort is stable, so orders released together keep the file's
+  order, which is the order dispatch sees them in.
+- **Then the usual validation:** the map's own (section 1), each order's, and the scenario's as a
+  whole (unknown nodes, duplicate ids, robots sharing a node).
+- **Cost:** linear in the file size, plus building the map.
+- **Testing.** Every field's errors, each with its location; maps by preset, relative path,
+  absolute path and inline; rounding and sorting; and every example in `scenarios/examples/` runs
+  under greedy and `cpsat-fair` with traffic, delivering every order without conflicts.
+
 ---
 
 ## 8. Discrete-event simulation (`sim/`)

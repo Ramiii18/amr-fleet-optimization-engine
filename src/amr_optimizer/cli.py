@@ -1,8 +1,9 @@
-"""Command line: generate a scenario, simulate it under one policy, and print the KPIs.
+"""Command line: generate or read a scenario, simulate it under one policy, print the KPIs.
 
-Example (PowerShell, from the repository root):
+Examples (PowerShell, from the repository root):
 
     .venv\\Scripts\\python.exe -m amr_optimizer --map medium --robots 5 --policy hungarian
+    .venv\\Scripts\\python.exe -m amr_optimizer --scenario scenarios\\examples\\morning_wave.json
 """
 
 import argparse
@@ -14,24 +15,36 @@ from dataclasses import asdict
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.domain import BatterySpec, ChargingPolicy
 from amr_optimizer.metrics import ChargingKpis, RunKpis, compute_charging_kpis, compute_kpis
-from amr_optimizer.scenario import ScenarioSpec, generate_scenario
+from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario, load_scenario
 from amr_optimizer.sim import simulate
 from amr_optimizer.traffic import NO_DELAYS, DelayModel, ExecutionPolicy
 from amr_optimizer.warehouse import PRESETS, WarehouseGraph, generate_grid_warehouse, load_graph
+
+# Options that describe a generated scenario, with their defaults. A scenario file replaces them.
+GENERATED = {"map": "medium", "robots": 5, "orders_per_hour": 60.0, "duration_s": 3600.0}
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="amr-sim",
-        description="Simulate a synthetic AMR fleet on a generated scenario and report KPIs.",
+        description="Simulate a synthetic AMR fleet on a generated scenario, or on a scenario "
+        "file with your own map, robots and orders, and report KPIs.",
     )
     parser.add_argument(
-        "--map", default="medium", help=f"a preset ({', '.join(PRESETS)}) or a JSON map file"
+        "--scenario",
+        metavar="FILE",
+        help="a scenario file: map, robots and orders (see scenarios/examples/); it replaces "
+        "--map, --robots, --orders-per-hour and --duration-s",
     )
-    parser.add_argument("--robots", type=int, default=5)
-    parser.add_argument("--orders-per-hour", type=float, default=60.0)
-    parser.add_argument("--duration-s", type=float, default=3600.0, help="order release window")
-    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument(
+        "--map", help=f"a preset ({', '.join(PRESETS)}) or a JSON map file (default medium)"
+    )
+    parser.add_argument("--robots", type=int, help="default 5")
+    parser.add_argument("--orders-per-hour", type=float, help="default 60")
+    parser.add_argument("--duration-s", type=float, help="order release window (default 3600)")
+    parser.add_argument(
+        "--seed", type=int, default=1, help="seeds generated orders, delays and batteries"
+    )
     parser.add_argument("--policy", choices=sorted(POLICIES), default="greedy")
     parser.add_argument(
         "--round-s",
@@ -79,6 +92,36 @@ def _load_map(name: str) -> WarehouseGraph:
     return load_graph(name)
 
 
+def _scenario(args: argparse.Namespace) -> tuple[Scenario, str]:
+    """The scenario to run, and the line that describes it in the report."""
+    given = [name for name in GENERATED if getattr(args, name) is not None]
+    if args.scenario is not None:
+        if given:
+            options = ", ".join("--" + name.replace("_", "-") for name in given)
+            _parser().error(f"--scenario replaces {options}; give one or the other")
+        try:
+            scenario = load_scenario(args.scenario)
+        except (OSError, ValueError) as error:
+            _parser().error(f"--scenario {args.scenario}: {error}")
+        return scenario, (
+            f"Scenario: file {args.scenario} ({len(scenario.graph)} nodes), "
+            f"{len(scenario.robots)} robots, {len(scenario.orders)} orders"
+        )
+    for name, default in GENERATED.items():
+        if getattr(args, name) is None:
+            setattr(args, name, default)
+    spec = ScenarioSpec(
+        robots=args.robots, orders_per_hour=args.orders_per_hour, duration_s=args.duration_s
+    )
+    graph = _load_map(args.map)
+    scenario = generate_scenario(graph, spec, seed=args.seed)
+    return scenario, (
+        f"Scenario: map {args.map} ({len(graph)} nodes), {args.robots} robots, "
+        f"{args.orders_per_hour:g} orders/h for {args.duration_s:g} s, seed {args.seed}: "
+        f"{len(scenario.orders)} orders"
+    )
+
+
 def _report(kpis: RunKpis) -> list[str]:
     return [
         f"  throughput         {kpis.throughput_per_h:8.1f} orders/h",
@@ -112,11 +155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _parser().error("--delay-share, --naive and --charging need --traffic")
     if not 0 <= args.delay_share <= 1:
         _parser().error("--delay-share must be between 0 and 1")
-    spec = ScenarioSpec(
-        robots=args.robots, orders_per_hour=args.orders_per_hour, duration_s=args.duration_s
-    )
-    graph = _load_map(args.map)
-    scenario = generate_scenario(graph, spec, seed=args.seed)
+    scenario, description = _scenario(args)
     interval = scenario.time_model.to_ticks(args.round_s) or None
     low, high = (scenario.time_model.to_ticks(s) for s in args.delay_s)
     if not 1 <= low <= high:
@@ -149,11 +188,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(output, indent=2))
         return 0
     rounds = f"decision rounds every {args.round_s:g} s" if interval else "decides at every event"
-    print(
-        f"Scenario: map {args.map} ({len(graph)} nodes), {args.robots} robots, "
-        f"{args.orders_per_hour:g} orders/h for {args.duration_s:g} s, seed {args.seed}: "
-        f"{kpis.orders} orders"
-    )
+    print(description)
     mode = "with traffic (reservations)" if args.traffic else "free flow (no traffic)"
     if args.delay_share:
         kind = "naive" if args.naive else "ordered"

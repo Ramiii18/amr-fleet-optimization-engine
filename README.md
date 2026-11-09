@@ -108,6 +108,28 @@ py -3.13 -m venv .venv
 .venv\Scripts\amr-api.exe          # the HTTP service; API docs at http://127.0.0.1:8000/docs
 ```
 
+## Your own scenarios
+
+A scenario file gives the engine your own map, robots and orders. The
+[example](scenarios/examples/morning_wave.json) has three robots on the small map, a wave of eight
+orders at the start, then one every 20 s:
+
+```json
+{"format": "amr-scenario", "version": 1, "map": "small",
+ "robots": [{"id": "R1", "node": "PK00"}, {"id": "R2", "node": "PK01"}, ...],
+ "orders": [{"id": "O01", "pickup": "S00-01", "dropoff": "ST00", "release_s": 0}, ...]}
+```
+
+```powershell
+.venv\Scripts\amr-sim.exe --scenario scenarios\examples\morning_wave.json --policy cpsat-fair --traffic
+```
+
+- `map` is a preset name, the path of a map file (relative to the scenario file), or a map
+  written inline in the [map format](src/amr_optimizer/warehouse/io.py).
+- `tick_s`, `speed_mps`, `load_s`, `unload_s` and `description` are optional. Times are in seconds.
+- Every other option (policy, traffic, delays, charging, `--json`) works as for generated
+  scenarios. The format and its rules are in [D32](docs/DECISIONS.md).
+
 ## The service
 
 `amr-api` serves the engine over HTTP (FastAPI, [D29](docs/DECISIONS.md)). Interactive documentation is

@@ -666,3 +666,29 @@ local pass predicts a CI pass.
 - **One more limitation.** A rotation assumes every robot of the cycle actually leaves when released,
   which the mock robots do. A real robot that does not would need a safety mechanism outside this
   adapter.
+
+## D32: Scenario files: a strict JSON format, with the map given by preset name, path or inline
+**Status:** Accepted (2026-11-09)
+**Why:**
+- **Users need their own inputs.** Generated scenarios answer "what if the load were X?". A real
+  question names its own layout, fleet and orders, and until now that needed Python code.
+- **The same approach as map files.** A hand-written strict parser rejects missing, unknown and
+  mistyped fields, and names where they are (`orders[3].release_s`). Pydantic is allowed at
+  boundaries (D3), but it is installed only with the `api` extra, and `amr-sim` must work with the
+  base install.
+- **Seconds in the file, ticks inside (D6).** Release, loading and unloading times are written in
+  seconds and rounded up to ticks, so nothing happens earlier than the file says (D12).
+- **The map three ways.** A preset name keeps small files small; a path, relative to the scenario
+  file, reuses a map file; an inline map makes one self-contained file.
+- **Orders in any order.** They are sorted stably by release tick, because `Scenario` requires
+  release order. Orders released together keep the file's order.
+- **One source of options.** `--scenario` replaces `--map`, `--robots`, `--orders-per-hour` and
+  `--duration-s`. Giving both is a usage error, not a silent precedence rule. `--seed` still seeds
+  delays and batteries.
+
+**Consequences:**
+- Every file in `scenarios/examples/` is run by the tests under greedy and `cpsat-fair` with
+  traffic, so the examples cannot silently stop working.
+- Robots start idle at tick 0, as in generated scenarios. Orders have no priorities or deadlines
+  (backlog), and there is no field for batteries, delays or breakdowns: those stay command-line
+  options.

@@ -9,6 +9,7 @@ from amr_optimizer.cli import main
 from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse, save_graph
 
 SMALL_RUN = ["--map", "small", "--robots", "2", "--duration-s", "600", "--seed", "3"]
+EXAMPLE = Path(__file__).resolve().parents[2] / "scenarios" / "examples" / "morning_wave.json"
 
 
 def test_prints_a_kpi_report(capsys: pytest.CaptureFixture[str]) -> None:
@@ -102,3 +103,44 @@ def test_batteries_can_be_switched_on_with_traffic(capsys: pytest.CaptureFixture
     assert main([*run, "--json"]) == 0
     charging = json.loads(capsys.readouterr().out)["charging"]
     assert 0 < charging["lowest_energy_share"] <= 1
+
+
+def test_a_scenario_file_can_be_run(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--scenario", str(EXAMPLE), "--traffic", "--policy", "cpsat-fair"]) == 0
+
+    out = capsys.readouterr().out
+    assert f"Scenario: file {EXAMPLE} (45 nodes), 3 robots, 16 orders" in out
+    assert "Delivered 16 of 16 orders" in out
+    assert "conflicts                 0" in out
+
+
+def test_a_scenario_file_replaces_the_generator_options(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--scenario", str(EXAMPLE), "--robots", "3", "--map", "small"])
+
+    assert exit_info.value.code == 2
+    assert "--scenario replaces --map, --robots" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (None, "No such file"),
+        ("not json", "not valid JSON"),
+        ('{"format": "amr-scenario"}', "missing field"),
+    ],
+)
+def test_an_unreadable_scenario_file_is_a_usage_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], content: str | None, message: str
+) -> None:
+    path = tmp_path / "scenario.json"
+    if content is not None:
+        path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--scenario", str(path)])
+
+    assert exit_info.value.code == 2
+    assert message in capsys.readouterr().err

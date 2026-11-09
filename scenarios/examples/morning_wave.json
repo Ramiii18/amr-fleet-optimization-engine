@@ -1,0 +1,33 @@
+{
+  "format": "amr-scenario",
+  "version": 1,
+  "description": "Small map: three robots, a wave of eight orders at the start of the shift, then one order every 20 s.",
+  "map": "small",
+  "tick_s": 0.1,
+  "speed_mps": 1.0,
+  "load_s": 10,
+  "unload_s": 10,
+  "robots": [
+    {"id": "R1", "node": "PK00"},
+    {"id": "R2", "node": "PK01"},
+    {"id": "R3", "node": "CH00"}
+  ],
+  "orders": [
+    {"id": "O01", "pickup": "S00-01", "dropoff": "ST00", "release_s": 0},
+    {"id": "O02", "pickup": "S01-03", "dropoff": "ST01", "release_s": 0},
+    {"id": "O03", "pickup": "S02-02", "dropoff": "ST00", "release_s": 0},
+    {"id": "O04", "pickup": "S03-04", "dropoff": "ST01", "release_s": 0},
+    {"id": "O05", "pickup": "S00-04", "dropoff": "ST00", "release_s": 0},
+    {"id": "O06", "pickup": "S01-01", "dropoff": "ST01", "release_s": 0},
+    {"id": "O07", "pickup": "S02-04", "dropoff": "ST00", "release_s": 0},
+    {"id": "O08", "pickup": "S03-02", "dropoff": "ST01", "release_s": 0},
+    {"id": "O09", "pickup": "S00-02", "dropoff": "ST00", "release_s": 20},
+    {"id": "O10", "pickup": "S01-04", "dropoff": "ST01", "release_s": 40},
+    {"id": "O11", "pickup": "S02-01", "dropoff": "ST00", "release_s": 60},
+    {"id": "O12", "pickup": "S03-03", "dropoff": "ST01", "release_s": 80},
+    {"id": "O13", "pickup": "S00-03", "dropoff": "ST00", "release_s": 100},
+    {"id": "O14", "pickup": "S01-02", "dropoff": "ST01", "release_s": 120},
+    {"id": "O15", "pickup": "S02-03", "dropoff": "ST00", "release_s": 140},
+    {"id": "O16", "pickup": "S03-01", "dropoff": "ST01", "release_s": 160}
+  ]
+}
