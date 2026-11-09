@@ -8,13 +8,16 @@ from amr_optimizer.metrics.kpis import (
     compute_kpis,
     percentile,
 )
+from amr_optimizer.metrics.timeline import OrderTimeline, order_timelines
 
 __all__ = [
     "ChargingKpis",
+    "OrderTimeline",
     "PairedDifference",
     "RunKpis",
     "compute_charging_kpis",
     "compute_kpis",
+    "order_timelines",
     "paired_difference",
     "percentile",
 ]

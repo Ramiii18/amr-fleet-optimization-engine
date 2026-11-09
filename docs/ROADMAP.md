@@ -597,6 +597,18 @@ cycles as one rotation, and a stalled run raises an error. The ring case is a re
 **Finding:** ordered execution maps directly onto the specification's base and horizon. The cost of
 the only difference, where robots wait, was measured.
 
+## After Phase 2: scenario files and per-order timelines (2026-11-09, on request)
+
+- `amr-sim --scenario FILE` runs a scenario file: your own map, robots and orders (D32). An example
+  is in `scenarios/examples/`.
+- `amr-sim --timeline FILE` writes one CSV row per order, with the KPI definitions.
+- **Acceptance:** met.
+  - Every example runs under greedy and `cpsat-fair` with traffic, delivering every order without
+    conflicts.
+  - The timeline matches the hand-computed run step for step. On generated runs with traffic, its
+    means and sums equal the KPIs.
+  - A malformed file is rejected with the location of the problem.
+
 ## Phase 2 backlog (unordered)
 
 - **From P2:** a CP-SAT schedule of charging slots over a horizon (intervals with charger capacity),

@@ -500,6 +500,21 @@ greedy one.
 - The nearest-rank percentile is checked on known ranks.
 - The command line is tested end to end, including JSON output, map files and argument errors.
 
+**Per-order timeline (`metrics/timeline.py`).** KPIs summarise a run; a timeline shows each order:
+which robot took it, and when it was released, assigned, reached, loaded, brought to its drop-off
+and delivered, with its waiting and completion times and its empty and loaded distances.
+`amr-sim --timeline FILE` writes it as CSV, one row per order in release order.
+- **The KPI definitions, exactly.** Each step is the order's first log entry of that kind.
+  Waiting and completion are tick differences converted once, as in `compute_kpis`, so the mean of
+  the delivered rows' completion times is the completion KPI, and the distances add up to the
+  distance KPIs.
+- **Steps that did not happen are empty**, for example an order still waiting when the run ended,
+  so an unfinished order is visible instead of missing.
+- **Cost:** one pass over the event log.
+- **Testing.** Two queued orders on the three-node line, every step checked against the hand
+  timeline; undelivered and cut-off orders; and on generated runs with traffic, the rows' means
+  and sums against the KPIs.
+
 ---
 
 ## 11. Bounded-horizon planning (`dispatch/horizon.py`, M3)

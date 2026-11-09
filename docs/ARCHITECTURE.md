@@ -45,6 +45,7 @@ src/amr_optimizer/
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile;
                              compute_charging_kpis for runs with batteries (Phase 2)
                compare.py    paired_difference: per-seed differences with a t confidence interval
+               timeline.py   order_timelines: each order's steps, times and distances (CSV in the CLI)
   api/         models.py     Pydantic request and response models: the only place Pydantic is used
                work.py       CPU-bound work for worker processes: requests -> engine types -> results
                app.py        FastAPI app: health, maps, policies, /plan; a process pool per app

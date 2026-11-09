@@ -7,14 +7,24 @@ Examples (PowerShell, from the repository root):
 """
 
 import argparse
+import csv
 import json
+import sys
 import time
 from collections.abc import Sequence
-from dataclasses import asdict
+from dataclasses import asdict, astuple
+from pathlib import Path
 
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.domain import BatterySpec, ChargingPolicy
-from amr_optimizer.metrics import ChargingKpis, RunKpis, compute_charging_kpis, compute_kpis
+from amr_optimizer.metrics import (
+    ChargingKpis,
+    OrderTimeline,
+    RunKpis,
+    compute_charging_kpis,
+    compute_kpis,
+    order_timelines,
+)
 from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario, load_scenario
 from amr_optimizer.sim import simulate
 from amr_optimizer.traffic import NO_DELAYS, DelayModel, ExecutionPolicy
@@ -22,6 +32,24 @@ from amr_optimizer.warehouse import PRESETS, WarehouseGraph, generate_grid_wareh
 
 # Options that describe a generated scenario, with their defaults. A scenario file replaces them.
 GENERATED = {"map": "medium", "robots": 5, "orders_per_hour": 60.0, "duration_s": 3600.0}
+
+# Columns of the --timeline CSV: the fields of `OrderTimeline`, in order.
+TIMELINE_COLUMNS = (
+    "order",
+    "robot",
+    "pickup",
+    "dropoff",
+    "released_s",
+    "assigned_s",
+    "pickup_reached_s",
+    "loaded_s",
+    "dropoff_reached_s",
+    "delivered_s",
+    "waiting_s",
+    "completion_s",
+    "empty_m",
+    "loaded_m",
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -83,7 +111,25 @@ def _parser() -> argparse.ArgumentParser:
         "by this policy (D27); default is no battery model",
     )
     parser.add_argument("--json", action="store_true", help="print the KPIs as JSON")
+    parser.add_argument(
+        "--timeline",
+        metavar="CSV",
+        help="also write one row per order: its robot, the time of each step, waiting and "
+        "completion times, and distances (empty cells for steps that did not happen)",
+    )
     return parser
+
+
+def _write_timeline(rows: Sequence[OrderTimeline], path: Path) -> None:
+    def cell(value: object) -> object:
+        if value is None:
+            return ""
+        return round(value, 4) if isinstance(value, float) else value  # no float noise
+
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file, lineterminator="\n")
+        writer.writerow(TIMELINE_COLUMNS)
+        writer.writerows([cell(value) for value in astuple(row)] for row in rows)
 
 
 def _load_map(name: str) -> WarehouseGraph:
@@ -155,6 +201,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         _parser().error("--delay-share, --naive and --charging need --traffic")
     if not 0 <= args.delay_share <= 1:
         _parser().error("--delay-share must be between 0 and 1")
+    timeline = Path(args.timeline) if args.timeline else None
+    if timeline is not None and not timeline.parent.is_dir():
+        _parser().error(f"--timeline: folder {timeline.parent} does not exist")
     scenario, description = _scenario(args)
     interval = scenario.time_model.to_ticks(args.round_s) or None
     low, high = (scenario.time_model.to_ticks(s) for s in args.delay_s)
@@ -180,6 +229,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     elapsed = time.perf_counter() - started
     kpis = compute_kpis(result)
     charging_kpis = compute_charging_kpis(result) if result.battery else None
+    if timeline is not None:
+        try:
+            _write_timeline(order_timelines(result), timeline)
+        except OSError as error:
+            print(f"amr-sim: cannot write the timeline: {error}", file=sys.stderr)
+            return 1
 
     if args.json:
         output = asdict(kpis) | {"empty_share": kpis.empty_share}
@@ -205,4 +260,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("\n".join(_report(kpis)))
     if charging_kpis is not None:
         print("\n".join(_charging_report(charging_kpis)))
+    if timeline is not None:
+        print(f"Timeline: {kpis.orders} orders written to {timeline}")
     return 0

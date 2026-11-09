@@ -130,6 +130,15 @@ orders at the start, then one every 20 s:
 - Every other option (policy, traffic, delays, charging, `--json`) works as for generated
   scenarios. The format and its rules are in [D32](docs/DECISIONS.md).
 
+`--timeline out.csv` also writes one row per order, for scenario files and generated scenarios
+alike: its robot, the time of each step, its waiting and completion times, and its distances.
+
+```text
+order,robot,pickup,dropoff,released_s,assigned_s,pickup_reached_s,loaded_s,dropoff_reached_s,delivered_s,waiting_s,completion_s,empty_m,loaded_m
+O01,R3,S00-01,ST00,0.0,104.0,106.0,116.0,144.0,154.0,106.0,154.0,2.0,28.0
+O02,R3,S01-03,ST01,0.0,0.0,6.0,16.0,32.0,42.0,6.0,42.0,6.0,16.0
+```
+
 ## The service
 
 `amr-api` serves the engine over HTTP (FastAPI, [D29](docs/DECISIONS.md)). Interactive documentation is

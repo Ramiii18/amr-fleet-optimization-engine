@@ -1,11 +1,13 @@
 """Tests for the command-line runner."""
 
+import csv
 import json
+import statistics
 from pathlib import Path
 
 import pytest
 
-from amr_optimizer.cli import main
+from amr_optimizer.cli import TIMELINE_COLUMNS, main
 from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse, save_graph
 
 SMALL_RUN = ["--map", "small", "--robots", "2", "--duration-s", "600", "--seed", "3"]
@@ -144,3 +146,31 @@ def test_an_unreadable_scenario_file_is_a_usage_error(
 
     assert exit_info.value.code == 2
     assert message in capsys.readouterr().err
+
+
+def test_a_timeline_has_one_row_per_order_and_matches_the_kpis(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "timeline.csv"
+    run = ["--scenario", str(EXAMPLE), "--traffic", "--timeline", str(path)]
+
+    assert main([*run, "--json"]) == 0
+    kpis = json.loads(capsys.readouterr().out)  # stdout stays pure JSON
+
+    with path.open(newline="", encoding="utf-8") as file:
+        rows = list(csv.DictReader(file))
+    assert list(rows[0]) == list(TIMELINE_COLUMNS)
+    assert [row["order"] for row in rows] == [f"O{k:02d}" for k in range(1, 17)]
+    assert all(row["robot"] in {"R1", "R2", "R3"} and row["delivered_s"] for row in rows)
+    completion = statistics.fmean(float(row["completion_s"]) for row in rows)
+    assert completion == pytest.approx(kpis["completion_mean_s"], abs=1e-3)
+
+    assert main(run) == 0
+    assert f"Timeline: 16 orders written to {path}" in capsys.readouterr().out
+
+
+def test_a_timeline_in_a_missing_folder_is_a_usage_error(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main([*SMALL_RUN, "--timeline", str(tmp_path / "missing" / "timeline.csv")])
+
+    assert exit_info.value.code == 2
