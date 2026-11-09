@@ -22,8 +22,9 @@ interact: they pass through each other. **With traffic** (``traffic=True``, M4),
 is planned as one timed itinerary against the reservations of all other robots (D23, D24):
 robots wait where needed, never share a node or corridor, and after each delivery drive to a
 free holding spot. Orders whose pickup is reserved by another robot are hidden from the
-policy until it is free, and an idle robot standing on an assigned order's pickup is first
-moved out of the way. Both modes record every robot's trajectory, so conflicts can be counted.
+policy until it is free, and an idle robot standing on an assigned order's pickup or drop-off
+is first moved out of the way. Both modes record every robot's trajectory, so conflicts can be
+counted.
 
 **Execution with traffic** (Phase 2, D25). Robots move edge by edge: an event when a robot
 leaves a node, and one when it reaches the end of a corridor. With ``delays``, a drive can take
@@ -678,11 +679,14 @@ class _Simulation:
     def _execute_with_traffic(self, assignments: Sequence[Assignment]) -> None:
         """Plan the decision's jobs one by one, each against all earlier reservations.
 
-        A robot's job is planned after the robot standing on its pickup has left: if that
-        robot is assigned too, its own job is planned first; otherwise it is moved out of the
-        way. Two robots standing on each other's pickups form a cycle. The cycle is broken by
-        postponing one assignment: that robot is moved out of the way, and its order stays
-        pending for a later decision.
+        A robot's job is planned after the robots standing on its pickup and its drop-off have
+        left: if such a robot is assigned too, its own job is planned first; otherwise it is
+        moved out of the way. Two robots standing on each other's stops form a cycle. The cycle
+        is broken by postponing one assignment: that robot is moved out of the way, and its
+        order stays pending for a later decision.
+
+        Holding spots avoid the pickups and drop-offs of all pending orders, so that no robot
+        parks where a waiting order must go.
         """
         assert self.traffic is not None
         traffic = self.traffic
@@ -690,26 +694,30 @@ class _Simulation:
         planned: set[RobotId] = set()
         postponed: set[RobotId] = set()
         visiting: set[RobotId] = set()
-        pickups = frozenset(order.pickup for order in self.pending.values())
+        avoid = frozenset(
+            node for order in self.pending.values() for node in (order.pickup, order.dropoff)
+        )
 
         def execute(assignment: Assignment) -> None:
             robot_id = assignment.robot_id
             if robot_id in planned or robot_id in postponed:
                 return
             visiting.add(robot_id)
-            pickup = self.pending[assignment.order_id].pickup
-            other = traffic.idle_holder(pickup, self.robots)
-            if other is not None and other != robot_id:
+            order = self.pending[assignment.order_id]
+            for stop in (order.pickup, order.dropoff):
+                other = traffic.idle_holder(stop, self.robots)
+                if other is None or other == robot_id:
+                    continue
                 if other in assigned and other not in planned and other not in postponed:
                     if other in visiting:
                         postponed.add(other)  # a cycle: the other robot gives way
                     else:
                         execute(assigned[other])
                 if self.robots[other].is_idle:
-                    self._move_out_of_the_way(other, pickups)
+                    self._move_out_of_the_way(other, avoid)
             visiting.discard(robot_id)
             if robot_id not in postponed:
-                self._start_job(assignment, pickups)
+                self._start_job(assignment, avoid)
                 planned.add(robot_id)
 
         for assignment in assignments:

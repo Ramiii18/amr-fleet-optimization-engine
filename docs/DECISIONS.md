@@ -400,6 +400,13 @@ local pass predicts a CI pass.
 - Added in M4.3: two idle robots assigned each other's spots would each wait for the other to be
   planned first. The simulator breaks such a cycle by postponing one assignment and moving that robot
   out of the way, and it counts these postponements.
+- **Amended (2026-11-09): drop-offs are treated like pickups.** A robot may park on a storage
+  location that a put-away later needs as its drop-off. The rule above covered only pickups, because
+  generated orders always end at a station, where no robot parks. Scenario files (D32) allow any
+  drop-off, and such runs stopped with a planning error. Now an idle robot on an assigned order's
+  drop-off is moved out of the way, an order whose drop-off is held by a robot still on its way
+  there is hidden until it arrives, and holding spots avoid pending drop-offs too. Runs with only
+  retrievals are unchanged, and reproduce exactly.
 
 ## D25: Plans are executed in the planned order of robots at every node and corridor; a delayed robot's followers wait, at the end of their corridor if needed
 **Status:** Accepted (2026-11-05)

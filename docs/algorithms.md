@@ -891,10 +891,18 @@ expanding 156 states on average.
 - **What the policy sees.** An order whose pickup is reserved by a robot that is not idle there is
   hidden until the reservation ends. A wake-up event at that tick lets the policy decide at once.
   Among orders sharing a pickup, only the oldest is offered, so one decision never sends two robots to
-  one pickup.
-- **Moving out of the way.** When a robot is assigned an order whose pickup holds another idle robot,
-  that robot is first moved to a free holding spot, and the assigned robot is planned after it. If the
-  idle robot is assigned too, its own job is planned first.
+  one pickup. An order whose drop-off is held by a robot still driving there to park is hidden until
+  that robot arrives, which is itself an event.
+- **Moving out of the way.** When a robot is assigned an order whose pickup or drop-off holds another
+  idle robot, that robot is first moved to a free holding spot, and the assigned robot is planned
+  after it. If the idle robot is assigned too, its own job is planned first. Holding spots avoid the
+  pickups and drop-offs of all pending orders.
+- **Drop-offs, added after M4 (D24, amended).** Generated orders always end at a station, where no
+  robot ever parks, so only pickups needed this rule. Put-aways and moves between storage locations,
+  possible since scenario files (D32), end where a robot may be parked: such a run used to stop with a
+  planning error. In a stress test of mixed orders, 66 of 108 runs failed before the fix and none of
+  360 after it. Retrieval-only runs are unchanged: 72 scaling runs and 56 breakdown runs reproduced
+  the committed results exactly.
 - **Cycles.** Two idle robots may each be assigned the order on the other's spot. Neither can be
   planned first, because each goal is held by the other. The cycle is broken by postponing one
   assignment. That robot moves out of the way, and its order stays pending for a later decision. The

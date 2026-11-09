@@ -3,14 +3,16 @@
 The simulator asks this controller three things:
 
 - **Which pending orders can be assigned now** (`visible_orders`). An order whose pickup is
-  reserved by a robot that is not idle there is hidden until that reservation ends. Among
-  orders that share a pickup, only the oldest is offered, so one decision never sends two
-  robots to the same pickup.
+  reserved by a robot that is not idle there is hidden until that reservation ends. An order
+  whose drop-off is held by a robot still on its way there is hidden until that robot arrives.
+  Among orders that share a pickup, only the oldest is offered, so one decision never sends
+  two robots to the same pickup.
 - **Plan a job** (`plan_job`). The whole itinerary is planned at once with SIPP: drive to the
   pickup and load, drive to the drop-off and unload, then drive to a free holding spot nearby
   and hold it. It is reserved against every robot planned before.
 - **Move an idle robot out of the way** (`plan_move`), to a free holding spot, when another
-  robot is assigned the order whose pickup it stands on.
+  robot is assigned an order whose pickup or drop-off it stands on. Drop-offs matter for
+  put-away orders, which end at a storage location where a robot may be parked.
 
 Holding spots are endpoints (storage, chargers, parking), never stations, that nobody holds or
 plans to visit. Endpoints are dead-end spurs on every generated map, so no plan ever has to pass
@@ -103,7 +105,9 @@ class TrafficControl:
             if order.pickup in seen:
                 continue
             seen.add(order.pickup)
-            if self._pickup_available(order.pickup, robots, now):
+            if self._pickup_available(order.pickup, robots, now) and self._dropoff_available(
+                order.dropoff, robots
+            ):
                 offered.append(order)
         return tuple(offered)
 
@@ -121,6 +125,16 @@ class TrafficControl:
             for r in self.table.node_reservations(pickup)
             if r.end >= now
         )
+
+    def _dropoff_available(self, dropoff: NodeId, robots: Mapping[RobotId, RobotState]) -> bool:
+        """Not held, or held by an idle robot that can be moved away.
+
+        Only a hold blocks a drop-off for good: SIPP plans around reservations that end, such
+        as robots unloading at a station. A robot still driving to hold the drop-off cannot be
+        moved yet; its arrival is an event, so the order is offered again then.
+        """
+        holder = self.table.holder(dropoff)
+        return holder is None or robots[holder].is_idle
 
     # --- planning --------------------------------------------------------------------------------
 

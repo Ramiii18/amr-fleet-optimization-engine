@@ -12,12 +12,13 @@ At 1 m/s and 0.1 s ticks, a spur takes 10 ticks and the corridor 20. Loading and
 take 5 ticks each.
 """
 
+import random
 from collections import defaultdict
 from collections.abc import Sequence
 
 import pytest
 
-from amr_optimizer.dispatch import GreedyDispatch, InsertionDispatch, Objective
+from amr_optimizer.dispatch import POLICIES, GreedyDispatch, InsertionDispatch, Objective
 from amr_optimizer.domain import (
     OrderId,
     RobotId,
@@ -217,6 +218,34 @@ def test_an_idle_robot_on_an_assigned_pickup_moves_out_of_the_way() -> None:
     assert _conflicts(result) == []
 
 
+def test_an_idle_robot_on_an_assigned_drop_off_moves_out_of_the_way() -> None:
+    # A put-away: O1 goes from station S2 to storage A, where R1 stands idle. R2 is given O1.
+    # R1 first moves to the nearest free endpoint, P1 (S1 is a station, A and S2 are stops of
+    # a pending order, P2 is held by R2). Then R2 is planned: P2, E at 10, S2 loading during
+    # [20, 25], E at 35, W at 55, A unloading during [65, 70], then to a free holding spot:
+    # B and P2 are both 40 ticks from A, and the tie goes to B. Without the move, R1's hold
+    # on A would make R2's job impossible to plan (TrafficPlanningError).
+    scenario = _scenario({R1: A, R2: P2}, [TransportOrder(O1, S2, A, 0)])
+
+    result = simulate(scenario, FirstThenGreedy([Assignment(R2, O1)]), traffic=True)
+
+    assert result.moves_out_of_the_way == 1 and result.deferred_assignments == 0
+    assert result.trajectories[R1] == _path((A, 0, 0), (W, 10, 10), (P1, 20, 110))
+    assert result.trajectories[R2] == _path(
+        (P2, 0, 0),
+        (E, 10, 10),
+        (S2, 20, 25),
+        (E, 35, 35),
+        (W, 55, 55),
+        (A, 65, 70),
+        (W, 80, 80),
+        (E, 100, 100),
+        (B, 110, 110),
+    )
+    assert _delivered(result) == {O1: 70}
+    assert _conflicts(result) == []
+
+
 def test_two_robots_on_each_others_pickups_are_untangled() -> None:
     # R1 stands on A and is given O1 (pickup B); R2 stands on B and is given O2 (pickup A).
     # Each would have to wait for the other to leave first. One assignment is postponed and
@@ -300,3 +329,54 @@ def test_free_flow_trajectories_agree_with_the_log(map_name: str) -> None:
     for entry in result.log:
         if entry.robot_id is not None:
             assert _position(result.trajectories[entry.robot_id], entry.tick) == entry.node
+
+
+def _mixed_orders(graph: WarehouseGraph, robots: int, count: int, seed: int) -> Scenario:
+    """Retrievals (storage to station), put-aways (station to storage) and moves between storage
+    locations, with robots starting on random endpoints: what scenario files allow (D32)."""
+    rng = random.Random(seed)
+    storage = [n.id for n in graph.nodes_of_kind(NodeKind.STORAGE)]
+    stations = [n.id for n in graph.nodes_of_kind(NodeKind.STATION)]
+    homes = [
+        n.id
+        for kind in (NodeKind.PARKING, NodeKind.CHARGER, NodeKind.STORAGE)
+        for n in graph.nodes_of_kind(kind)
+    ]
+    orders, tick = [], 0
+    for k in range(count):
+        kind = rng.choice(["retrieval", "put-away", "move"])
+        if kind == "retrieval":
+            pickup, dropoff = rng.choice(storage), rng.choice(stations)
+        elif kind == "put-away":
+            pickup, dropoff = rng.choice(stations), rng.choice(storage)
+        else:
+            pickup, dropoff = rng.sample(storage, 2)
+        tick += rng.choice([0, 0, 50, 100, 200])
+        orders.append(TransportOrder(OrderId(f"O{k}"), pickup, dropoff, tick))
+    return Scenario(
+        graph=graph,
+        time_model=TimeModel(0.1),
+        speed_mps=1.0,
+        load_ticks=100,
+        unload_ticks=100,
+        robots=tuple(
+            RobotState.idle(RobotId(f"R{i}"), node)
+            for i, node in enumerate(rng.sample(homes, robots))
+        ),
+        orders=tuple(orders),
+    )
+
+
+@pytest.mark.parametrize("robots", [2, 4])
+@pytest.mark.parametrize("seed", range(3))
+def test_put_aways_and_moves_between_storage_locations_complete_without_conflicts(
+    robots: int, seed: int
+) -> None:
+    # Drop-offs on storage locations can be holding spots, so robots park on them. Before
+    # drop-offs were treated like pickups, most of these runs stopped with a planning error.
+    scenario = _mixed_orders(MAPS["small"], robots, 30, seed)
+
+    for policy in ("greedy", "cpsat-fair"):
+        result = simulate(scenario, POLICIES[policy](), traffic=True)
+        assert result.all_delivered
+        assert _conflicts(result) == []

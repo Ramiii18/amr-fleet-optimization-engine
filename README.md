@@ -83,10 +83,11 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
 - **The specification as oracle.** Every VDA 5050 message is validated against the specification's
   official JSON schemas, not against this project's own types.
 - **Stress runs and review as bug finders.** Bugs that stress runs, larger demos and an external
-  review found are kept as regression tests, each shown to fail without its fix. There are six so
+  review found are kept as regression tests, each shown to fail without its fix. There are seven so
   far, all documented in the decisions and the algorithms guide:
   - two in replanning;
-  - four in the VDA 5050 fleet control, among them a deadlock.
+  - four in the VDA 5050 fleet control, among them a deadlock;
+  - one in traffic control: put-away orders ending where a robot was parked.
 - **Reproducibility.** Every run is deterministic, a pinned scenario is checked on Windows and Linux
   in CI, and earlier benchmark tables reproduce exactly after later changes.
 - **Checks on every commit:** over 1,500 tests, ruff, and mypy in strict mode, and a Docker build in CI.
