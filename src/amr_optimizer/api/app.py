@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from amr_optimizer.api import work
 from amr_optimizer.api.models import (
     TICK_S,
+    EdgeOut,
     Health,
     Job,
     JobStatus,
@@ -129,7 +130,10 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"unknown map {name!r}")
         graph = work.preset_graph(name)
         nodes = [NodeOut(id=n.id, x=n.x, y=n.y, kind=n.kind.value) for n in graph.nodes]
-        return MapDetail(name=name, nodes=nodes)
+        edges = [
+            EdgeOut(source=e.source, target=e.target, length_m=e.length_m) for e in graph.edges
+        ]
+        return MapDetail(name=name, nodes=nodes, edges=edges)
 
     @app.get("/policies")
     async def policies() -> list[str]:

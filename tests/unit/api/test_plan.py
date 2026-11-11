@@ -19,6 +19,7 @@ from amr_optimizer.domain import RobotId, RobotState, TimeModel, TravelTimes
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import DispatchSnapshot, TravelPlanner
 from amr_optimizer.warehouse import PRESETS, NodeId, generate_grid_warehouse
+from amr_optimizer.warehouse.io import graph_from_dict, graph_to_dict
 
 GRAPH = generate_grid_warehouse(PRESETS["large"])
 
@@ -51,6 +52,25 @@ def test_a_map_lists_its_nodes_and_an_unknown_map_is_not_found(client: TestClien
     assert len(nodes) == len(GRAPH)
     assert {n["kind"] for n in nodes} == {k.kind.value for k in GRAPH.nodes}
     assert client.get("/maps/nowhere").status_code == 404
+
+
+@pytest.mark.parametrize("name", sorted(PRESETS))
+def test_a_map_has_every_directed_edge_in_the_map_file_format(
+    client: TestClient, name: str
+) -> None:
+    body = client.get(f"/maps/{name}").json()
+    graph = generate_grid_warehouse(PRESETS[name])
+
+    assert set(body) == {"name", "nodes", "edges"}
+    # Nodes and edges are those of the map file format, in the same order: the answer can be
+    # read back as the same graph.
+    as_file = graph_to_dict(graph)
+    assert body["nodes"] == as_file["nodes"] and body["edges"] == as_file["edges"]
+    rebuilt = graph_from_dict(as_file | {"nodes": body["nodes"], "edges": body["edges"]})
+    assert (rebuilt.nodes, rebuilt.edges) == (graph.nodes, graph.edges)
+    # One-way aisles exist: some edge has no edge back.
+    pairs = {(e["source"], e["target"]) for e in body["edges"]}
+    assert any((target, source) not in pairs for source, target in pairs)
 
 
 def test_policies_are_the_registered_ones(client: TestClient) -> None:

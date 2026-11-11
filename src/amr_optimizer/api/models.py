@@ -118,9 +118,21 @@ class NodeOut(_Model):
     kind: str
 
 
+class EdgeOut(_Model):
+    """A directed connection: robots drive it from ``source`` to ``target`` only. A two-way
+    corridor is two edges."""
+
+    source: str
+    target: str
+    length_m: float
+
+
 class MapDetail(_Model):
+    """A map as a viewer needs it: positions in metres, and every directed edge."""
+
     name: str
     nodes: list[NodeOut]
+    edges: list[EdgeOut]
 
 
 class Health(_Model):
