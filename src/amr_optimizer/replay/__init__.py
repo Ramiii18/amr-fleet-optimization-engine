@@ -1,0 +1,47 @@
+"""Replay traces: a finished run as a versioned, self-contained record for viewers (D33)."""
+
+from amr_optimizer.replay.schema import TRACE_JSON_SCHEMA
+from amr_optimizer.replay.trace import (
+    CONFLICT_KINDS,
+    FORMAT_NAME,
+    MAX_LISTED_CONFLICTS,
+    SCHEMA_VERSION,
+    SOURCE,
+    ReplayTrace,
+    Scalar,
+    TraceConflict,
+    TraceCounters,
+    TraceOutcome,
+    TraceRobot,
+    TraceValidationError,
+    build_trace,
+    scalar_values,
+    trace_from_dict,
+    trace_from_json,
+    trace_to_dict,
+    trace_to_gzip,
+    trace_to_json,
+)
+
+__all__ = [
+    "CONFLICT_KINDS",
+    "FORMAT_NAME",
+    "MAX_LISTED_CONFLICTS",
+    "SCHEMA_VERSION",
+    "SOURCE",
+    "TRACE_JSON_SCHEMA",
+    "ReplayTrace",
+    "Scalar",
+    "TraceConflict",
+    "TraceCounters",
+    "TraceOutcome",
+    "TraceRobot",
+    "TraceValidationError",
+    "build_trace",
+    "scalar_values",
+    "trace_from_dict",
+    "trace_from_json",
+    "trace_to_dict",
+    "trace_to_gzip",
+    "trace_to_json",
+]
