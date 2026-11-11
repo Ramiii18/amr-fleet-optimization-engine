@@ -15,10 +15,10 @@ limits in mind.
 - **Not built yet (Phase 2):**
   - blocked aisles: corridors closed without a robot in them (P3 added breakdowns and replanning);
   - order priorities and deadlines;
-  - mutex zones;
-  - containerized deployment.
+  - mutex zones.
 
-  See the [roadmap](ROADMAP.md).
+  See the [roadmap](ROADMAP.md). The service has a container image, which is built and checked in
+  CI only (see "The HTTP service" below).
 
 ## Model of the warehouse and the robots
 

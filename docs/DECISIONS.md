@@ -699,3 +699,76 @@ local pass predicts a CI pass.
 - Robots start idle at tick 0, as in generated scenarios. Orders have no priorities or deadlines
   (backlog), and there is no field for batteries, delays or breakdowns: those stay command-line
   options.
+
+
+## D33: A versioned replay trace, built from the run's result in the worker and served as stored gzip bytes
+**Status:** Accepted (2026-11-11)
+**Why:**
+- **A viewer needs the run, not only its KPIs.** A run's trajectories and event log were dropped in
+  the worker process, and `GET /maps/{name}` had no edges. A browser could not draw a run without
+  inventing something.
+- **One source of truth.** The trace is a read model of a finished `SimulationResult`: the map, each
+  robot's visits, the orders, the event log, the KPIs of `metrics/`, and the conflicts found by the
+  independent checker (D23). The viewer computes none of these. What the simulator does not record
+  (battery levels over time, the moments of breakdowns and charging) is not in the trace.
+- **A core package, `replay/`.** Frozen dataclasses and a hand-written strict parser, as for maps
+  and scenario files (D3, D32). It sits below `api`, so `amr-sim --trace` writes the same trace.
+  The simulator does not import it, so building a trace cannot change a run.
+- **Visits, not frames.** A robot's movement is stored as `[node, arrive, depart]` visits, which is
+  lossless: the position at any moment follows by linear interpolation (D12). Measured, the largest
+  run the API accepts (50 robots, 2 h) has 87,197 visits: 2.6 MB of JSON, 0.7 MB compressed
+  ([plan](DIGITAL_TWIN_PLAN.md)).
+- **One response, no paging.** At these sizes a trace fits in one response, so pagination and
+  streaming are not built.
+- **Serialized in the worker.** A `SimulationResult` cannot be pickled, and parsing megabytes of
+  JSON on the event loop would break D29's rule. The worker therefore returns gzip bytes, and the
+  server stores and sends them without reading them. A client that does not accept gzip gets them
+  decompressed, in a thread.
+- **Bounded twice.** The server keeps traces of the most recent jobs only, limited by count (20)
+  and by total compressed size (32 MB). The oldest are dropped first, and a request for a dropped
+  trace is answered 410, with the reason.
+- **Opt-in.** `record_trace` defaults to false, so existing clients get the same answers and use no
+  more memory.
+- **Deterministic.** Fixed key order, no wall-clock values, gzip without a timestamp: the same
+  request gives the same bytes. Decision latency and compute time stay in the job, outside the trace.
+- **A hold is `null`.** The engine's `FOREVER` departure (2^62) never reaches a client.
+- **Versioned.** `schema_version` is 1. Adding a field needs a new version, because the parser is
+  strict; a viewer checks the version before reading anything else.
+- **Two definitions, checked against each other.** The strict parser also checks that the parts fit
+  (every step drives an existing edge, events are in time order). A JSON Schema describes the same
+  structure for other languages and for the API documentation, and the tests validate real traces
+  against it with `jsonschema`, which shares no code with the parser.
+
+**Consequences:**
+- **Conflicts are checked twice in a job that records a trace:** once for the KPI, once for the
+  list. The check is cheap next to the simulation, and one code path stays simple.
+- **The conflict list is capped** at the 1,000 earliest; the total is always exact. Free-flow runs
+  have hundreds of conflicts.
+- **Traces are lost when the server stops,** like the jobs they belong to (D29).
+- **A viewer shows three activities** (free, to pickup, loaded), because the event log supports no
+  more. Showing charging or repairs needs new events in the simulator first.
+
+
+## D34: The viewer is React, TypeScript and Vite, drawing on a 2D canvas; it replays finished runs
+**Status:** Accepted (2026-11-11)
+**Why:**
+- **A viewer of finished runs, not a live system.** The frontend plays a trace back. It runs no
+  simulation and no planner, so it cannot disagree with the engine.
+- **The interpolation is ported, and tested against Python.** `positionAt` and `activityAt` repeat
+  `viz/motion.py`. Python writes golden fixtures (a real trace, and positions sampled from
+  `position_at`), and the frontend tests must reproduce them. A Python test fails if the committed
+  fixtures are out of date.
+- **Canvas 2D, not a rendering engine.** The largest map has 461 nodes and about a thousand edges,
+  and the API accepts at most 50 robots. That is far within what a 2D canvas draws per frame, so
+  PixiJS or WebGL would add a dependency without a measured need.
+- **Few dependencies.** React, TypeScript, Vite, Vitest and ESLint. No state library, no chart
+  library and no component kit until something needs one.
+- **The Vite development server proxies the API,** so the browser talks to one origin and the
+  service needs no CORS configuration.
+
+**Consequences:**
+- **Node.js becomes a development dependency** for the frontend only. The Python package, its tests
+  and the container do not need it.
+- **CI gains a frontend job** (lint, type check, tests, build).
+- **Fixtures are committed files.** A change to the trace format or to the simulation of the
+  fixture runs means regenerating them, on purpose.
