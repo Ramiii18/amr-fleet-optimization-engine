@@ -25,6 +25,7 @@ from amr_optimizer.metrics import (
     compute_kpis,
     order_timelines,
 )
+from amr_optimizer.replay import build_trace, trace_to_json
 from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario, load_scenario
 from amr_optimizer.sim import simulate
 from amr_optimizer.traffic import NO_DELAYS, DelayModel, ExecutionPolicy
@@ -117,7 +118,38 @@ def _parser() -> argparse.ArgumentParser:
         help="also write one row per order: its robot, the time of each step, waiting and "
         "completion times, and distances (empty cells for steps that did not happen)",
     )
+    parser.add_argument(
+        "--trace",
+        metavar="JSON",
+        help="also write the run's replay trace: the map, every robot's recorded movement, the "
+        "orders, the event log, the KPIs and the conflicts (the format of the replay package)",
+    )
     return parser
+
+
+def _settings(args: argparse.Namespace) -> dict[str, object]:
+    """How the run was made, for the trace: the options that decide its outcome. Files are
+    named without their folders, so a trace never records where it was made."""
+    if args.scenario is not None:
+        settings: dict[str, object] = {"scenario": Path(args.scenario).name}
+    else:
+        settings = {
+            "map": args.map if args.map in PRESETS else Path(args.map).name,
+            "robots": args.robots,
+            "orders_per_hour": args.orders_per_hour,
+            "duration_s": args.duration_s,
+        }
+    settings |= {
+        "seed": args.seed,
+        "policy": args.policy,
+        "round_s": args.round_s,
+        "traffic": args.traffic,
+        "delay_share": args.delay_share,
+        "delay_s": list(args.delay_s) if args.delay_share else None,
+        "execution": "naive" if args.naive else "ordered",
+        "charging": args.charging,
+    }
+    return settings
 
 
 def _write_timeline(rows: Sequence[OrderTimeline], path: Path) -> None:
@@ -204,6 +236,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     timeline = Path(args.timeline) if args.timeline else None
     if timeline is not None and not timeline.parent.is_dir():
         _parser().error(f"--timeline: folder {timeline.parent} does not exist")
+    trace_file = Path(args.trace) if args.trace else None
+    if trace_file is not None and not trace_file.parent.is_dir():
+        _parser().error(f"--trace: folder {trace_file.parent} does not exist")
     scenario, description = _scenario(args)
     interval = scenario.time_model.to_ticks(args.round_s) or None
     low, high = (scenario.time_model.to_ticks(s) for s in args.delay_s)
@@ -235,6 +270,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         except OSError as error:
             print(f"amr-sim: cannot write the timeline: {error}", file=sys.stderr)
             return 1
+    if trace_file is not None:
+        trace = build_trace(result, run=_settings(args), kpis=kpis)
+        try:
+            # newline="\n": identical bytes on every OS, as for map files.
+            trace_file.write_text(trace_to_json(trace) + "\n", encoding="ascii", newline="\n")
+        except OSError as error:
+            print(f"amr-sim: cannot write the trace: {error}", file=sys.stderr)
+            return 1
 
     if args.json:
         output = asdict(kpis) | {"empty_share": kpis.empty_share}
@@ -262,4 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("\n".join(_charging_report(charging_kpis)))
     if timeline is not None:
         print(f"Timeline: {kpis.orders} orders written to {timeline}")
+    if trace_file is not None:
+        visits = sum(len(path.visits) for path in result.trajectories.values())
+        print(f"Trace:    {kpis.robots} robots, {visits} visits written to {trace_file}")
     return 0

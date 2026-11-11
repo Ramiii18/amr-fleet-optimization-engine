@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from amr_optimizer.cli import TIMELINE_COLUMNS, main
+from amr_optimizer.replay import trace_from_json
 from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse, save_graph
 
 SMALL_RUN = ["--map", "small", "--robots", "2", "--duration-s", "600", "--seed", "3"]
@@ -172,5 +173,69 @@ def test_a_timeline_has_one_row_per_order_and_matches_the_kpis(
 def test_a_timeline_in_a_missing_folder_is_a_usage_error(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main([*SMALL_RUN, "--timeline", str(tmp_path / "missing" / "timeline.csv")])
+
+    assert exit_info.value.code == 2
+
+
+def test_a_trace_is_written_and_holds_the_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "run.trace.json"
+    run = [*SMALL_RUN, "--traffic", "--delay-share", "0.2", "--trace", str(path)]
+
+    assert main([*run, "--json"]) == 0
+    kpis = json.loads(capsys.readouterr().out)  # stdout stays pure JSON
+    first = path.read_bytes()
+
+    trace = trace_from_json(first)  # the strict parser accepts the file
+    assert trace.kpis == kpis
+    assert len(trace.robots) == 2 and trace.traffic and trace.conflicts_total == 0
+    assert trace.run == {
+        "map": "small",
+        "robots": 2,
+        "orders_per_hour": 60.0,
+        "duration_s": 600.0,
+        "seed": 3,
+        "policy": "greedy",
+        "round_s": 0.0,
+        "traffic": True,
+        "delay_share": 0.2,
+        "delay_s": [1.0, 5.0],
+        "execution": "ordered",
+        "charging": None,
+    }
+    assert first.endswith(b"}\n") and b"\r" not in first
+
+    assert main(run) == 0
+    out = capsys.readouterr().out
+    visits = sum(len(robot.path.visits) for robot in trace.robots)
+    assert f"Trace:    2 robots, {visits} visits written to {path}" in out
+    assert path.read_bytes() == first  # the same run writes the same bytes
+
+
+def test_a_trace_of_a_scenario_file_names_the_file_without_its_folder(tmp_path: Path) -> None:
+    path = tmp_path / "wave.trace.json"
+
+    assert main(["--scenario", str(EXAMPLE), "--traffic", "--trace", str(path)]) == 0
+
+    trace = trace_from_json(path.read_bytes())
+    assert trace.run["scenario"] == "morning_wave.json"
+    assert "map" not in trace.run and len(trace.orders) == 16
+
+
+def test_without_the_option_no_trace_is_written_and_the_report_is_unchanged(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert main(SMALL_RUN) == 0
+
+    assert "Trace" not in capsys.readouterr().out
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_trace_in_a_missing_folder_is_a_usage_error(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main([*SMALL_RUN, "--trace", str(tmp_path / "missing" / "run.json")])
 
     assert exit_info.value.code == 2

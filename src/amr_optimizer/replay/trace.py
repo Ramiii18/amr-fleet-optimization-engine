@@ -36,6 +36,9 @@ Rules:
   visit starts at tick 0, at the node where it starts.
 - A hold, a last visit with no planned departure, has ``depart`` null. Inside the engine it is
   `FOREVER` (2^62), which never reaches a file.
+- A run plays from tick 0 to ``end_tick``. A run that was cut short (``max_tick``) can record
+  visits after ``end_tick``: a free-flow drive is recorded when it starts. A viewer stops at
+  ``end_tick``.
 - A KPI that is undefined (nothing was delivered) is null: JSON has no NaN.
 - Nothing in a trace depends on the machine or the clock, so the same run gives the same JSON,
   byte for byte. Wall-clock measurements are deliberately left out.
