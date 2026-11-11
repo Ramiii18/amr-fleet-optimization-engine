@@ -179,6 +179,10 @@ class SimulationRequest(_Model):
     charging: Charging | None = None
     breakdowns: Disturbance | None = None
     recovery: RecoveryName = "wait"
+    record_trace: bool = Field(
+        default=False,
+        description="also keep the run's replay trace, for GET /simulations/{id}/trace",
+    )
 
     @field_validator("map")
     @classmethod
@@ -215,10 +219,23 @@ class SimulationOutcome(_Model):
     compute_s: float = Field(description="wall time of the run, in the worker process")
 
 
+TraceStatus = Literal["none", "pending", "available", "evicted", "too_large"]
+
+
 class Job(_Model):
+    """A simulation job. ``trace`` says whether its replay trace can be fetched:
+
+    - ``none``: the request did not ask for one, or the job failed;
+    - ``pending``: the job has not finished;
+    - ``available``: ``GET /simulations/{id}/trace`` returns it;
+    - ``evicted``: it was dropped to make room for the traces of later jobs;
+    - ``too_large``: it was larger than the service keeps.
+    """
+
     id: str
     status: JobStatus
     submitted_at: datetime
     request: SimulationRequest
     result: SimulationOutcome | None = None
     error: str | None = None
+    trace: TraceStatus = "none"

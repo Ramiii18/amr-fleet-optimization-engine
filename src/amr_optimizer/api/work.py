@@ -8,7 +8,7 @@ import functools
 import math
 import time
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from types import MappingProxyType
 
 from amr_optimizer.api.models import (
@@ -34,6 +34,7 @@ from amr_optimizer.domain import (
     TravelTimes,
 )
 from amr_optimizer.metrics import compute_charging_kpis, compute_kpis
+from amr_optimizer.replay import build_trace, trace_to_gzip
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import DispatchSnapshot, TravelPlanner, simulate
 from amr_optimizer.traffic import NO_DELAYS, DelayModel, Recovery
@@ -123,8 +124,28 @@ def _json_safe(values: Mapping[str, object]) -> dict[str, Number]:
     return safe
 
 
+@dataclass(frozen=True, slots=True)
+class JobOutput:
+    """What a simulation job sends back from its worker process.
+
+    ``trace_gzip`` is the run's replay trace as compressed JSON (D33), or None if the request
+    did not ask for it. It is serialized here, in the worker: the server only stores the bytes.
+    """
+
+    outcome: SimulationOutcome
+    trace_gzip: bytes | None = None
+
+
 def simulate_job(request: SimulationRequest) -> SimulationOutcome:
     """A whole run, as `amr-sim` runs it: every random stream is seeded by ``request.seed``."""
+    return run_job(request).outcome
+
+
+def run_job(request: SimulationRequest) -> JobOutput:
+    """`simulate_job`, and the run's replay trace if ``request.record_trace`` is set.
+
+    Recording a trace reads the finished result; it changes nothing in the run or its KPIs.
+    """
     spec = ScenarioSpec(
         robots=request.robots,
         orders_per_hour=request.orders_per_hour,
@@ -148,10 +169,16 @@ def simulate_job(request: SimulationRequest) -> SimulationOutcome:
     )
     kpis = compute_kpis(result)
     charging = compute_charging_kpis(result) if result.battery else None
-    return SimulationOutcome(
+    outcome = SimulationOutcome(
         kpis=_json_safe(asdict(kpis) | {"empty_share": kpis.empty_share}),
         charging=_json_safe(asdict(charging)) if charging else None,
         breakdowns=result.breakdowns,
         replans=result.replans,
         compute_s=time.perf_counter() - started,
     )
+    if not request.record_trace:
+        return JobOutput(outcome)
+    # The trace's provenance is the request itself, without the flag that asked for the trace.
+    settings = request.model_dump(mode="json", exclude={"record_trace"})
+    trace = build_trace(result, run=settings, kpis=kpis)
+    return JobOutput(outcome, trace_to_gzip(trace))
