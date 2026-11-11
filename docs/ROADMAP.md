@@ -609,6 +609,34 @@ the only difference, where robots wait, was measured.
     means and sums equal the KPIs.
   - A malformed file is rejected with the location of the problem.
 
+## Digital twin (started 2026-11-11, on request)
+
+A browser viewer that replays finished runs, and later an experiment lab. The plan, the measured
+trace sizes and the phases are in [DIGITAL_TWIN_PLAN.md](DIGITAL_TWIN_PLAN.md); the decisions are
+D33 and D34. Work happens on the branch `feature/amr-digital-twin-phase1`.
+
+| Step | Content | Status |
+|---|---|---|
+| **1a.1** | Plan, D33 (replay trace), D34 (viewer stack) | **Done** (2026-11-11) |
+| **1a.2** | `replay/`: the trace, its strict parser and its JSON Schema | **Done** (2026-11-11) |
+| **1a.3** | `GET /maps/{name}` lists directed edges | **Done** (2026-11-11) |
+| **1a.4** | `record_trace` and `GET /simulations/{id}/trace`, stored in gzip, bounded by count and size | **Done** (2026-11-11) |
+| **1a.5** | `amr-sim --trace`; golden fixtures from three real runs | **Done** (2026-11-11) |
+| **1b** | `web/`: map, animated robots, run form, playback, details, KPIs | Planned, after the owner's review of 1a |
+
+**1a acceptance:**
+- **Every earlier test passes unchanged:** met. The 1569 tests from before the branch pass, among
+  1675 in total.
+- **Existing answers keep every field:** met. `GET /maps/{name}` gains `edges`, a job gains `trace`,
+  and a request gains `record_trace` (false by default). Nothing was removed or renamed.
+- **The trace of a seeded run equals the direct run:** met. Trajectories, event log, orders and
+  KPIs through HTTP equal a direct `simulate`, on a run with traffic, delays, batteries, breakdowns
+  and replanning; the text is byte for byte what the core writes.
+- **Building a trace changes nothing:** met. The run's log and trajectories are unchanged, and a
+  job reports the same result with and without a trace.
+- **Positions from a trace equal `position_at` on the run:** met, at whole and fractional ticks,
+  and the committed fixtures are checked against the script that writes them.
+
 ## Phase 2 backlog (unordered)
 
 - **From P2:** a CP-SAT schedule of charging slots over a horizon (intervals with charger capacity),

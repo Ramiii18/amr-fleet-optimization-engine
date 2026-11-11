@@ -1681,3 +1681,116 @@ published under the MIT license with JSON schemas. Two of its rules shape everyt
   - every order and update fleet control sent follows the rules;
   - every job is delivered at least one tick later than planned (the latency of the first message);
   - runs are reproducible.
+
+
+## 17. Replay traces (`replay/`, D33)
+
+**Problem.** A viewer has to show what a run did: where every robot was at every moment, what it
+was doing, and what the run achieved. The simulator already knows all of it, but the service
+returned only KPIs. The risk in building a viewer is a second, slightly different simulation in
+the browser. The trace removes that risk: it carries the run, and the viewer only reads it.
+
+**What is stored.** A robot's movement is a timed path (section 13): visits
+`(node, arrive, depart)`. Between two visits the robot drives one edge at constant speed (D12), so
+its position at a time `t` between a departure `d` from node `u` and the next arrival `a` at node
+`v` is
+
+```text
+p(t) = p(u) + (t - d) / (a - d) * (p(v) - p(u)),    for d < t < a
+```
+
+At every other time it stands on a node. Visits are therefore a **lossless** record of movement:
+the trace stores them, never one position per frame. A viewer that draws 60 frames per second
+computes each position from two visits.
+
+**Finding the two visits.** `position_at` (the reference, `viz/motion.py`) scans the visits in
+order, which is O(n) per lookup for n visits. A viewer should binary-search the arrival ticks
+instead: O(log n) per robot per frame, and O(1) amortized while playing forward, by remembering
+the last index. Both must give the same answer as the reference; the golden fixtures check that.
+
+**What a robot is doing** is read from the event log, not from the path. The last `assigned`,
+`loaded` or `delivered` event of the robot at or before tick `t` decides: to pickup, loaded, or
+free. An event at tick `t` already counts at tick `t`.
+
+**Why a hold is `null`.** Inside the engine a robot that stays where it is has the departure tick
+`FOREVER`, which is 2^62. JavaScript numbers are exact only up to 2^53, so that value would not
+even survive parsing in a browser. In a trace it is `null`. Runs that finish have no hold: the
+simulator ends every trajectory at the last tick of the run.
+
+**Determinism.** The trace contains no wall-clock value and its keys have a fixed order, so the
+same run gives the same JSON, byte for byte. A test found one way this could break: the event log
+holds a distance of `0` as a whole number in some code paths and as `0.0` in others. Both mean
+the same, but they print differently, so a parsed trace would not print as it was read. Every real
+number is now written as a float.
+
+**Validation in two layers.**
+- *Structure:* a hand-written strict parser, as for maps and scenario files, rejects missing,
+  unknown and mistyped fields with their location.
+- *Consistency:* the trace is then checked as a whole. Every visit is on the map, every step drives
+  an existing edge, events are in time order within the run, only a release has no robot, and the
+  outcome lists every order exactly once.
+
+A JSON Schema describes the structure for other languages and for the API documentation. The tests
+validate real traces against it with `jsonschema`, which shares no code with the parser, and check
+on 31 deliberately broken traces that both reject what they should.
+
+One thing is deliberately **not** checked: that a step takes exactly the edge's travel time. With
+delays and breakdowns a step takes longer, and that is the point of recording it.
+
+**Conflicts** come from the independent checker of section 13.2, run on the recorded trajectories.
+The trace lists the earliest 1,000 and always gives the exact total. A free-flow run of 50 robots
+for two hours has 15,078.
+
+**Through the service.**
+- The worker process builds the trace and returns it as gzip bytes. A `SimulationResult` cannot
+  be pickled, and megabytes of JSON must not be parsed on the event loop (section 15).
+- The server keeps the bytes and sends them unchanged to a client that accepts gzip. Otherwise it
+  decompresses them in a thread.
+- Storage is bounded by count (20 traces) and by total compressed size (32 MB), oldest dropped
+  first. Both bounds are needed: the count bounds bookkeeping, the size bounds memory whatever
+  the traces contain.
+- A finished job is *settled*: its outcome and trace are moved out of its future, and the future
+  is dropped. A `Future` keeps its result for as long as it lives, so 100 kept jobs would
+  otherwise hold 100 traces outside the store's limits.
+
+**Measured** (greedy, seed 0, large map, on the development laptop):
+
+| Run | JSON | gzip | Simulation | Building the trace | Writing and compressing |
+|---|---:|---:|---:|---:|---:|
+| 10 robots, 1 h, traffic | 0.54 MB | 0.11 MB | 0.5 s | 0.08 s | 0.12 s |
+| 25 robots, 1 h, traffic | 1.48 MB | 0.33 MB | 2.1 s | 0.45 s | 0.24 s |
+| 50 robots, 2 h, traffic (the API's limits) | 3.38 MB | 0.73 MB | 7.0 s | 1.41 s | 0.77 s |
+| 50 robots, 2 h, free flow | 3.20 MB | 0.65 MB | 1.3 s | 1.21 s | 0.50 s |
+
+Building a trace includes the conflict check and the consistency check. It costs up to about as
+much as a free-flow simulation and a fifth of one with traffic, which is why it is opt-in.
+
+**Golden fixtures.** `scripts/make_replay_fixtures.py` writes three real runs into
+`tests/data/replay/`: free flow (with conflicts), a run cut short in the middle of its work, and
+traffic with delays, charging, breakdowns and replanning. Each has a trace and a file of samples:
+every robot's position and activity from the reference functions, at every arrival and departure,
+a third of the way along every edge (a fraction of a tick), around every change of activity, at
+tick 0, at the end and after it. A viewer in any language must reproduce the samples from the
+trace alone, and a Python test fails if the committed files are not what the script writes now.
+
+**Limitations.**
+- **Three activities only.** The event log has the six steps of an order's life. Charging,
+  breakdowns and repairs have totals but no events, so a viewer cannot show when they happened.
+- **No battery levels over time.** Only the lowest level of the run is recorded.
+- **A cut-short run knows the future.** A free-flow drive is recorded when it starts, so a run
+  stopped by `max_tick` has visits after its last tick. The service never cuts a run short.
+- **Compressed bytes can differ between machines.** The JSON is always identical; the gzip bytes
+  depend on the zlib build.
+- **Whole traces only.** There is no paging and no streaming, because the largest trace the
+  service can produce is 0.7 MB compressed.
+
+**Interview questions.**
+- *Why not send positions per frame?* The size would grow with the frame rate and the playback
+  speed would be fixed by the server. Visits are exact, small, and independent of both.
+- *How do you know the browser shows what the simulator computed?* The browser's interpolation is
+  tested against samples produced by the Python reference on real runs, including fractional
+  ticks, and the fixtures cannot go stale without a test failing.
+- *Why two limits on the store?* A count alone does not bound memory, and a size alone lets many
+  tiny entries grow the bookkeeping. Each limit covers the other's blind spot.
+- *Why is the trace opt-in?* Existing clients keep identical answers and cost, and building a trace
+  is not free.

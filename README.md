@@ -90,7 +90,7 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
   - one in traffic control: put-away orders ending where a robot was parked.
 - **Reproducibility.** Every run is deterministic, a pinned scenario is checked on Windows and Linux
   in CI, and earlier benchmark tables reproduce exactly after later changes.
-- **Checks on every commit:** over 1,500 tests, ruff, and mypy in strict mode, and a Docker build in CI.
+- **Checks on every commit:** over 1,600 tests, ruff, and mypy in strict mode, and a Docker build in CI.
 
 ## Quick start
 
@@ -133,6 +133,7 @@ orders at the start, then one every 20 s:
 
 `--timeline out.csv` also writes one row per order, for scenario files and generated scenarios
 alike: its robot, the time of each step, its waiting and completion times, and its distances.
+`--trace run.json` writes the run's replay trace: everything needed to play the run back.
 
 ```text
 order,robot,pickup,dropoff,released_s,assigned_s,pickup_reached_s,loaded_s,dropoff_reached_s,delivered_s,waiting_s,completion_s,empty_m,loaded_m
@@ -147,13 +148,17 @@ at `/docs`.
 
 | Endpoint | What it does |
 |---|---|
-| `GET /health`, `/maps`, `/maps/{name}`, `/policies` | Version, preset maps with their nodes, dispatch policies |
+| `GET /health`, `/maps`, `/maps/{name}`, `/policies` | Version, preset maps with their nodes and directed edges, dispatch policies |
 | `POST /plan` | One dispatch decision. The client sends a fleet snapshot (idle robots, busy robots free at a node from a tick, pending orders) and gets the policy's assignments back. |
 | `POST /simulations`, `GET /simulations/{id}` | A whole simulated run in the background. The first call answers 202 with a job id; the second gives the job's status and, when it is done, its KPIs. |
+| `GET /simulations/{id}/trace` | The run's replay trace, for jobs submitted with `"record_trace": true`: the map, every robot's recorded visits, the orders, the event log, the KPIs and the conflicts ([D33](docs/DECISIONS.md)). Sent in gzip to clients that accept it. |
 
 - **No CPU-bound work on the event loop.** Every decision and every run happens in worker processes.
 - **Bounded input.** Requests are validated and bounded, and errors are 4xx answers with a reason.
 - **A local demonstration.** The server binds to 127.0.0.1 and has no authentication.
+- **Replay traces are bounded.** The service keeps the traces of the 20 most recent jobs that
+  recorded one, within 32 MB of compressed data. A browser viewer that replays them is planned
+  ([digital twin plan](docs/DIGITAL_TWIN_PLAN.md)); it is not built yet.
 
 As a container (Docker Desktop on Windows needs WSL2). The CI workflow builds this image on Linux,
 starts it, and checks that it answers:

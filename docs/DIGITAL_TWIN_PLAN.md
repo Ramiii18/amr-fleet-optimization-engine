@@ -50,9 +50,18 @@ robot's visits (node, arrival tick, departure tick), not one position per frame.
 | large map, 25 robots, 1 h | 39,776 | 4,638 | 1.12 MB | 0.31 MB | 2.3 s |
 | large map, 50 robots, 2 h (the API's limits) | 87,197 | 11,910 | 2.55 MB | 0.69 MB | 7.6 s |
 
-These sizes are for visits and log entries only, before the map and the KPIs are added (a few tens
-of kilobytes). **Conclusion:** a whole trace fits in one response. Pagination and streaming are not
-built, because nothing measured needs them.
+These sizes are from the audit, for visits and log entries only. Complete traces, measured after
+the format was built, are larger because events and the map are written as named fields:
+
+| Run | Complete trace, JSON | gzip | Building the trace | Writing and compressing |
+|---|---:|---:|---:|---:|
+| large map, 10 robots, 1 h | 0.54 MB | 0.11 MB | 0.08 s | 0.12 s |
+| large map, 25 robots, 1 h | 1.48 MB | 0.33 MB | 0.45 s | 0.24 s |
+| large map, 50 robots, 2 h (the API's limits) | 3.38 MB | 0.73 MB | 1.41 s | 0.77 s |
+| the same in free flow (15,078 conflicts, 1,000 listed) | 3.20 MB | 0.65 MB | 1.21 s | 0.50 s |
+
+**Conclusion:** a whole trace fits in one response. Pagination and streaming are not built, because
+nothing measured needs them.
 
 ## Architecture
 
@@ -103,9 +112,13 @@ Rules:
 - **A hold has no departure.** Inside the engine, a robot that stays at its last node has the
   departure tick `FOREVER` (2^62). In a trace that departure is `null`. Runs that finish have none:
   the simulator ends every trajectory at the last tick of the run.
-- **Deterministic.** The same run gives the same bytes: fixed key order, no wall-clock values, and
-  gzip without a timestamp. Wall-clock measurements (decision latency, compute time) stay out of
-  the trace and are reported by the job, separately.
+- **Deterministic.** The same run gives the same JSON, byte for byte: fixed key order, every real
+  number written as a float, no wall-clock values. The gzip header has no timestamp, so on one
+  machine the compressed bytes are the same too; another zlib build may compress differently.
+  Wall-clock measurements (decision latency, compute time) stay out of the trace and are reported
+  by the job, separately.
+- **A run plays from tick 0 to `end_tick`.** A run cut short in Python (`max_tick`) can record
+  visits after its end, because a free-flow drive is recorded when it starts.
 - **Strict.** `trace_from_dict` rejects unknown, missing and mistyped fields, and then checks that
   the parts fit: every visit is on the map, every step drives an existing edge, events are in time
   order and name known robots and orders.
@@ -114,12 +127,32 @@ Rules:
 
 | Phase | Content | Status |
 |---|---|---|
-| **1a** Backend contract | Trace package, map edges, trace over HTTP, `amr-sim --trace`, golden fixtures | In progress |
+| **1a** Backend contract | Trace package, map edges, trace over HTTP, `amr-sim --trace`, golden fixtures | **Done** (2026-11-11), see the [roadmap](ROADMAP.md) |
 | **1b** Viewer | `web/`: map, animated robots, run form, playback controls, robot and order details, KPIs | Planned, after review of 1a |
 | **2** Experiment lab | Side-by-side runs, paired comparisons over seeds with intervals, per-order timeline, event jumping; simulator events for charging and breakdowns | Planned |
 | **3** Scenario exploration | Custom scenarios and maps through the API, with the existing strict parsers as the authority | Planned |
 | **4** One measured optimizer upgrade | First candidate: traffic-aware cost estimates in dispatch, against the existing policies on paired seeds | Planned |
 | **5** Polish | Large-map rendering measurements, accessibility, keyboard controls, recorded demo | Planned |
+
+## What phase 1a delivered
+
+| Piece | Where |
+|---|---|
+| The trace, its builder, strict parser and gzip writer | `src/amr_optimizer/replay/trace.py` |
+| The format as a JSON Schema | `src/amr_optimizer/replay/schema.py` |
+| `record_trace`, `GET /simulations/{id}/trace`, bounded storage | `src/amr_optimizer/api/` (`app.py`, `work.py`, `traces.py`, `models.py`) |
+| Directed edges in `GET /maps/{name}` | `src/amr_optimizer/api/app.py` |
+| `amr-sim --trace FILE` | `src/amr_optimizer/cli.py` |
+| Golden fixtures and the script that writes them | `tests/data/replay/`, `scripts/make_replay_fixtures.py` |
+
+**Golden fixtures.** Three real runs on the small map, each with its trace and with samples of
+every robot's position and activity from the Python reference functions:
+
+| Fixture | Run | What it covers |
+|---|---|---|
+| `free_flow` | 3 robots, greedy, no traffic | Drives without waiting, 8 conflicts |
+| `cut_short` | The same run stopped at tick 1500 | Orders in progress and unreleased; visits after the end |
+| `disturbed` | 3 robots, `insertion-fair`, traffic, delays, charging, breakdowns, replanning | Long waits, 20 breakdowns, 9 replans, no conflicts |
 
 ## Phase 1 acceptance criteria
 

@@ -139,6 +139,28 @@ limits in mind.
   Docker Desktop on Windows needs WSL2. The image runs one server process, without TLS.
 - **Jobs live in memory.** Simulation jobs are lost when the server stops. Only the last 100 finished
   jobs are kept, and a running job cannot be cancelled.
+- **Traces live in memory too, and fewer of them.** Only the 20 most recent replay traces are
+  kept, within 32 MB of compressed data. An older trace is gone (410) while its job and KPIs remain;
+  the run has to be made again to get it back.
+
+## Replay traces (digital twin, phase 1a)
+
+- **A record of a simulated run, nothing more.** A trace replays what the simulator computed on a
+  synthetic map. It is not a record of any real robot, and "no conflicts" in a trace is a statement
+  about nodes and corridors of the graph model, not about physical clearance.
+- **Three activities only.** The event log has the six steps of an order's life, so a viewer can
+  tell free, to pickup and loaded. Charging, breakdowns and repairs have run totals but no events:
+  when they happened is not recorded.
+- **No battery levels over time.** Only the lowest level of the run exists (charging KPIs).
+- **No browser viewer yet.** The trace, its endpoint and its fixtures exist; the viewer that reads
+  them is planned ([plan](DIGITAL_TWIN_PLAN.md)).
+- **Preset maps and generated scenarios only, through the service.** `amr-sim --trace` records
+  scenario files too; the service does not accept them yet.
+- **The conflict list is capped** at the earliest 1,000 per trace. The total is exact.
+- **A run cut short records visits after its end.** A free-flow drive is recorded when it starts.
+  Only the Python API can cut a run short (`max_tick`); the service and the command line cannot.
+- **Sizes and times were measured on one laptop,** for greedy dispatch on the large map
+  ([algorithms](algorithms.md), section 17).
 
 ## Evaluation
 

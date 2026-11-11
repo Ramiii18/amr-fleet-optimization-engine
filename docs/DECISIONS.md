@@ -716,8 +716,8 @@ local pass predicts a CI pass.
   The simulator does not import it, so building a trace cannot change a run.
 - **Visits, not frames.** A robot's movement is stored as `[node, arrive, depart]` visits, which is
   lossless: the position at any moment follows by linear interpolation (D12). Measured, the largest
-  run the API accepts (50 robots, 2 h) has 87,197 visits: 2.6 MB of JSON, 0.7 MB compressed
-  ([plan](DIGITAL_TWIN_PLAN.md)).
+  run the API accepts (50 robots, 2 h) has 87,197 visits: a complete trace of 3.4 MB of JSON,
+  0.7 MB compressed ([plan](DIGITAL_TWIN_PLAN.md)).
 - **One response, no paging.** At these sizes a trace fits in one response, so pagination and
   streaming are not built.
 - **Serialized in the worker.** A `SimulationResult` cannot be pickled, and parsing megabytes of
@@ -726,11 +726,14 @@ local pass predicts a CI pass.
   decompressed, in a thread.
 - **Bounded twice.** The server keeps traces of the most recent jobs only, limited by count (20)
   and by total compressed size (32 MB). The oldest are dropped first, and a request for a dropped
-  trace is answered 410, with the reason.
+  trace is answered 410, with the reason. A finished job's result is moved out of its future, which
+  would otherwise keep the trace alive outside both limits.
 - **Opt-in.** `record_trace` defaults to false, so existing clients get the same answers and use no
   more memory.
-- **Deterministic.** Fixed key order, no wall-clock values, gzip without a timestamp: the same
-  request gives the same bytes. Decision latency and compute time stay in the job, outside the trace.
+- **Deterministic.** Fixed key order, every real number written as a float, no wall-clock values:
+  the same request gives the same JSON, byte for byte. The gzip header carries no timestamp, so the
+  compressed bytes repeat on one machine; another zlib build may compress differently. Decision
+  latency and compute time stay in the job, outside the trace.
 - **A hold is `null`.** The engine's `FOREVER` departure (2^62) never reaches a client.
 - **Versioned.** `schema_version` is 1. Adding a field needs a new version, because the parser is
   strict; a viewer checks the version before reading anything else.
