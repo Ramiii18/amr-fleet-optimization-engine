@@ -6,7 +6,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Feature branches too, so that work is checked on both systems before a pull request exists.
+    branches: [main, "feature/**"]
   pull_request:
 
 permissions:
