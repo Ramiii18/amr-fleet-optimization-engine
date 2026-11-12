@@ -622,7 +622,7 @@ D33 and D34. Work happens on the branch `feature/amr-digital-twin-phase1`.
 | **1a.3** | `GET /maps/{name}` lists directed edges | **Done** (2026-11-11) |
 | **1a.4** | `record_trace` and `GET /simulations/{id}/trace`, stored in gzip, bounded by count and size | **Done** (2026-11-11) |
 | **1a.5** | `amr-sim --trace`; golden fixtures from three real runs | **Done** (2026-11-11) |
-| **1b** | `web/`: map, animated robots, run form, playback, details, KPIs | Planned, after the owner's review of 1a |
+| **1b** | `web/`: map, animated robots, run form, playback, robot and order details, KPIs, conflicts; `scripts/dev.ps1`; a CI job for the viewer | **Done** (2026-11-12) |
 
 **1a acceptance:**
 - **Every earlier test passes unchanged:** met. The 1569 tests from before the branch pass, among
@@ -636,6 +636,33 @@ D33 and D34. Work happens on the branch `feature/amr-digital-twin-phase1`.
   job reports the same result with and without a trace.
 - **Positions from a trace equal `position_at` on the run:** met, at whole and fractional ticks,
   and the committed fixtures are checked against the script that writes them.
+
+**1b acceptance:**
+- **The TypeScript interpolation matches `position_at()` on the golden fixtures:** met, exactly, on
+  2,211 sampled positions and activities of three real runs, at arrivals, departures, fractions of
+  a tick and after the end. Two deliberate changes to the code each made tests fail.
+- **Playback stays within the run:** met. The playhead is clamped to 0 and `end_tick`, tested on
+  the fixture whose trace has visits after its end.
+- **Every robot, position and number on screen comes from a trace or a job result:** met. The
+  viewer has no other source of run data, and refuses a trace that fails its checks.
+- **Lint, type check, tests and build pass:** met locally (116 tests; `npm ci` from the lockfile
+  was verified). The CI job is written but **has not run yet**: nothing is pushed.
+- **One documented PowerShell command starts the demo, and the notice is always visible:** met.
+  `.\scripts\dev.ps1` was run on the development machine; the notice is in the header.
+- **Checked in a real browser:** met, in Chrome, against the running service. The list of checks
+  and what was not checked are in the [plan](DIGITAL_TWIN_PLAN.md).
+
+**Finding:** the viewer needed no change to the simulator. Everything it shows was already in a
+`SimulationResult`; the work was a faithful record and a faithful reader. What it cannot show
+(charging, breakdowns and battery levels over time) is exactly what the simulator does not log, and
+that is the first item for the next phase.
+
+**Next (proposed, not started):**
+1. Events for charging and breakdowns in the simulator's log, and battery levels at those events,
+   so that the viewer can show them truthfully.
+2. The experiment lab: two runs side by side, and paired comparisons over seeds with intervals.
+3. Scenario files through the service.
+4. One measured optimizer upgrade: traffic-aware cost estimates in dispatch.
 
 ## Phase 2 backlog (unordered)
 

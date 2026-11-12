@@ -1794,3 +1794,94 @@ trace alone, and a Python test fails if the committed files are not what the scr
   tiny entries grow the bookkeeping. Each limit covers the other's blind spot.
 - *Why is the trace opt-in?* Existing clients keep identical answers and cost, and building a trace
   is not free.
+
+
+## 18. The viewer: playing a trace back (`web/`, D34)
+
+**Problem.** Show a recorded run in a browser, smoothly and at any speed, without the browser
+ever deciding anything about the run. The trace (section 17) is the input; the viewer's only
+freedom is *which moment* it shows.
+
+**One number of state.** Playback is a clock (`web/src/lib/playback.ts`) holding the playhead `t`
+in ticks. Every frame, while playing, it advances by
+
+```text
+t  <-  t + (real seconds elapsed) * speed / tick_s
+```
+
+where `speed` is simulated seconds per real second. The playhead is a real number, so a robot
+moves smoothly even when one frame covers a fraction of a tick. Everything on screen is a pure
+function of the trace and `t`: scrubbing, stepping and playing backwards in time need no special
+cases, because nothing is accumulated from frame to frame.
+
+**The playhead never leaves the run.** `t` is clamped to `0 <= t <= end_tick` in every operation
+that changes it. That matters for a run that was cut short: its trace can hold visits after
+`end_tick` (section 17), and an unclamped playhead would play a future the run never reached. A
+test checks this on the `cut_short` fixture.
+
+**Position** is `poseAt` (`web/src/lib/motion.ts`), the port of `position_at`:
+1. Find the last visit `i` with `arrive[i] <= t`, by binary search over the arrival ticks. They
+   increase strictly, so this is the visit the Python scan stops at.
+2. If `t <= depart[i]`, or `i` is the last visit, the robot stands on node `i`.
+3. Otherwise it is on the edge to node `i + 1`, at the share `(t - depart[i]) / (arrive[i+1] -
+   depart[i])` of the way.
+
+The same floating-point operations are applied in the same order as in Python, so the tests
+compare with exact equality, not with a tolerance: 2,211 sampled positions over three real runs,
+at arrivals, departures, a third of the way along every edge, around every change of activity
+and after the end. Two mutations of the code (a `<` for a `<=` at a departure, an off-by-one in
+the activity lookup) each make tests fail.
+
+**Activity** is the robot's last `assigned`, `loaded` or `delivered` event at or before `t`, by
+the same binary search. An order's state is derived the same way from its own six logged steps.
+
+**Cost per frame.** With R robots and at most n visits each, a frame costs O(R log n) lookups plus
+drawing the map: O(V + E) for V nodes and E edges. Nothing is precomputed per frame and nothing
+grows with the length of the run.
+
+**Measured** in Chrome on the development laptop, on the largest run the service accepts (large
+map, 50 robots, 995 orders, a 3-hour run with 621 breakdowns): the trace loaded and was checked in
+0.4 s, and playing at 60x, frames took 10 ms at the median and 20 ms at the 95th percentile. That
+is why the map is a plain 2D canvas (D34): a rendering engine would add a dependency and solve no
+measured problem.
+
+**Two refresh rates.** The canvas reads the playhead on every frame. The panels of text read it
+5 to 10 times a second through a throttled subscription: re-rendering lists of a thousand orders
+60 times a second would cost far more than the canvas. A change made while paused (a seek, a step)
+shows at once.
+
+**What is drawn, and what is not.**
+- The map is drawn as the graph it is: points, and lines between them. A one-way connection has
+  an arrowhead. No aisle width, robot footprint or clearance is drawn, because the model has none.
+- A robot's colour and inner mark show one of the three activities the event log supports. Its
+  pointer shows the direction of the edge it is driving.
+- The selected robot's path is drawn from the trace: the last minute behind it, and ahead of it
+  the recorded path to the end of its current job. "Ahead" is not a prediction: the run is over,
+  and the path is what the robot then did.
+- Conflicts are those listed by the engine's checker (section 13.2), marked where and when they
+  happened. The viewer never infers a conflict from two drawings overlapping.
+
+**The form asks the service what it accepts.** The limits of a run (robots 1 to 50, at most
+7,200 s, the charging and recovery choices) are read from the service's OpenAPI document, not
+repeated in the viewer. A Python test pins the shape the viewer reads. The service still validates
+every request and has the last word; its refusal reasons are shown as they are.
+
+**Limitations.**
+- **A viewer of finished runs.** It is not a live view of a running simulation, and it controls
+  nothing.
+- **No charging, breakdown or battery display.** Their totals are shown as totals. When each
+  happened is not in the trace (section 17).
+- **Component behaviour is tested by hand in a browser,** not by automated interface tests. The
+  logic underneath (trace reading, interpolation, clock, form, view maths) has 116 unit tests.
+- **Performance was measured on one machine and one browser.**
+
+**Interview questions.**
+- *How do you scrub backwards?* The same way as forwards: the frame is a function of the trace and
+  the playhead, with no state carried between frames.
+- *Why binary search when the reference scans?* The reference is written to be obviously right;
+  the viewer runs it 50 times a frame. The tests show they agree, including against a scan written
+  the reference's way.
+- *Why exact equality in a floating-point test?* Because both sides do the same IEEE operations
+  in the same order. A tolerance would hide a real difference, such as a different formula.
+- *What stops the interface from showing made-up data?* It has no source of data except the trace
+  and the job result, and the trace is rejected unless it passes the same checks as in Python.

@@ -61,7 +61,12 @@ src/amr_optimizer/
                mock.py       message bus (topics, log) and mock robots that speak the interface
                fleet.py      fleet control: releases bases under the planned order; runs of jobs
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
-scripts/       generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py,
+web/           the browser viewer (TypeScript, React, Vite; D34). It replays traces and never simulates
+  src/lib/     trace.ts (the format and its check), motion.ts (position and activity: the port of
+               viz/motion.py), replay.ts, playback.ts (the clock), api.ts, runForm.ts, view.ts
+  src/render/  the map and the fleet on a 2D canvas
+  src/components/  map, playback bar, run panel, details
+scripts/       dev.ps1 (starts the service and the viewer), generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py,
                compare_traffic.py, benchmark_scaling.py, make_figures.py, compare_delays.py,
                compare_charging.py, compare_breakdowns.py, vda5050_demo.py, make_replay_fixtures.py
 docs/results   scaling.csv, breakdowns.csv (per-run benchmark results, the source of the figures)
@@ -78,6 +83,11 @@ Dockerfile     the service as a container image (Python 3.13 slim, unprivileged 
 policy. `traffic` knows nothing about the simulator. `replay` reads a finished run (`sim`, `metrics`,
 `traffic`) and the simulator never imports it, so recording a trace cannot change a run (D33). `api`
 sits on top of everything and nothing imports it (D29). The command line uses `replay` too.
+
+**The viewer is outside this graph.** `web/` shares no code with the Python package. It depends on
+two contracts: the HTTP API, and the trace format. Both are checked from both sides: Python writes
+golden fixtures that the viewer's tests must reproduce, and a Python test pins the part of the
+OpenAPI document that the viewer's form reads.
 
 **Runtime dependencies:** numpy and scipy, for optimal assignment (D16), and OR-Tools, for the CP-SAT
 planner (D20). Everything else is the standard library.
@@ -106,7 +116,7 @@ planner (D20). Everything else is the standard library.
 | `viz` | Figures and animations of maps, runs and benchmark results (optional extra, matplotlib) | **Exists** (M5) |
 | `replay` | Replay traces: a finished run as a versioned, validated record for viewers | **Exists** (digital twin, phase 1a) |
 | `api` | HTTP service: planning, simulation jobs and their replay traces (optional extra, FastAPI and Uvicorn) | **Exists** (Phase 2, P4; traces in phase 1a of the digital twin) |
-| `web/` | Browser viewer that replays traces (React, TypeScript, Vite; D34) | **Planned** ([plan](DIGITAL_TWIN_PLAN.md)) |
+| `web/` | Browser viewer that replays traces (React, TypeScript, Vite, a 2D canvas; D34). Not a Python package: it talks to `api` over HTTP only | **Exists** (digital twin, phase 1b) |
 
 Each package is created only when it has real code.
 

@@ -4,8 +4,9 @@
 
 A Python engine that dispatches transport orders to a fleet of autonomous mobile robots (AMRs),
 plans collision-free routes for them on a warehouse graph, and measures the result in a
-reproducible discrete-event simulation. It also serves dispatch decisions over HTTP, and sends its
-plans to mock robots through the VDA 5050 interface.
+reproducible discrete-event simulation. It also serves dispatch decisions over HTTP, sends its
+plans to mock robots through the VDA 5050 interface, and replays its simulated runs in a browser
+([the viewer](#the-viewer-replaying-a-run-in-the-browser)).
 
 ![Ten robots on the large map with traffic: robots driving to pickups, carrying loads, and parking](docs/figures/traffic.gif)
 
@@ -57,6 +58,7 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | **Traffic** (`traffic/`) | One robot per node and per corridor; each job planned as one timed path; robots park on free dead-end spots; under random delays, plans are executed in the planned order of robots; after a breakdown, plans are re-timed and delayed robots replanned | Safe-interval path planning (SIPP), reservation tables, prioritized planning, completeness on well-formed layouts, deadlock-free ordered execution (temporal plan graph), re-timing as a longest path from a mid-run state |
 | **Robot interface** (`vda5050/`) | VDA 5050 3.0.0 orders, states and updates; mock robots; fleet control that releases bases under the planned order | Base and horizon as ordered execution, the official JSON schemas as the test oracle |
 | **Service** (`api/`) | An HTTP API for dispatch decisions and background simulation jobs, with a Dockerfile | FastAPI with Pydantic at the boundary only, a process pool for CPU-bound work, bounded queues |
+| **Replay** (`replay/`, `web/`) | A versioned trace of a finished run, served by the API and written by the CLI; a browser viewer that plays it back | Lossless visits instead of frames, strict validation in Python and TypeScript, golden fixtures as a cross-language oracle, bounded storage |
 | **Evaluation** (`metrics/`, `viz/`) | KPIs from the event log, conflict counts from trajectories, paired statistics, figures and animation | Nearest-rank percentiles, t confidence intervals, colour-vision-safe palette |
 
 The [algorithms guide](docs/algorithms.md) explains each component: the problem, the approach, its
@@ -90,7 +92,11 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
   - one in traffic control: put-away orders ending where a robot was parked.
 - **Reproducibility.** Every run is deterministic, a pinned scenario is checked on Windows and Linux
   in CI, and earlier benchmark tables reproduce exactly after later changes.
-- **Checks on every commit:** over 1,600 tests, ruff, and mypy in strict mode, and a Docker build in CI.
+- **The viewer is checked against Python.** Its interpolation must reproduce positions and
+  activities that the Python reference computed on three real runs, exactly. A Python test fails if
+  those committed fixtures go stale.
+- **Checks on every commit:** over 1,600 Python tests, ruff, and mypy in strict mode; 116 viewer
+  tests, ESLint and the TypeScript compiler in strict mode; and a Docker build in CI.
 
 ## Quick start
 
@@ -157,8 +163,8 @@ at `/docs`.
 - **Bounded input.** Requests are validated and bounded, and errors are 4xx answers with a reason.
 - **A local demonstration.** The server binds to 127.0.0.1 and has no authentication.
 - **Replay traces are bounded.** The service keeps the traces of the 20 most recent jobs that
-  recorded one, within 32 MB of compressed data. A browser viewer that replays them is planned
-  ([digital twin plan](docs/DIGITAL_TWIN_PLAN.md)); it is not built yet.
+  recorded one, within 32 MB of compressed data. The viewer below replays them
+  ([digital twin plan](docs/DIGITAL_TWIN_PLAN.md)).
 
 As a container (Docker Desktop on Windows needs WSL2). The CI workflow builds this image on Linux,
 starts it, and checks that it answers:
@@ -167,6 +173,45 @@ starts it, and checks that it answers:
 docker build -t amr-engine .
 docker run --rm -p 127.0.0.1:8000:8000 amr-engine
 ```
+
+## The viewer: replaying a run in the browser
+
+![The viewer: the large map with ten robots of a recorded run, one robot selected with its recorded path, and the robot list](docs/figures/digital-twin.jpg)
+
+*A recorded run of 10 robots under `cpsat-fair` with traffic, paused at 13:18. Robot R02 is selected:
+its path of the last minute, the recorded path to its drop-off, and its activity over the run.*
+
+`web/` is a browser viewer for runs the engine has simulated (React, TypeScript, a 2D canvas;
+[D33, D34](docs/DECISIONS.md)). It is a **replay of finished, synthetic runs**: it simulates nothing,
+controls nothing, and shows only what the run's trace contains.
+
+```powershell
+.\scripts\dev.ps1        # starts the service and the viewer, and opens http://127.0.0.1:5173
+```
+
+The first run needs Node.js (LTS) installed; the script installs the viewer's packages. To start
+the two parts by hand:
+
+```powershell
+.venv\Scripts\amr-api.exe                 # the engine's service, on http://127.0.0.1:8000
+cd web; npm ci; npm run dev               # the viewer, on http://127.0.0.1:5173
+```
+
+- **Map.** The warehouse as the graph it is: nodes by kind, connections with their direction
+  (one-way connections carry an arrow), pan, zoom, fit, and a scale bar in metres.
+- **Run.** Choose map, policy, fleet, demand, seed, traffic, delays, breakdowns and charging. The
+  form takes its limits from the service; the service simulates the run and records its trace.
+- **Playback.** Play, pause, speed, scrub, step by a second or a tick, jump between logged events.
+  Positions are interpolated from recorded visits exactly as the Python reference does; the tests
+  reproduce 2,211 positions computed by Python, bit for bit.
+- **Details.** A robot's movement, order and recorded path; each order's six logged steps; the
+  run's KPIs as the engine computed them; and the conflicts its independent checker found, on the
+  map and on the timeline.
+- **What it does not show.** When breakdowns and charging happened, and battery levels over time:
+  the engine records only their totals ([limitations](docs/LIMITATIONS.md)).
+
+`amr-sim --trace run.json` writes a run's trace to a file, which the viewer opens without the
+service.
 
 ## Reproducing every number
 

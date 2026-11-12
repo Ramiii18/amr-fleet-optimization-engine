@@ -152,8 +152,6 @@ limits in mind.
   tell free, to pickup and loaded. Charging, breakdowns and repairs have run totals but no events:
   when they happened is not recorded.
 - **No battery levels over time.** Only the lowest level of the run exists (charging KPIs).
-- **No browser viewer yet.** The trace, its endpoint and its fixtures exist; the viewer that reads
-  them is planned ([plan](DIGITAL_TWIN_PLAN.md)).
 - **Preset maps and generated scenarios only, through the service.** `amr-sim --trace` records
   scenario files too; the service does not accept them yet.
 - **The conflict list is capped** at the earliest 1,000 per trace. The total is exact.
@@ -161,6 +159,38 @@ limits in mind.
   Only the Python API can cut a run short (`max_tick`); the service and the command line cannot.
 - **Sizes and times were measured on one laptop,** for greedy dispatch on the large map
   ([algorithms](algorithms.md), section 17).
+
+## The viewer (digital twin, phase 1b)
+
+- **A replay, not a live system.** The viewer plays back runs that have finished. It does not show a
+  simulation while it runs, and it controls nothing. "Digital twin" means a faithful replay of a
+  simulated fleet, not a mirror of a physical one.
+- **A graph, not a floor plan.** The map is drawn as points and lines, because that is the model.
+  Aisle widths, robot footprints and clearances are not drawn, and nothing on screen says anything
+  about physical collisions.
+- **Three activities.** Robots are shown free, driving to a pickup, or loaded. Charging, waiting
+  for a charger, broken and being repaired are not shown, because the trace has no events for them.
+  A robot standing on a charger node is shown standing there, not "charging".
+- **No battery levels.** Charging results appear only as totals of the run.
+- **"Ahead" is a recording.** The dashed path in front of a selected robot is what it did next in
+  the finished run, not a plan or a prediction.
+- **Generated scenarios only.** The form makes runs on the preset maps. Scenario files with your own
+  map play back only as trace files written by `amr-sim --trace`.
+- **One run at a time.** There is no side-by-side comparison of two runs yet, and no statistics
+  over several seeds. One run is an example, not evidence that one policy beats another: the
+  [benchmarks](benchmarks.md) are the evidence.
+- **Lists are cut off.** The order list shows the first 150 orders in a state, and the conflict
+  list the first 150 conflicts; the map and the timeline mark every listed conflict.
+- **Tested in one browser.** The interface was checked by hand in Chrome on Windows. Other
+  browsers, touch screens and screen readers were not tested.
+- **No automated tests of the interface itself.** The logic it uses (trace reading, interpolation,
+  clock, form, view maths) has unit tests; components are checked by hand
+  ([plan](DIGITAL_TWIN_PLAN.md)).
+- **Local only.** The development server and the service listen on 127.0.0.1, without
+  authentication. There is no production build served by the service, and the container image
+  does not include the viewer.
+- **Performance was measured once:** in Chrome on the development laptop, on the largest run the
+  service accepts ([algorithms](algorithms.md), section 18).
 
 ## Evaluation
 

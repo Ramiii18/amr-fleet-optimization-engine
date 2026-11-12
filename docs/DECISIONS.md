@@ -775,3 +775,18 @@ local pass predicts a CI pass.
 - **CI gains a frontend job** (lint, type check, tests, build).
 - **Fixtures are committed files.** A change to the trace format or to the simulation of the
   fixture runs means regenerating them, on purpose.
+
+**As built (2026-11-12):**
+- **Every frame is a function of the trace and one playhead.** Nothing is accumulated between
+  frames, so scrubbing and stepping backwards need no special case. The playhead is clamped to the
+  run in every operation.
+- **The canvas choice held up when measured.** On the largest run the service accepts (50 robots),
+  frames took 10 ms at the median in Chrome on the development laptop.
+- **The form reads its limits from the service's OpenAPI document** instead of repeating them. A
+  Python test pins the shape it reads. If the document changed shape, the form would lose its
+  limits and leave all validation to the service, which checks every request anyway.
+- **Text panels follow the playhead at 5 to 10 updates a second;** only the canvas follows it on
+  every frame.
+- **The interface has no automated tests.** Its logic is in plain modules with unit tests, and the
+  components were checked by hand in a browser. That is a deliberate limit of this phase, recorded
+  in the limitations.

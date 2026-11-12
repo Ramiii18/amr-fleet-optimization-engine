@@ -128,7 +128,7 @@ Rules:
 | Phase | Content | Status |
 |---|---|---|
 | **1a** Backend contract | Trace package, map edges, trace over HTTP, `amr-sim --trace`, golden fixtures | **Done** (2026-11-11), see the [roadmap](ROADMAP.md) |
-| **1b** Viewer | `web/`: map, animated robots, run form, playback controls, robot and order details, KPIs | Planned, after review of 1a |
+| **1b** Viewer | `web/`: map, animated robots, run form, playback controls, robot and order details, KPIs, conflicts | **Done** (2026-11-12), see below |
 | **2** Experiment lab | Side-by-side runs, paired comparisons over seeds with intervals, per-order timeline, event jumping; simulator events for charging and breakdowns | Planned |
 | **3** Scenario exploration | Custom scenarios and maps through the API, with the existing strict parsers as the authority | Planned |
 | **4** One measured optimizer upgrade | First candidate: traffic-aware cost estimates in dispatch, against the existing policies on paired seeds | Planned |
@@ -153,6 +153,60 @@ every robot's position and activity from the Python reference functions:
 | `free_flow` | 3 robots, greedy, no traffic | Drives without waiting, 8 conflicts |
 | `cut_short` | The same run stopped at tick 1500 | Orders in progress and unreleased; visits after the end |
 | `disturbed` | 3 robots, `insertion-fair`, traffic, delays, charging, breakdowns, replanning | Long waits, 20 breakdowns, 9 replans, no conflicts |
+
+## What phase 1b delivered
+
+The viewer, in `web/`. Start it with `.\scripts\dev.ps1`; its own notes are in `web/README.md`.
+
+| Piece | Where |
+|---|---|
+| Reading and checking a trace | `web/src/lib/trace.ts` |
+| Position and activity at any moment (the port of `viz/motion.py`) | `web/src/lib/motion.ts` |
+| Playback clock, kept within the run | `web/src/lib/playback.ts` |
+| Orders by logged step, corridors, conflicts at a moment | `web/src/lib/replay.ts` |
+| The service's endpoints; the form's limits from its OpenAPI document | `web/src/lib/api.ts`, `web/src/lib/runForm.ts` |
+| Map drawing and picking on a 2D canvas | `web/src/render/scene.ts`, `web/src/lib/view.ts` |
+| Map, playback bar, run panel, details | `web/src/components/` |
+| One command to start both parts | `scripts/dev.ps1` |
+| CI job: lint, type check, tests, build, on Windows and Linux | `.github/workflows/ci.yml` |
+
+**What was checked in a real browser** (Chrome, against the running service), on 2026-11-12:
+
+| Check | Result |
+|---|---|
+| Map explorer before any run | The three preset maps draw with every directed edge; one-way connections carry arrows |
+| A run from the form | Each of the four presets ran on the service and played back |
+| Playback | Play, pause, speed, scrub, steps of 1 s, 10 s and one tick, jump to the next logged event; the playhead stops at the end and playing there starts again from 0 |
+| A recorded path against the raw trace | A detour into a storage spur that looked odd on screen was in the trace: the robot waited there for 5.6 s |
+| Conflicts | A free-flow run showed the 85 conflicts its trace lists, on the map, on the timeline and in the list |
+| Trace states | Pending while running; a trace dropped by the service (after 22 more runs: 20 kept, 5 dropped) gave the 410 explanation and "Run again" |
+| Trace files | A valid file played without the service; a file of another version and a file that is not JSON were refused with the reason |
+| Service down | Clear notice with the command to start it; "Try again" reconnected |
+| gzip | The browser received `Content-Encoding: gzip` and decompressed it itself |
+| Narrow windows | Checked at 1000 px (two columns, details below) and 540 px (one column) |
+| The largest run the service accepts (50 robots, 995 orders, 621 breakdowns) | Loaded and checked in 0.4 s; at 60x speed, frames took 10 ms at the median and 20 ms at the 95th percentile |
+
+**Not checked:** other browsers than Chrome, touch input on a real touch screen, and screen
+readers. The interface has no automated tests of its own; the logic underneath has 116.
+
+## A three-minute demonstration
+
+1. **Start.** Run `.\scripts\dev.ps1`. The viewer opens on the large map. Point out the notice
+   in the header: a synthetic simulation, no real robot.
+2. **The map (30 s).** Zoom into an aisle with the mouse wheel. One-way aisles carry arrows;
+   storage places sit on dead-end spurs. Click a node: the Map tab lists where robots can drive
+   from it. Press F to fit.
+3. **A run (30 s).** Click the preset "Fleet with traffic", then "Run simulation". The engine
+   simulates 10 robots under the CP-SAT dispatcher and records the run; it takes a few seconds.
+4. **Playback (45 s).** Press Space. Set the speed to 60x, then drag the timeline. Robots are
+   coloured by activity: free, to pickup, loaded. The numbers at the pickups are waiting loads.
+5. **A robot (30 s).** Click a loaded robot. Its panel shows the edge it is driving and its order;
+   the map shows its path of the last minute and the recorded path to its drop-off. Click the order
+   id: the six logged steps of the order, each with its time; click a step to jump there.
+6. **The evidence (30 s).** Open Overview: every order delivered, completion times, utilization,
+   and 0 conflicts, found by the engine's independent checker.
+7. **The contrast (15 s).** Click the preset "Free flow" and run it. The Conflicts tab now lists
+   what traffic management prevents; click one to see two robots in the same place.
 
 ## Phase 1 acceptance criteria
 
