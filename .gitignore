@@ -20,6 +20,11 @@ htmlcov/
 # The public summary is docs/PROJECT_OVERVIEW.md.
 docs/PROJECT_BRIEF.md
 
+# The browser viewer (web/): installed packages and build output
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+
 # Editors and OS files
 .idea/
 .vscode/
