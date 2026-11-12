@@ -51,6 +51,42 @@ jobs:
       - name: Tests (pytest)
         run: python -m pytest
 
+  web:
+    # The browser viewer (web/, D34): lint, type check, tests and build. The tests reproduce the
+    # golden fixtures that Python writes (tests/data/replay), so they need the whole repository.
+    name: Viewer / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Type check (tsc)
+        run: npm run typecheck
+
+      - name: Tests (vitest)
+        run: npm test
+
+      - name: Build (vite)
+        run: npm run build
+
   container:
     # The service as a container image (D29): build it, start it, and check that it answers.
     name: Docker image

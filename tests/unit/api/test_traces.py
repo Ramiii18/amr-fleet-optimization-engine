@@ -242,6 +242,39 @@ def test_the_api_documentation_describes_the_trace(client: TestClient) -> None:
     assert json.dumps(schema) == json.dumps(TRACE_JSON_SCHEMA)
 
 
+def test_the_api_documentation_gives_the_form_its_limits(client: TestClient) -> None:
+    # The browser viewer reads the limits of its run form from this document (web/src/lib/api.ts,
+    # `limitsFromOpenApi`), instead of repeating them. If the shape below changes, the viewer's
+    # form loses its limits and leaves all validation to the service: change both together.
+    schemas = client.get("/openapi.json").json()["components"]["schemas"]
+    request = schemas["SimulationRequest"]["properties"]
+    disturbance = schemas["Disturbance"]["properties"]
+
+    assert request["robots"] == {
+        "type": "integer",
+        "maximum": 50.0,
+        "minimum": 1.0,
+        "title": "Robots",
+        "default": 5,
+    }
+    for name, maximum in (("orders_per_hour", 1000.0), ("duration_s", 7200.0)):
+        assert request[name]["exclusiveMinimum"] == 0.0 and request[name]["maximum"] == maximum
+        assert isinstance(request[name]["default"], float)
+    assert (request["seed"]["minimum"], request["seed"]["maximum"]) == (0.0, 2**31 - 1)
+    assert request["charging"]["anyOf"][0]["enum"] == [
+        "when-low",
+        "opportunistic",
+        "opportunistic-early",
+    ]
+    assert request["recovery"]["enum"] == ["wait", "retime", "replan"]
+    assert (request["map"]["default"], request["policy"]["default"]) == ("large", "greedy")
+    assert request["traffic"]["default"] is True and request["recovery"]["default"] == "wait"
+    assert (
+        disturbance["share"]["exclusiveMinimum"] == 0.0 and disturbance["share"]["maximum"] == 1.0
+    )
+    assert disturbance["max_s"]["maximum"] == disturbance["min_s"]["maximum"] == 600.0
+
+
 # --- the store -----------------------------------------------------------------------------------
 
 
