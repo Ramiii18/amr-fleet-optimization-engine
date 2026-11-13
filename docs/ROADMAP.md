@@ -691,6 +691,11 @@ Linux (Python, viewer and Docker image).
 drawn creeping along the edge, because the trajectory records only its entry into the node. The
 simulator knew where it was; the trace now says so.
 
+**Review (2026-11-13):** the owner asked for a review before merging. It found no defect in
+behaviour. It closed one gap: a trace whose robot events contradict a robot's path is now refused
+by both parsers (D35, amended), a rule first checked on 220 real runs. Phases 1 and 2a were then
+merged into `main`.
+
 **Next (proposed, not started):**
 1. The experiment lab: paired comparisons over seeds with intervals, on a disturbance model that is
    the same for every policy. The design is in [EXPERIMENT_LAB_DESIGN.md](EXPERIMENT_LAB_DESIGN.md);

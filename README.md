@@ -98,7 +98,7 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
 - **Observation without interference.** Recording robot events changes no run: the older trace
   fixtures still come out byte for byte, and `scripts/check_published_results.py` re-runs published
   benchmark rows and compares every KPI with the committed results.
-- **Checks on every commit:** over 1,800 Python tests, ruff, and mypy in strict mode; 159 viewer
+- **Checks on every commit:** over 1,800 Python tests, ruff, and mypy in strict mode; 167 viewer
   tests, ESLint and the TypeScript compiler in strict mode; and a Docker build in CI.
 
 ## Quick start

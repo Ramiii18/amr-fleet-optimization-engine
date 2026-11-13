@@ -1983,6 +1983,23 @@ the end of its corridor before its turn waits there. `replay.state.position_at` 
 evenly from its departure to the moment it reached the end, then holds it there until it enters the
 node. Without a recorded wait it equals `viz.motion.position_at`, which is unchanged.
 
+**Events must agree with the path.** A reader takes positions from the visits and statuses from the
+events. If a trace's events contradicted its visits, a viewer would show a robot charging in an
+aisle or delayed while it stands. Both parsers (Python and the viewer) therefore refuse a trace
+unless, for every event:
+- the robot is at the event's node at that tick: in that visit, or, at the tick of an arrival, at
+  the node it came from (an event can be recorded just before the robot enters the node);
+- a `delay` or a `breakdown` is at the tick the robot leaves the node, and the next visit is the
+  event's target;
+- a corridor wait starts after that departure and before the next arrival, and ends exactly at the
+  arrival at the target;
+- charging starts and stops on a charger, and stops at the tick the robot leaves it; a charger trip
+  aims at a charger.
+
+The check is one binary search per event, O(E log V). It was added in the review of phase 2a and
+first run over 220 real runs (all charging and recovery policies, three fleet sizes, runs cut
+short, naive execution; 46,000 events of all 13 kinds): none was refused.
+
 **What a breakdown is not.** It is not a place. The model adds time to a traversal and does not say
 where on the corridor the robot loses it. The status `breakdown` (and `delay`) covers the whole
 traversal, and the viewer says that the place on the edge is not modelled.

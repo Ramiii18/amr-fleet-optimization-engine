@@ -144,6 +144,22 @@ def _drop_levels_of_one_robot(data: dict[str, Any]) -> None:
     data["robots"][0]["levels"] = None
 
 
+def _copy_field(kind: str, field: str, source: str) -> Callable[[dict[str, Any]], None]:
+    """Give the first event of ``kind`` the value of its own ``source`` field as ``field``."""
+
+    def change(data: dict[str, Any]) -> None:
+        event = data["robot_events"][_first(data, kind)]
+        event[field] = event[source]
+
+    return change
+
+
+def _no_chargers(data: dict[str, Any]) -> None:
+    for node in data["map"]["nodes"]:
+        if node["kind"] == "charger":
+            node["kind"] = "parking"
+
+
 def _swap_two_robot_events(data: dict[str, Any]) -> None:
     events = data["robot_events"]
     late = next(i for i, e in enumerate(events) if e["tick"] > events[0]["tick"])
@@ -210,6 +226,32 @@ BROKEN: list[tuple[str, Callable[[dict[str, Any]], None], str, bool]] = [
         r"robot_events\[0\]: unknown field",
         True,
     ),
+    # Events that contradict the robot's recorded path.
+    (
+        "a delay at a node the robot is not at",
+        _copy_field("delay", "node", "target"),
+        "is not at",
+        False,
+    ),
+    (
+        "a delay towards a node the robot does not drive to",
+        _copy_field("delay", "target", "node"),
+        "is not on its way from",
+        False,
+    ),
+    (
+        "a wait that ends at a node the robot does not enter",
+        _copy_field("corridor_wait_ended", "target", "node"),
+        "does not enter",
+        False,
+    ),
+    (
+        "a wait that starts at a node the robot has not left for that target",
+        _copy_field("corridor_wait_started", "target", "node"),
+        "is not on its way from",
+        False,
+    ),
+    ("charging where there is no charger", _no_chargers, "is not a charger", False),
 ]
 
 

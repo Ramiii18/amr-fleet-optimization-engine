@@ -260,6 +260,15 @@ describe("version 1 and broken version 2 traces", () => {
     ["an event of an unknown robot", (d) => (firstOf(d, "delay").robot = "R99"), /unknown robot/],
     ["an event at an unknown node", (d) => (firstOf(d, "delay").target = "NOWHERE"), /unknown node/],
     ["a robot event after the end", (d) => (d.robot_events.at(-1).tick = 10 ** 9), /outside the run/],
+    ["thresholds in the wrong order", (d) => (d.battery_model.high = d.battery_model.low), /needs low < high <= capacity/],
+    ["a return level that is neither threshold", (d) => (d.battery_model.back_in_service = 123), /must be the low or the high threshold/],
+    ["a battery model for a run without a battery", (d) => (d.battery = false), /given for a run without a battery/],
+    // Events that contradict the robot's recorded path.
+    ["a delay at a node the robot is not at", (d) => (firstOf(d, "delay").node = firstOf(d, "delay").target), /is not at/],
+    ["a delay towards a node the robot does not drive to", (d) => (firstOf(d, "delay").target = firstOf(d, "delay").node), /is not on its way from/],
+    ["a wait that ends at a node the robot does not enter", (d) => (firstOf(d, "corridor_wait_ended").target = firstOf(d, "corridor_wait_ended").node), /does not enter/],
+    ["a wait that starts where the robot has not left for that target", (d) => (firstOf(d, "corridor_wait_started").target = firstOf(d, "corridor_wait_started").node), /is not on its way from/],
+    ["charging where there is no charger", (d) => d.map.nodes.forEach((n: Json) => { if (n.kind === "charger") n.kind = "parking"; }), /is not a charger/],
   ])("refuses %s", (_name, change, reason) => {
     const data = broken(change);
     expect(() => parseTrace(data)).toThrow(TraceFormatError);

@@ -1,7 +1,7 @@
 /**
- * The replay trace format (schema version 1), as the engine writes it.
+ * The replay trace format (schema versions 1 and 2), as the engine writes it.
  *
- * The format is defined in Python: `src/amr_optimizer/replay/trace.py` (D33). This file reads
+ * The format is defined in Python: `src/amr_optimizer/replay/trace.py` (D33, D35). This file reads
  * it and checks it. Nothing here computes anything about a run: a trace is the whole truth,
  * and what it does not contain is not shown.
  *
@@ -302,6 +302,70 @@ const COUNTERS = [
 ] as const;
 
 /**
+ * Every robot event must agree with the robot's recorded path (`_check_event_places` in the
+ * Python package). Statuses and corridor waits come from the events and positions from the
+ * path: if the two disagreed, the viewer would show a robot charging in an aisle or delayed
+ * while it stands.
+ */
+function checkEventPlaces(
+  events: readonly RobotEvent[],
+  robots: readonly TraceRobot[],
+  nodes: readonly TraceNode[],
+  edgeKeys: ReadonlySet<string>,
+): void {
+  const paths = new Map(robots.map((robot) => [robot.id, robot.visits]));
+  const chargers = new Set(nodes.filter((node) => node.kind === "charger").map((node) => node.id));
+  events.forEach((event, i) => {
+    const where = `robot_events[${i}]`;
+    const visits = paths.get(event.robot) ?? [];
+    // The visit the robot is in at that tick, or has last left.
+    let at = 0;
+    for (let low = 0, high = visits.length; low < high; ) {
+      const middle = (low + high) >>> 1;
+      if ((visits[middle] as TraceVisit)[1] <= event.tick) {
+        at = middle;
+        low = middle + 1;
+      } else high = middle;
+    }
+    const current = visits[at] as TraceVisit;
+    const following = visits[at + 1];
+    // An event at the tick of an arrival may have been recorded just before the robot entered
+    // the node: then it still names the node the robot came from.
+    const before = at > 0 && current[1] === event.tick ? visits[at - 1] : undefined;
+    const robot = `robot ${event.robot}`;
+    const { kind, node, target, tick } = event;
+    if (kind === "corridor_wait_ended") {
+      if (before === undefined || before[0] !== node || current[0] !== target) {
+        fail(where, `${robot} does not enter ${target} from ${node} at tick ${tick}`);
+      }
+      return;
+    }
+    if (node !== current[0] && node !== before?.[0]) {
+      fail(where, `${robot} is not at ${node} at tick ${tick}`);
+    }
+    if (kind === "delay" || kind === "breakdown" || kind === "corridor_wait_started") {
+      // These belong to one traversal: the robot has left `node` for `target`.
+      const depart = current[2] ?? Infinity;
+      const left = kind === "corridor_wait_started" ? depart < tick : depart === tick;
+      const towards =
+        following !== undefined
+          ? following[0] === target
+          : edgeKeys.has(`${node}\u0000${target}`);
+      if (node !== current[0] || !left || !towards) {
+        fail(where, `${robot} is not on its way from ${node} to ${target} at tick ${tick}`);
+      }
+    } else if (kind === "charging_started" || kind === "charging_stopped") {
+      if (!chargers.has(node)) fail(where, `${node} is not a charger`);
+      if (kind === "charging_stopped" && current[2] !== tick) {
+        fail(where, `${robot} does not leave ${node} at tick ${tick}`);
+      }
+    } else if (kind === "charger_trip_started") {
+      if (target === null || !chargers.has(target)) fail(where, `${target} is not a charger`);
+    }
+  });
+}
+
+/**
  * Check parsed JSON and return it as a `Trace`. Throws `TraceFormatError` with the place of the
  * first problem.
  *
@@ -415,6 +479,12 @@ export function parseTrace(data: unknown): Trace {
       back_in_service: positive("back_in_service"),
       units_per_metre: positive("units_per_metre"),
     };
+    const { low, high, capacity, back_in_service } = battery_model;
+    if (!(low < high && high <= capacity)) fail("battery_model", "needs low < high <= capacity");
+    if (back_in_service !== low && back_in_service !== high) {
+      fail("battery_model.back_in_service", "must be the low or the high threshold");
+    }
+    if (top["battery"] !== true) fail("battery_model", "given for a run without a battery");
   }
   for (const robot of robots) {
     if ((robot.levels === null) !== (battery_model === null)) {
@@ -551,6 +621,7 @@ export function parseTrace(data: unknown): Trace {
       };
     },
   );
+  checkEventPlaces(robot_events, robots, nodes, edgeKeys);
 
   return {
     format: TRACE_FORMAT,

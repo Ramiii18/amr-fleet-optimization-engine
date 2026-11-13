@@ -67,6 +67,7 @@ A version 1 trace is still read: it has no robot events and no levels. `downgrad
 the additions from version 2 data, which gives exactly the version 1 trace of the same run.
 """
 
+import bisect
 import gzip
 import json
 import math
@@ -211,7 +212,10 @@ class ReplayTrace:
     - battery levels exist exactly when there is a battery model: one per visit, within the
       capacity;
     - robot events are in time order, within the run, name known robots and nodes, and have
-      exactly the fields of their kind (`ROBOT_EVENT_FIELDS`).
+      exactly the fields of their kind (`ROBOT_EVENT_FIELDS`);
+    - every robot event agrees with the robot's path: the robot is at the event's node at that
+      tick, a delay or a breakdown is at a departure towards the event's target, a corridor
+      wait lies within such a traversal, and charging happens on a charger.
     """
 
     run: Mapping[str, object]
@@ -535,6 +539,69 @@ def _check_robot_events(trace: ReplayTrace, graph: WarehouseGraph, robots: set[R
                 raise _fail(f"{where}: level is outside 0 to {trace.battery_model.capacity}")
         if event.reason is not None and event.reason not in CHARGER_TRIP_REASONS:
             raise _fail(f"{where}: reason must be one of {list(CHARGER_TRIP_REASONS)}")
+    _check_event_places(trace, graph)
+
+
+def _check_event_places(trace: ReplayTrace, graph: WarehouseGraph) -> None:
+    """Every robot event must agree with the robot's recorded path.
+
+    A reader derives statuses and corridor waits from the events and positions from the path;
+    if the two disagreed, it would show a robot charging in an aisle or delayed while standing.
+    """
+    paths = {robot.id: robot.path.visits for robot in trace.robots}
+    arrivals = {robot_id: [visit.arrive for visit in visits] for robot_id, visits in paths.items()}
+    for index, event in enumerate(trace.robot_events):
+        where = f"robot_events[{index}]"
+        visits = paths[event.robot_id]
+        # The visit the robot is in at that tick, or has last left.
+        at = bisect.bisect_right(arrivals[event.robot_id], event.tick) - 1
+        current = visits[at]
+        following = visits[at + 1] if at + 1 < len(visits) else None
+        # An event at the tick of an arrival may have been recorded just before the robot
+        # entered the node: then it still names the node the robot came from.
+        before = visits[at - 1] if at > 0 and current.arrive == event.tick else None
+        kind = event.kind
+        if kind is _K.CORRIDOR_WAIT_ENDED:
+            if before is None or (before.node, current.node) != (event.node, event.target):
+                raise _fail(
+                    f"{where}: robot {event.robot_id!r} does not enter {event.target!r} from "
+                    f"{event.node!r} at tick {event.tick}"
+                )
+            continue
+        if event.node != current.node and (before is None or event.node != before.node):
+            raise _fail(
+                f"{where}: robot {event.robot_id!r} is not at {event.node!r} at tick {event.tick}"
+            )
+        if kind in (_K.DELAY, _K.BREAKDOWN, _K.CORRIDOR_WAIT_STARTED):
+            # These belong to one traversal: the robot has left ``node`` for ``target``.
+            assert event.target is not None  # by ROBOT_EVENT_FIELDS
+            left = (
+                current.depart < event.tick
+                if kind is _K.CORRIDOR_WAIT_STARTED
+                else current.depart == event.tick
+            )
+            towards = (
+                following.node == event.target
+                if following is not None
+                else graph.get_edge(event.node, event.target) is not None
+            )
+            if event.node != current.node or not left or not towards:
+                raise _fail(
+                    f"{where}: robot {event.robot_id!r} is not on its way from {event.node!r} "
+                    f"to {event.target!r} at tick {event.tick}"
+                )
+        elif kind in (_K.CHARGING_STARTED, _K.CHARGING_STOPPED):
+            if graph.node(event.node).kind is not NodeKind.CHARGER:
+                raise _fail(f"{where}: {event.node!r} is not a charger")
+            if kind is _K.CHARGING_STOPPED and current.depart != event.tick:
+                raise _fail(
+                    f"{where}: robot {event.robot_id!r} does not leave {event.node!r} at tick "
+                    f"{event.tick}"
+                )
+        elif kind is _K.CHARGER_TRIP_STARTED:
+            assert event.target is not None
+            if graph.node(event.target).kind is not NodeKind.CHARGER:
+                raise _fail(f"{where}: {event.target!r} is not a charger")
 
 
 # --- writing -----------------------------------------------------------------------------------

@@ -852,3 +852,16 @@ local pass predicts a CI pass.
   or the fixture folder listing: three in the Python tests and four in the viewer tests.
 - **What stays unknown:** the place on an edge during a delay or a breakdown; a battery curve while
   driving; anything about batteries or breakdowns in free flow, which has neither.
+
+**Amended (2026-11-13, review of phase 2a):** a trace is refused if a robot event contradicts the
+robot's path.
+- **Why:** positions come from the visits and statuses from the events. The first version checked
+  each on its own, so a hand-edited or foreign trace could say "charging" for a robot in an aisle,
+  and a viewer would show it. The engine's own traces never do; the check makes that a property of
+  every trace that is read, not only of the writer.
+- **What:** the robot is at the event's node at that tick; a delay or a breakdown is at a departure
+  towards the event's target; a corridor wait lies inside such a traversal and ends at the arrival;
+  charging is on a charger. Python and the viewer check the same rules
+  ([algorithms](algorithms.md), section 19).
+- **Also:** the viewer now checks the battery model's thresholds as Python already did.
+- **No format change:** version 2 is as it was, and the committed fixtures are unchanged.
