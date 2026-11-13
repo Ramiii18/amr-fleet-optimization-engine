@@ -693,8 +693,8 @@ simulator knew where it was; the trace now says so.
 
 **Review (2026-11-13):** the owner asked for a review before merging. It found no defect in
 behaviour. It closed one gap: a trace whose robot events contradict a robot's path is now refused
-by both parsers (D35, amended), a rule first checked on 220 real runs. Phases 1 and 2a were then
-merged into `main`.
+by both parsers (D35, amended), a rule first checked on 220 real runs. CI run 43456399400 on
+`c03e936` passed all five jobs. Phases 1 and 2a are ready to merge into `main`.
 
 **Next (proposed, not started):**
 1. The experiment lab: paired comparisons over seeds with intervals, on a disturbance model that is
