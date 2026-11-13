@@ -95,7 +95,10 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
 - **The viewer is checked against Python.** Its interpolation must reproduce positions and
   activities that the Python reference computed on three real runs, exactly. A Python test fails if
   those committed fixtures go stale.
-- **Checks on every commit:** over 1,600 Python tests, ruff, and mypy in strict mode; 116 viewer
+- **Observation without interference.** Recording robot events changes no run: the older trace
+  fixtures still come out byte for byte, and `scripts/check_published_results.py` re-runs published
+  benchmark rows and compares every KPI with the committed results.
+- **Checks on every commit:** over 1,800 Python tests, ruff, and mypy in strict mode; 159 viewer
   tests, ESLint and the TypeScript compiler in strict mode; and a Docker build in CI.
 
 ## Quick start
@@ -203,12 +206,18 @@ cd web; npm ci; npm run dev               # the viewer, on http://127.0.0.1:5173
   form takes its limits from the service; the service simulates the run and records its trace.
 - **Playback.** Play, pause, speed, scrub, step by a second or a tick, jump between logged events.
   Positions are interpolated from recorded visits exactly as the Python reference does; the tests
-  reproduce 2,211 positions computed by Python, bit for bit.
+  reproduce positions, statuses and battery levels computed by Python, bit for bit, on seven
+  fixture traces.
 - **Details.** A robot's movement, order and recorded path; each order's six logged steps; the
   run's KPIs as the engine computed them; and the conflicts its independent checker found, on the
   map and on the timeline.
-- **What it does not show.** When breakdowns and charging happened, and battery levels over time:
-  the engine records only their totals ([limitations](docs/LIMITATIONS.md)).
+- **Robot status and battery.** Charging, out of service, waiting for a charger, breakdown and
+  delay traversals, and waits at the end of a corridor, each from an event the simulator recorded
+  ([D35](docs/DECISIONS.md)). A battery value is labelled as an engine reading with its age, or as a
+  calculation by the engine's charging formula.
+- **What it does not show.** Where on an edge a delayed or broken robot is, and a battery level
+  between two nodes: the model has neither, so nothing is drawn for them
+  ([limitations](docs/LIMITATIONS.md)).
 
 `amr-sim --trace run.json` writes a run's trace to a file, which the viewer opens without the
 service.

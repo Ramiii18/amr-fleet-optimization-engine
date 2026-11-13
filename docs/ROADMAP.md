@@ -657,12 +657,45 @@ D33 and D34. Work happens on the branch `feature/amr-digital-twin-phase1`.
 (charging, breakdowns and battery levels over time) is exactly what the simulator does not log, and
 that is the first item for the next phase.
 
+**Phase 1 accepted** by the owner on 2026-11-12, after CI run 43237127330 passed on Windows and
+Linux (Python, viewer and Docker image).
+
+### Phase 2a: robot observability (2026-11-13, branch `feature/amr-digital-twin-phase2a`)
+
+| Step | Content | Status |
+|---|---|---|
+| **2a.1** | Robot events and battery readings in the simulator, as observations (D35) | **Done** |
+| **2a.2** | Trace version 2; version 1 still read; reference functions for position, status and level | **Done** |
+| **2a.3** | The viewer shows statuses and battery levels, with their source | **Done** |
+| **2a.4** | Measured cost; documentation | **Done** |
+
+**2a acceptance:**
+- **Existing tests pass, and version 1 fixtures are untouched:** met. Seven existing assertions were
+  updated, all statements about the version number, the added fields or the fixture folder
+  listing; no other existing test changed.
+- **With the additions removed, the new traces equal the version 1 traces byte for byte:** met, on
+  the three fixture runs.
+- **Published results reproduce:** met. 156 runs of the scaling and breakdown benchmarks, 3,300 KPI
+  values, none differs.
+- **Events add up to the simulator's counters:** met, on generated runs under all three charging
+  policies and all three recovery policies, and on a run cut short.
+- **Statuses and levels come only from events and readings:** met. The viewer reproduces the Python
+  reference exactly on four version 2 fixtures, and shows "not recorded" for version 1 traces.
+- **Cost measured:** met ([algorithms](algorithms.md), section 19). Simulation time +0.2% to +3.2%;
+  traces of disturbed runs 40% to 53% larger when compressed.
+- **CI on Windows and Linux:** not run yet. The branch is not pushed: pushing it needs the owner's
+  word. Every check passes locally on Windows.
+
+**Finding:** the events exposed a gap in the old replay. A robot held at the end of a corridor was
+drawn creeping along the edge, because the trajectory records only its entry into the node. The
+simulator knew where it was; the trace now says so.
+
 **Next (proposed, not started):**
-1. Events for charging and breakdowns in the simulator's log, and battery levels at those events,
-   so that the viewer can show them truthfully.
-2. The experiment lab: two runs side by side, and paired comparisons over seeds with intervals.
-3. Scenario files through the service.
-4. One measured optimizer upgrade: traffic-aware cost estimates in dispatch.
+1. The experiment lab: paired comparisons over seeds with intervals, on a disturbance model that is
+   the same for every policy. The design is in [EXPERIMENT_LAB_DESIGN.md](EXPERIMENT_LAB_DESIGN.md);
+   it needs the owner's approval.
+2. Scenario files through the service.
+3. One measured optimizer upgrade: traffic-aware cost estimates in dispatch.
 
 ## Phase 2 backlog (unordered)
 

@@ -20,8 +20,9 @@ and never invents a value.
 - KPIs come from `metrics/`, computed in Python from the same run.
 - Conflicts come from the independent conflict checker (`traffic/conflicts.py`), never from two
   drawings overlapping on screen.
-- What the simulator does not record is not shown. Today that includes battery levels over time
-  and the moments of breakdowns and charging: only their totals exist.
+- What the simulator does not record is not shown. Since phase 2a it records robot events and
+  battery readings (D35). It still does not record where on an edge a delayed or broken robot is,
+  or a battery level between two nodes, so the viewer shows neither.
 
 ## Baseline (2026-11-11, commit `a4e156f`)
 
@@ -129,7 +130,8 @@ Rules:
 |---|---|---|
 | **1a** Backend contract | Trace package, map edges, trace over HTTP, `amr-sim --trace`, golden fixtures | **Done** (2026-11-11), see the [roadmap](ROADMAP.md) |
 | **1b** Viewer | `web/`: map, animated robots, run form, playback controls, robot and order details, KPIs, conflicts | **Done** (2026-11-12), see below |
-| **2** Experiment lab | Side-by-side runs, paired comparisons over seeds with intervals, per-order timeline, event jumping; simulator events for charging and breakdowns | Planned |
+| **2a** Robot observability | Simulator events for charging, service state, delays, breakdowns and waits; battery readings; trace version 2; the viewer shows them with their source (D35) | **Done** (2026-11-13), see the [roadmap](ROADMAP.md) |
+| **2b** Experiment lab | Paired comparisons over seeds with intervals, on disturbances that are the same for every policy | Proposed: [EXPERIMENT_LAB_DESIGN.md](EXPERIMENT_LAB_DESIGN.md) |
 | **3** Scenario exploration | Custom scenarios and maps through the API, with the existing strict parsers as the authority | Planned |
 | **4** One measured optimizer upgrade | First candidate: traffic-aware cost estimates in dispatch, against the existing policies on paired seeds | Planned |
 | **5** Polish | Large-map rendering measurements, accessibility, keyboard controls, recorded demo | Planned |

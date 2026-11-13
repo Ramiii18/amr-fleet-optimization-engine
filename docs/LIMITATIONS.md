@@ -148,10 +148,9 @@ limits in mind.
 - **A record of a simulated run, nothing more.** A trace replays what the simulator computed on a
   synthetic map. It is not a record of any real robot, and "no conflicts" in a trace is a statement
   about nodes and corridors of the graph model, not about physical clearance.
-- **Three activities only.** The event log has the six steps of an order's life, so a viewer can
-  tell free, to pickup and loaded. Charging, breakdowns and repairs have run totals but no events:
-  when they happened is not recorded.
-- **No battery levels over time.** Only the lowest level of the run exists (charging KPIs).
+- **Version 1 traces record three activities only.** They have the six steps of an order's life,
+  so a viewer can tell free, to pickup and loaded, and nothing about charging or breakdowns.
+  Version 2 adds robot events and battery levels (see "Robot events and battery readings" below).
 - **Preset maps and generated scenarios only, through the service.** `amr-sim --trace` records
   scenario files too; the service does not accept them yet.
 - **The conflict list is capped** at the earliest 1,000 per trace. The total is exact.
@@ -159,6 +158,32 @@ limits in mind.
   Only the Python API can cut a run short (`max_tick`); the service and the command line cannot.
 - **Sizes and times were measured on one laptop,** for greedy dispatch on the large map
   ([algorithms](algorithms.md), section 17).
+
+## Robot events and battery readings (digital twin, phase 2a)
+
+- **No place on an edge during a delay or a breakdown.** The model adds time to a corridor
+  traversal and does not say where the robot loses it. The events are at the corridor entry, the
+  status covers the whole traversal, and the position drawn along that edge is a convention (even
+  movement), marked as not modelled. No stopping place is invented (D35).
+- **No battery curve while driving.** A level is recorded on arrival at a node, where the model
+  charges the edge's energy. In between, the last reading is shown with its age. Nothing is
+  interpolated.
+- **On a charger, the level is calculated, not read.** The viewer applies the engine's own charging
+  formula and labels the value as a calculation. The engine records a reading only when charging
+  starts and stops, and when it checks the robot's service state.
+- **Free flow has no robot events.** Runs without traffic management have no batteries, no
+  breakdowns and no waiting, so there is nothing to record.
+- **Events say what, not why.** A replan or a move out of the way is recorded, but not which other
+  robot caused it. A wait for a charger does not say which charger it is waiting for.
+- **Service state changes at decisions.** A robot goes out of service when a dispatch decision
+  finds it low, not the instant its level crosses the threshold. The event is where the simulator
+  acts, which is the model's own definition.
+- **Traces of disturbed runs are larger:** 40% to 53% more when compressed, measured on six
+  scenarios; plain traffic runs are unchanged ([algorithms](algorithms.md), section 19).
+- **The cost was measured on one laptop.** Simulation time changed by 0.2% to 3.2%, which is at the
+  limit of what the measurement resolves.
+- **Fixture coverage.** The committed fixtures cover every status except waiting for a charger,
+  which a hand-built case covers in the simulator's tests.
 
 ## The viewer (digital twin, phase 1b)
 
@@ -168,10 +193,15 @@ limits in mind.
 - **A graph, not a floor plan.** The map is drawn as points and lines, because that is the model.
   Aisle widths, robot footprints and clearances are not drawn, and nothing on screen says anything
   about physical collisions.
-- **Three activities.** Robots are shown free, driving to a pickup, or loaded. Charging, waiting
-  for a charger, broken and being repaired are not shown, because the trace has no events for them.
-  A robot standing on a charger node is shown standing there, not "charging".
-- **No battery levels.** Charging results appear only as totals of the run.
+- **Statuses come from events, and only from events.** With a version 2 trace the viewer shows
+  charging, out of service, waiting for a charger, breakdown and delay traversals, and waits at the
+  end of a corridor. With a version 1 trace it shows none of them and says that they are not
+  recorded. It never derives a status from a position: a robot standing on a charger node is
+  "charging" only between a charging-started and a charging-stopped event.
+- **A waiting robot is drawn short of the node.** A robot at the end of a corridor is drawn a
+  little before the node on the edge it came by, so that it does not cover the robot in the node.
+  How far before is a drawing convention; the model has no length for it.
+- **Up to three status badges per robot** are drawn on the map. The robot panel lists all of them.
 - **"Ahead" is a recording.** The dashed path in front of a selected robot is what it did next in
   the finished run, not a plan or a prediction.
 - **Generated scenarios only.** The form makes runs on the preset maps. Scenario files with your own

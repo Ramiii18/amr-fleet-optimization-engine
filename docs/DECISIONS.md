@@ -790,3 +790,65 @@ local pass predicts a CI pass.
 - **The interface has no automated tests.** Its logic is in plain modules with unit tests, and the
   components were checked by hand in a browser. That is a deliberate limit of this phase, recorded
   in the limitations.
+
+
+## D35: Robot events and battery readings are observations; trace version 2 only adds to version 1
+**Status:** Accepted (2026-11-13)
+**Why:**
+- **The viewer could not show what the simulator did not log.** Charging, time out of service,
+  breakdowns and battery levels existed only as totals of a run. Showing them needs the moments,
+  recorded at the source.
+- **A second log, not more kinds in the first.** The order log (`LogEntry`) is what the KPIs are
+  computed from. Robot events get their own type, `RobotEvent`, so the order log, the KPIs and
+  every test on them are untouched.
+- **Observations only.** An event is appended where the simulator already changes the state it
+  describes. Recording one draws no random number, schedules nothing, and is never read back. A run
+  is the same run with or without them.
+- **Intervals are pairs of events:** charging, out of service, waiting for a charger, waiting at
+  the end of a corridor. An interval includes its first tick and not its last. One still open when
+  the run ends is closed at the run's last tick, which is exactly how the simulator's own counters
+  close it, so the events add up to those counters.
+- **A delay and a breakdown are two causes, and two events.** Both are drawn when a robot enters a
+  corridor, from separate random streams, and both can happen on one traversal. A delay is not
+  announced and nobody plans around it; a breakdown is announced and recovery responds to it.
+  - Each cause has at most one event per traversal, carrying only its own extra ticks.
+  - The breakdown counter counts breakdown events only. The simulator has no delay counter.
+  - Every traversal is explained without overlap: its duration is the edge's travel time, plus its
+    delay, plus its repair, plus its wait at the end of the corridor. A test checks this for every
+    traversal of every generated run.
+- **A breakdown has no place on the edge (decision A).** The model draws extra time for a traversal.
+  It does not say where on the corridor the robot stands still. The event is therefore at the
+  corridor entry, with the repair time, and a viewer marks the whole traversal. No stopping place is
+  invented. Defining one would be a new modelling claim, which was not wanted.
+- **A wait at the end of a corridor does have a place.** A robot that may not enter the next node
+  yet stands at the end of its corridor. The trajectory records only its entry into the node, so the
+  plain interpolation showed it creeping along the edge. The wait is now an interval of events, and
+  the reference position holds the robot at the end of the corridor.
+- **Battery levels are recorded where the simulator computes them:** on arrival at each node (an
+  edge's energy is charged on arrival), and in events (charging started and stopped, out of and
+  back in service, sent to a charger).
+  - Between two recorded values while driving there is no value. A reader shows the last one with
+    the tick it dates from. No consumption along an edge is interpolated.
+  - On a charger the simulator itself uses a closed formula, `min(capacity, level + ticks * rate)`.
+    The trace carries the formula's numbers, and a value computed with it is labelled as a
+    calculation by the model's formula, never as a reading.
+- **Version 2 only adds.** It adds `robot_events`, `battery_model` and each robot's `levels`, and
+  changes no older field. The strict parser makes a new version number necessary.
+  - Version 1 traces are still read, by Python and by the viewer. They have no robot events, and
+    the viewer says that these are not recorded, not that nothing happened.
+  - `downgrade_to_v1` removes the additions. The result equals the committed version 1 fixtures
+    byte for byte, which is the proof that nothing older changed.
+
+**Consequences:**
+- **Measured cost** (`scripts/measure_observability.py`, against a checkout without the events):
+  simulation time changed by +0.2% to +3.2% over six scenarios, with identical runs. Traces of
+  plain traffic runs grow by 0.1%. Traces of runs with batteries, delays and breakdowns grow by 47%
+  to 91% as JSON and by 40% to 53% compressed; the largest run the service accepts goes from 0.48
+  to 0.77 MB compressed. Twenty such traces still fit the store's 32 MB.
+- **Events are written with every field,** null where a kind has none. That is the simplest strict
+  format and the main reason for the growth. Leaving out null fields would roughly halve it; it was
+  not done, because nothing measured needs it yet.
+- **Seven existing assertions changed,** all statements about the version number, the added fields
+  or the fixture folder listing: three in the Python tests and four in the viewer tests.
+- **What stays unknown:** the place on an edge during a delay or a breakdown; a battery curve while
+  driving; anything about batteries or breakdowns in free flow, which has neither.

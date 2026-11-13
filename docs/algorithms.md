@@ -1885,3 +1885,144 @@ every request and has the last word; its refusal reasons are shown as they are.
   in the same order. A tolerance would hide a real difference, such as a different formula.
 - *What stops the interface from showing made-up data?* It has no source of data except the trace
   and the job result, and the trace is rejected unless it passes the same checks as in Python.
+
+
+## 19. Robot events and battery readings (`sim/log.py`, `replay/state.py`, D35)
+
+**Problem.** The viewer of section 18 could show three activities, because the order log has
+nothing else. Charging, time out of service, breakdowns and battery levels were totals of a run.
+To show them truthfully, the simulator has to record when they happen, without changing what
+happens.
+
+**Observations.** A robot event is one line appended where the simulator already changes the state
+the event describes. It draws no random number, schedules nothing and is never read back. Three
+checks show that a run is unchanged:
+- every test that existed before passes;
+- with the additions removed, the new traces of the three fixture runs equal the committed
+  version 1 files byte for byte;
+- 156 runs of the published scaling and breakdown benchmarks were made again and their 3,300 KPI
+  values compared with the committed results: none differs
+  (`scripts/check_published_results.py`).
+
+**The events, and exactly when each is recorded.**
+
+| Event | Recorded at the tick when | Fields |
+|---|---|---|
+| `charging_started` | the robot becomes idle on a charger (or starts the run on one) | level |
+| `charging_stopped` | it leaves the charger | level it charged to |
+| `out_of_service` | a decision finds it idle below the low threshold | level |
+| `back_in_service` | a decision finds it charged to the return level | level |
+| `charger_wait_started` | it is out of service and no charger is free | |
+| `charger_wait_ended` | a charger is found for it | |
+| `charger_trip_started` | it is sent to a charger | charger, level, reason (low or top-up) |
+| `delay` | it enters a corridor and a delay is drawn | edge, extra ticks |
+| `breakdown` | it enters a corridor and a repair is drawn | edge, repair ticks |
+| `corridor_wait_started` | it reaches the end of a corridor and may not enter the node | edge |
+| `corridor_wait_ended` | it enters the node | edge |
+| `replanned` | a new route is adopted after a breakdown | |
+| `moved_out_of_the_way` | an idle robot is sent to another holding spot | target |
+
+**Intervals.** Four pairs of events open and close an interval. It includes its first tick and not
+its last, and one still open at the end of the run ends at the run's last tick.
+
+**Delay against breakdown.** Both are extra time on one corridor traversal, drawn at the entry.
+
+| | Delay | Breakdown |
+|---|---|---|
+| Cause in the model | an unannounced slow-down (D25) | an announced stop for a repair (D28) |
+| Random stream | the robot's delay stream | the robot's breakdown stream |
+| Known to the fleet | no: plans assume the robot is on time | yes: recovery re-times and replans |
+| Counter in the result | none | `breakdowns`, `breakdown_ticks` |
+| On the same traversal | both can occur; each has its own event with its own ticks | |
+
+There is no double counting, because each cause has at most one event per traversal and carries
+only its own time. The tests check the identity that makes this precise, for every traversal of
+every generated run:
+
+```text
+arrive - depart = edge travel time + delay + repair + wait at the end of the corridor
+```
+
+and that the wait begins exactly when the first three terms have passed.
+
+**Reconciliation with the simulator's counters.** The counters keep their definitions; the events
+must add up to them.
+
+| Counter | Equals |
+|---|---|
+| `charger_ticks` | the summed length of charging intervals |
+| `out_of_service_ticks` | the summed length of out-of-service intervals |
+| `charger_wait_ticks` | the summed length of charger-wait intervals |
+| `charging_trips`, `top_up_trips` | the number of charger trips with reason low, and with reason top-up |
+| `breakdowns`, `breakdown_ticks` | the number of breakdown events, and their summed ticks |
+| `replans`, `moves_out_of_the_way` | the number of events of that kind |
+| `lowest_energy_share` | the lowest recorded level, as a share of the capacity |
+
+The three interval counters do not overlap in what they count. A robot waiting for a charger is
+also out of service, and a robot charging when low is both charging and out of service: those are
+different counters of different things, each matched by its own kind of interval, never added to
+each other.
+
+**Battery levels: what is a reading.** The simulator charges an edge's energy on arrival, and
+settles charging when a robot leaves a charger. A trace therefore has:
+- **readings:** one level per visit, on arrival, and the levels in events. These are values the
+  simulator computed at that tick;
+- **nothing in between while driving.** `level_at` returns the last reading and the tick it dates
+  from. It does not spread an edge's energy along the edge: the model does not, so a viewer may not;
+- **the charging formula on a charger:** `min(capacity, level + ticks * rate)`, with the numbers
+  from the trace. The result is labelled `charging_formula`. It is the simulator's own rule, and the
+  energy oracle in the tests confirms that the next reading agrees with it, but it is a calculation
+  and is shown as one.
+
+**The energy oracle.** Every level is recomputed from the previous one: charge by the formula if the
+robot stood on a charger, then subtract the edge's length in energy units. The recorded levels must
+equal the recomputed ones. This is independent of the simulator's bookkeeping.
+
+**Position at the end of a corridor.** Under ordered execution (section 13.5) a robot that reaches
+the end of its corridor before its turn waits there. `replay.state.position_at` moves the robot
+evenly from its departure to the moment it reached the end, then holds it there until it enters the
+node. Without a recorded wait it equals `viz.motion.position_at`, which is unchanged.
+
+**What a breakdown is not.** It is not a place. The model adds time to a traversal and does not say
+where on the corridor the robot loses it. The status `breakdown` (and `delay`) covers the whole
+traversal, and the viewer says that the place on the edge is not modelled.
+
+**Complexity.** Recording is O(1) per event. The reference functions scan a robot's events and are
+meant to be obviously right. The viewer precomputes, per robot, the ticks at which its statuses
+change, and finds the status set at a tick by binary search.
+
+**Measured cost** (greedy dispatch, seed 0, 30 minutes of orders, on the development laptop):
+
+| Run | Robot events | Simulation time before / now | Trace, compressed, v1 / v2 |
+|---|---:|---:|---:|
+| small, 3 robots, plain traffic | 0 | 39 / 41 ms | 14 / 14 kB |
+| small, 3 robots, disturbed | 212 | 58 / 59 ms | 14 / 20 kB |
+| medium, 8 robots, plain traffic | 0 | 171 / 173 ms | 44 / 44 kB |
+| medium, 8 robots, disturbed | 852 | 428 / 440 ms | 46 / 65 kB |
+| large, 25 robots, plain traffic | 0 | 1,006 / 1,025 ms | 163 / 163 kB |
+| large, 25 robots, disturbed | 4,605 | 7,763 / 7,780 ms | 176 / 269 kB |
+
+"Disturbed" means batteries, 10% of entries delayed, 1% broken down, with replanning. Times are the
+fastest of 15 runs per version, in alternating processes; differences of 0.2% to 3.2% are within
+what that method resolves. The largest run the service accepts (50 robots, 17,087 robot events) has
+a trace of 4.59 MB, 0.77 MB compressed, against 2.06 and 0.48 MB without the additions.
+
+**Limitations.**
+- **No place on the edge** during a delay or a breakdown, and **no battery curve** while driving.
+- **Free flow has none of this:** no batteries, no breakdowns, no waiting.
+- **The model's simplifications remain:** only driving costs energy, charging is linear, breakdowns
+  happen only at corridor entries (sections 13.6 and 13.7).
+- **Reasons are not recorded.** An event says that a robot was replanned or moved, not which other
+  robot caused it.
+- **Trace growth is real** for disturbed runs: about half as much again when compressed.
+
+**Interview questions.**
+- *How do you know logging did not change the simulation?* Three independent checks: the old tests,
+  byte-identical old fixtures after removing the additions, and published benchmark values that
+  reproduce exactly.
+- *Why not interpolate the battery along an edge?* Because the model charges the edge on arrival. An
+  interpolated curve would be a claim the simulator never made.
+- *How can events be trusted?* They add up to counters that existed before them and are computed
+  separately, and every traversal's duration is fully explained by them.
+- *Why is a breakdown not shown as a stopped robot?* The model has no stopping place. Showing one
+  would mean inventing it.

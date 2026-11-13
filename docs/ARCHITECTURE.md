@@ -27,7 +27,8 @@ src/amr_optimizer/
                traffic_control.py  plans jobs and moves against the reservation table (M4)
                policy.py     dispatch interface: DispatchSnapshot, Assignment, DispatchPolicy
                planner.py    TravelPlanner: cached shortest routes and travel ticks
-               log.py        event log (six steps per order)
+               log.py        the order log (six steps per order), and robot events: charging,
+                             service state, delays, breakdowns, waits (observations only, D35)
   dispatch/    greedy.py     GreedyDispatch: oldest order first, nearest idle robot
                hungarian.py  HungarianDispatch: optimal matching to the oldest orders
                matching.py   min_cost_matching (scipy linear_sum_assignment)
@@ -49,6 +50,8 @@ src/amr_optimizer/
   replay/      trace.py      ReplayTrace: a finished run as a versioned record for viewers (map,
                              visits, orders, event log, KPIs, conflicts); strict parser (D33)
                schema.py     the same format as a JSON Schema, for other languages and the API docs
+               state.py      the reference for a robot's position (with waits at the end of
+                             corridors), statuses and battery level at any tick (D35)
   api/         models.py     Pydantic request and response models: the only place Pydantic is used
                work.py       CPU-bound work for worker processes: requests -> engine types -> results
                app.py        FastAPI app: health, maps, policies, /plan, simulation jobs and their
@@ -63,10 +66,12 @@ src/amr_optimizer/
   cli.py, __main__.py        `amr-sim` / `python -m amr_optimizer`: one scenario, one policy, KPIs
 web/           the browser viewer (TypeScript, React, Vite; D34). It replays traces and never simulates
   src/lib/     trace.ts (the format and its check), motion.ts (position and activity: the port of
-               viz/motion.py), replay.ts, playback.ts (the clock), api.ts, runForm.ts, view.ts
+               viz/motion.py), state.ts (statuses and battery level: the port of replay/state.py),
+               replay.ts, playback.ts (the clock), api.ts, runForm.ts, view.ts
   src/render/  the map and the fleet on a 2D canvas
   src/components/  map, playback bar, run panel, details
-scripts/       dev.ps1 (starts the service and the viewer), generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py,
+scripts/       dev.ps1 (starts the service and the viewer), check_published_results.py (re-runs
+               published benchmarks and compares), measure_observability.py, generate_maps.py, compare_routing.py, compare_dispatch.py, compare_planning.py,
                compare_traffic.py, benchmark_scaling.py, make_figures.py, compare_delays.py,
                compare_charging.py, compare_breakdowns.py, vda5050_demo.py, make_replay_fixtures.py
 docs/results   scaling.csv, breakdowns.csv (per-run benchmark results, the source of the figures)

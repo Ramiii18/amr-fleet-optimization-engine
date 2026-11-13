@@ -43,6 +43,7 @@ npm run build       # type check, then a production build into dist/
 |---|---|
 | `src/lib/trace.ts` | The trace format, and a strict check of a trace before it is used |
 | `src/lib/motion.ts` | Position and activity at any moment: the port of `viz/motion.py` |
+| `src/lib/state.ts` | Statuses and battery level at any moment: the port of `replay/state.py` |
 | `src/lib/replay.ts` | A trace prepared for playback: tracks, orders by logged step, corridors, conflicts |
 | `src/lib/playback.ts` | The playback clock: one playhead, kept within the run |
 | `src/lib/api.ts` | The service's endpoints, and the form's limits read from its OpenAPI document |
@@ -53,9 +54,10 @@ npm run build       # type check, then a production build into dist/
 
 ## Tests against Python
 
-`src/lib/motion.test.ts` reads the golden fixtures in `../tests/data/replay/`: three real runs,
-each with positions and activities computed by the Python reference functions. The viewer must
-reproduce them exactly. `scripts/make_replay_fixtures.py` writes the fixtures, and a Python test
+`src/lib/motion.test.ts` and `src/lib/state.test.ts` read the golden fixtures in
+`../tests/data/replay/` (trace version 1) and `../tests/data/replay/v2/` (version 2): real runs,
+each with positions, activities, statuses and battery levels computed by the Python reference
+functions. The viewer must reproduce them exactly. `scripts/make_replay_fixtures.py` writes the fixtures, and a Python test
 fails if the committed files are out of date.
 
 ## Keyboard
