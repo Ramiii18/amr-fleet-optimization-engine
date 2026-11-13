@@ -683,8 +683,9 @@ Linux (Python, viewer and Docker image).
   reference exactly on four version 2 fixtures, and shows "not recorded" for version 1 traces.
 - **Cost measured:** met ([algorithms](algorithms.md), section 19). Simulation time +0.2% to +3.2%;
   traces of disturbed runs 40% to 53% larger when compressed.
-- **CI on Windows and Linux:** not run yet. The branch is not pushed: pushing it needs the owner's
-  word. Every check passes locally on Windows.
+- **CI on Windows and Linux:** met. Run 43442999412 on `b802e9f` passed all five jobs: Python and
+  the viewer on Windows and Linux, and the Docker image. The version 2 fixtures written on Windows
+  are reproduced byte for byte on Linux.
 
 **Finding:** the events exposed a gap in the old replay. A robot held at the end of a corridor was
 drawn creeping along the edge, because the trajectory records only its entry into the node. The
