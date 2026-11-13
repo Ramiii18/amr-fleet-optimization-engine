@@ -1,0 +1,84 @@
+"""Check that the engine still reproduces its published benchmark results.
+
+    .venv\\Scripts\\python.exe scripts\\check_published_results.py [--seeds 3]
+
+Re-runs the first seeds of the scaling benchmark and of the breakdown benchmark, and compares
+every KPI of every run with the committed per-run results (``docs/results/*.csv``), value for
+value as written. Columns that measure wall time are ignored: they depend on the machine.
+
+A change that only observes the simulation (logging, traces) must leave every value as it was.
+A difference here means the simulation itself changed. The exit code is 0 only if nothing
+differs.
+"""
+
+import argparse
+import csv
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+WALL_TIME = {"decisions", "decision_mean_ms"}
+KEYS = ("orders_per_hour", "seed", "policy", "robots", "breakdowns_level", "recovery")
+BENCHMARKS = (
+    ("benchmark_scaling.py", "scaling.csv"),
+    ("compare_breakdowns.py", "breakdowns.csv"),
+)
+
+
+def _rows(path: Path) -> dict[tuple[str, ...], dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as file:
+        data = list(csv.DictReader(file))
+    keys = [column for column in data[0] if column in KEYS]
+    return {tuple(row[key] for key in keys): row for row in data}
+
+
+def compare(committed: Path, fresh: Path) -> tuple[int, int, list[str]]:
+    """How many runs and values were compared, and a line for each value that differs."""
+    old, new = _rows(committed), _rows(fresh)
+    values = 0
+    differences = []
+    for key, row in new.items():
+        if key not in old:
+            differences.append(f"{key}: not in {committed.name}")
+            continue
+        for column, value in row.items():
+            if column in WALL_TIME:
+                continue
+            values += 1
+            if old[key][column] != value:
+                differences.append(f"{key} {column}: published {old[key][column]}, now {value}")
+    return len(new), values, differences
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser.add_argument("--seeds", type=int, default=3, help="seeds 0 to N-1 of each benchmark")
+    args = parser.parse_args()
+    failed = False
+    with tempfile.TemporaryDirectory() as folder:
+        for script, results in BENCHMARKS:
+            fresh = Path(folder) / results
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / script),
+                    "--seeds",
+                    str(args.seeds),
+                    "--csv",
+                    str(fresh),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            runs, values, differences = compare(ROOT / "docs" / "results" / results, fresh)
+            print(f"{results}: {runs} runs, {values} values compared, {len(differences)} differ")
+            for line in differences[:20]:
+                print(f"  {line}")
+            failed = failed or bool(differences) or runs == 0
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,6 +1,13 @@
 """Discrete-event simulation: the event loop, the dispatch interface and the event log."""
 
-from amr_optimizer.sim.log import ORDER_LIFECYCLE, EventKind, LogEntry
+from amr_optimizer.sim.log import (
+    ORDER_LIFECYCLE,
+    BatteryRecord,
+    EventKind,
+    LogEntry,
+    RobotEvent,
+    RobotEventKind,
+)
 from amr_optimizer.sim.planner import TravelPlanner
 from amr_optimizer.sim.policy import (
     Assignment,
@@ -13,11 +20,14 @@ from amr_optimizer.sim.simulator import SimulationInvariantError, SimulationResu
 __all__ = [
     "ORDER_LIFECYCLE",
     "Assignment",
+    "BatteryRecord",
     "DispatchPolicy",
     "DispatchSnapshot",
     "EventKind",
     "InvalidAssignmentError",
     "LogEntry",
+    "RobotEvent",
+    "RobotEventKind",
     "SimulationInvariantError",
     "SimulationResult",
     "TravelPlanner",
