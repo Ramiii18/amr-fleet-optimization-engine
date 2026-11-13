@@ -13,15 +13,21 @@ function broken(change: (data: Json) => void): Json {
 
 describe("parseTrace", () => {
   it.each(FIXTURE_NAMES)("accepts the fixture %s and changes nothing in it", (name) => {
-    const data = traceJson(name);
-    expect(parseTrace(data)).toEqual(data);
+    // These are version 1 traces: read unchanged, with the additions of version 2 empty.
+    const data = traceJson(name) as Json;
+    expect(parseTrace(data)).toEqual({
+      ...data,
+      robots: data.robots.map((robot: Json) => ({ ...robot, levels: null })),
+      battery_model: null,
+      robot_events: [],
+    });
   });
 
   it("checks the version before anything else", () => {
     // A later version may differ anywhere, so even an otherwise empty object is refused for
     // its version, not for what it lacks.
-    expect(() => parseTrace({ format: "amr-replay-trace", schema_version: 2 })).toThrow(
-      /version 2 is not supported; this viewer reads version 1/,
+    expect(() => parseTrace({ format: "amr-replay-trace", schema_version: 3 })).toThrow(
+      /version 3 is not supported; this viewer reads versions 1 and 2/,
     );
     expect(() => parseTrace(broken((d) => (d.schema_version = "1")))).toThrow(/not supported/);
   });

@@ -8,9 +8,10 @@
 
 import { type Pose, type Track, activityAt, orderAt, poseAt } from "../lib/motion";
 import { type Corridor, type Replay, conflictsAt, orderStateAt } from "../lib/replay";
+import { hasStatus, statusMaskAt } from "../lib/state";
 import type { TraceConflict, TraceNode } from "../lib/trace";
 import { type View, scaleBar, toScreen } from "../lib/view";
-import { ACTIVITY_COLORS, COLORS, FONT, MONO, NODE_COLORS } from "./theme";
+import { ACTIVITY_COLORS, COLORS, FONT, MONO, NODE_COLORS, STATUS_COLORS } from "./theme";
 
 export interface Scene {
   nodes: readonly TraceNode[];
@@ -28,6 +29,8 @@ export interface Scene {
   showRoutes: boolean;
   showOrders: boolean;
   showConflicts: boolean;
+  /** Robot statuses from the trace's robot events (charging, breakdown, waits). */
+  showStatus: boolean;
 }
 
 /** How far the selected robot's recorded path is drawn behind and, when it is free, ahead. */
@@ -366,6 +369,22 @@ function drawRoute(ctx: CanvasRenderingContext2D, replay: Replay, robotId: strin
   }
 }
 
+/**
+ * Where a robot is drawn. A robot waiting at the end of a corridor is at the end of the
+ * corridor, not in the node: it is drawn just short of the node, on the edge it came by, so
+ * that it does not cover the robot standing in the node. How far short is a drawing
+ * convention: the model has no length for it.
+ */
+function robotOnScreen(track: Track, pose: Pose, at: At, radius: number): [number, number] {
+  const [sx, sy] = at(pose.x, pose.y);
+  if (!pose.waiting) return [sx, sy];
+  const [fx, fy] = at(track.xs[pose.visit] as number, track.ys[pose.visit] as number);
+  const length = Math.hypot(sx - fx, sy - fy);
+  if (length === 0) return [sx, sy];
+  const back = Math.min(radius * 2.4, length / 2);
+  return [sx - ((sx - fx) / length) * back, sy - ((sy - fy) / length) * back];
+}
+
 function heading(track: Track, pose: Pose): [number, number] | null {
   if (!pose.moving) return null;
   const dx = (track.xs[pose.visit + 1] as number) - (track.xs[pose.visit] as number);
@@ -389,7 +408,7 @@ function drawRobots(
   );
   for (const track of order) {
     const pose = poseAt(track, scene.tick);
-    const [sx, sy] = at(pose.x, pose.y);
+    const [sx, sy] = robotOnScreen(track, pose, at, radius);
     const activity = activityAt(replay.activity.get(track.id), scene.tick);
     const selected = track.id === scene.selectedRobot;
     const hovered = track.id === scene.hoverRobot;
@@ -435,6 +454,10 @@ function drawRobots(
       ctx.strokeRect(sx - box, sy - box, box * 2, box * 2);
     }
 
+    if (scene.showStatus) {
+      drawStatus(ctx, statusMaskAt(replay.statuses.get(track.id), scene.tick), sx, sy, radius);
+    }
+
     if (labelled || selected || hovered) {
       ctx.font = `600 ${selected ? 11 : 10}px ${MONO}`;
       ctx.textAlign = "center";
@@ -442,6 +465,89 @@ function drawRobots(
       haloText(ctx, track.id, sx, sy - radius - 6, selected ? COLORS.selection : COLORS.labelStrong);
     }
   }
+}
+
+/**
+ * A robot's statuses, from its events: a ring for being out of service, and one small badge
+ * each for charging, a breakdown, a delay and a wait. Each badge has its own sign as well as
+ * its own colour.
+ */
+function drawStatus(
+  ctx: CanvasRenderingContext2D,
+  mask: number,
+  sx: number,
+  sy: number,
+  radius: number,
+): void {
+  if (mask === 0) return;
+  if (hasStatus(mask, "out_of_service")) {
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius + 3, 0, Math.PI * 2);
+    ctx.lineWidth = 1.75;
+    ctx.strokeStyle = STATUS_COLORS.out_of_service;
+    ctx.setLineDash([3, 2.5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  const size = Math.max(5, radius * 0.72);
+  const badges = (["breakdown", "charging", "waiting_for_charger", "delay", "corridor_wait"] as const).filter(
+    (status) => hasStatus(mask, status),
+  );
+  badges.slice(0, 3).forEach((status, index) => {
+    // Around the upper right of the robot, clear of its name above it.
+    const angle = -Math.PI / 5 + (index * Math.PI) / 2.6;
+    const bx = sx + Math.cos(angle) * (radius + size * 0.75);
+    const by = sy + Math.sin(angle) * (radius + size * 0.75);
+    ctx.beginPath();
+    ctx.arc(bx, by, size, 0, Math.PI * 2);
+    ctx.fillStyle = status === "waiting_for_charger" ? COLORS.background : STATUS_COLORS[status];
+    ctx.fill();
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = status === "waiting_for_charger" ? STATUS_COLORS[status] : COLORS.background;
+    ctx.stroke();
+    const ink = status === "waiting_for_charger" ? STATUS_COLORS[status] : "#10151b";
+    ctx.fillStyle = ink;
+    ctx.strokeStyle = ink;
+    const u = size * 0.55;
+    ctx.beginPath();
+    if (status === "charging" || status === "waiting_for_charger") {
+      // A lightning bolt.
+      ctx.moveTo(bx + u * 0.25, by - u);
+      ctx.lineTo(bx - u * 0.6, by + u * 0.15);
+      ctx.lineTo(bx, by + u * 0.15);
+      ctx.lineTo(bx - u * 0.25, by + u);
+      ctx.lineTo(bx + u * 0.6, by - u * 0.15);
+      ctx.lineTo(bx, by - u * 0.15);
+      ctx.closePath();
+      ctx.fill();
+    } else if (status === "breakdown") {
+      // An exclamation mark.
+      ctx.lineWidth = Math.max(1.3, size * 0.28);
+      ctx.lineCap = "round";
+      ctx.moveTo(bx, by - u);
+      ctx.lineTo(bx, by + u * 0.15);
+      ctx.moveTo(bx, by + u * 0.85);
+      ctx.lineTo(bx, by + u * 0.86);
+      ctx.stroke();
+    } else if (status === "delay") {
+      // Clock hands.
+      ctx.lineWidth = Math.max(1.2, size * 0.24);
+      ctx.lineCap = "round";
+      ctx.moveTo(bx, by - u * 0.9);
+      ctx.lineTo(bx, by);
+      ctx.lineTo(bx + u * 0.7, by + u * 0.35);
+      ctx.stroke();
+    } else {
+      // Two bars: paused.
+      ctx.lineWidth = Math.max(1.3, size * 0.28);
+      ctx.lineCap = "butt";
+      ctx.moveTo(bx - u * 0.42, by - u * 0.8);
+      ctx.lineTo(bx - u * 0.42, by + u * 0.8);
+      ctx.moveTo(bx + u * 0.42, by - u * 0.8);
+      ctx.lineTo(bx + u * 0.42, by + u * 0.8);
+      ctx.stroke();
+    }
+  });
 }
 
 function drawConflict(
@@ -514,10 +620,11 @@ export function pickAt(
 ): { robot: string | null; node: string | null } {
   let robot: string | null = null;
   if (scene.replay !== null) {
-    let best = (robotRadius(view.scale) + 6) ** 2;
+    const radius = robotRadius(view.scale);
+    const at: At = (px, py) => toScreen(view, width, height, px, py);
+    let best = (radius + 6) ** 2;
     for (const track of scene.replay.tracks) {
-      const pose = poseAt(track, scene.tick);
-      const [x, y] = toScreen(view, width, height, pose.x, pose.y);
+      const [x, y] = robotOnScreen(track, poseAt(track, scene.tick), at, radius);
       const distance = (x - sx) ** 2 + (y - sy) ** 2;
       if (distance <= best) {
         best = distance;

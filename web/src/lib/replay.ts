@@ -12,7 +12,18 @@ import {
   buildTrack,
   countAtOrBefore,
 } from "./motion";
-import type { Trace, TraceConflict, TraceNode } from "./trace";
+import {
+  type Level,
+  STATUSES,
+  type Status,
+  type StatusTimeline,
+  buildStatusTimeline,
+  eventsByRobot,
+  hasStatus,
+  levelAt,
+  statusMaskAt,
+} from "./state";
+import type { BatteryModel, RobotEvent, Trace, TraceConflict, TraceNode } from "./trace";
 
 /** One order and the tick of each logged step of its life (null if the step never happened). */
 export interface OrderLife {
@@ -104,9 +115,22 @@ export interface Replay {
   activity: Map<string, ActivityChanges>;
   orders: OrderLife[];
   orderById: Map<string, OrderLife>;
-  /** Ticks at which at least one event was logged, ascending and without repeats. */
+  /** Ticks at which at least one event was logged (order or robot events), ascending and
+   * without repeats. */
   eventTicks: number[];
   conflicts: TraceConflict[];
+  /**
+   * False for a version 1 trace: it records no robot events and no battery levels, so charging,
+   * service state, delays, breakdowns and waits are unknown for that run, not absent from it.
+   */
+  observed: boolean;
+  /** Each robot's own events, in time order (empty lists without `observed`). */
+  robotEvents: Map<string, RobotEvent[]>;
+  statuses: Map<string, StatusTimeline>;
+  /** The engine's battery model, or null for a run without one (or a version 1 trace). */
+  battery: BatteryModel | null;
+  /** Per robot: the recorded level on arrival at each visit, when there is a battery model. */
+  levels: Map<string, number[]>;
 }
 
 export function boundsOf(nodes: Iterable<TraceNode>): Bounds {
@@ -144,7 +168,18 @@ export function buildReplay(trace: Trace): Replay {
   const lengths = new Map(
     trace.map.edges.map((edge) => [`${edge.source}\u0000${edge.target}`, edge.length_m]),
   );
-  const tracks = trace.robots.map((robot) => buildTrack(robot, nodes));
+  const robotEvents = eventsByRobot(trace.robot_events);
+  for (const robot of trace.robots) {
+    if (!robotEvents.has(robot.id)) robotEvents.set(robot.id, []);
+  }
+  const tracks = trace.robots.map((robot) => buildTrack(robot, nodes, robotEvents.get(robot.id)));
+  const statuses = new Map(
+    tracks.map((track) => [track.id, buildStatusTimeline(track, robotEvents.get(track.id) ?? [])]),
+  );
+  const levels = new Map<string, number[]>();
+  for (const robot of trace.robots) {
+    if (robot.levels !== null) levels.set(robot.id, robot.levels);
+  }
   const odometer = new Map<string, Float64Array>();
   for (const track of tracks) {
     const metres = new Float64Array(track.nodes.length);
@@ -215,9 +250,34 @@ export function buildReplay(trace: Trace): Replay {
     activity: buildActivityChanges(trace),
     orders,
     orderById,
-    eventTicks,
+    eventTicks: [...new Set([...eventTicks, ...trace.robot_events.map((event) => event.tick)])].sort(
+      (a, b) => a - b,
+    ),
     conflicts: trace.conflicts.listed,
+    observed: trace.schema_version >= 2,
+    robotEvents,
+    statuses,
+    battery: trace.battery_model,
+    levels,
   };
+}
+
+/** How many robots have each status at `tick`. */
+export function statusCounts(replay: Replay, tick: number): Record<Status, number> {
+  const counts = Object.fromEntries(STATUSES.map((status) => [status, 0])) as Record<Status, number>;
+  for (const track of replay.tracks) {
+    const mask = statusMaskAt(replay.statuses.get(track.id), tick);
+    for (const status of STATUSES) if (hasStatus(mask, status)) counts[status] += 1;
+  }
+  return counts;
+}
+
+/** A robot's battery level at `tick`, or null if the run has no battery model. */
+export function robotLevelAt(replay: Replay, robotId: string, tick: number): Level | null {
+  const track = replay.trackById.get(robotId);
+  const levels = replay.levels.get(robotId);
+  if (replay.battery === null || track === undefined || levels === undefined) return null;
+  return levelAt(track, levels, replay.robotEvents.get(robotId) ?? [], replay.battery, tick);
 }
 
 /** How many orders are in each state at `tick`. */

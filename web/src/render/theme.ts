@@ -7,6 +7,7 @@
  */
 
 import type { Activity } from "../lib/motion";
+import type { Status } from "../lib/state";
 import type { NodeKind } from "../lib/trace";
 
 export const COLORS = {
@@ -55,5 +56,35 @@ export const ACTIVITY_LABEL: Record<Activity, string> = {
   loaded: "Loaded",
 };
 
-export const FONT = '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif';
+/** Robot statuses from the trace's robot events. Each also has its own sign on the map. */
+export const STATUS_COLORS: Record<Status, string> = {
+  charging: "#facc15",
+  out_of_service: "#fb923c",
+  waiting_for_charger: "#facc15",
+  breakdown: "#f87171",
+  delay: "#fdba74",
+  corridor_wait: "#a5b4fc",
+};
+
+/** Short names, for the legend and for lists. */
+export const STATUS_SHORT: Record<Status, string> = {
+  charging: "Charging",
+  out_of_service: "Out of service",
+  waiting_for_charger: "Waits for charger",
+  breakdown: "Breakdown",
+  delay: "Delay",
+  corridor_wait: "Corridor wait",
+};
+
+/** The sign of each status in text, matching its badge on the map. */
+export const STATUS_SIGN: Record<Status, string> = {
+  charging: "ϟ",
+  out_of_service: "",
+  waiting_for_charger: "ϟ",
+  breakdown: "!",
+  delay: "+",
+  corridor_wait: "‖",
+};
+
+export const FONT ='"Inter", "Segoe UI", system-ui, -apple-system, sans-serif';
 export const MONO = '"JetBrains Mono", "Cascadia Mono", "Consolas", ui-monospace, monospace';

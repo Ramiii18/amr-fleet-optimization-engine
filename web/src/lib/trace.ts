@@ -10,7 +10,70 @@
  */
 
 export const TRACE_FORMAT = "amr-replay-trace";
-export const SUPPORTED_SCHEMA_VERSION = 1;
+/** The versions this viewer reads. Version 2 adds robot events and battery levels (D35); a
+ * version 1 trace has neither, and the viewer then says so instead of showing anything. */
+export const READABLE_SCHEMA_VERSIONS = [1, 2] as const;
+export type SchemaVersion = (typeof READABLE_SCHEMA_VERSIONS)[number];
+
+export const ROBOT_EVENT_KINDS = [
+  "charging_started",
+  "charging_stopped",
+  "out_of_service",
+  "back_in_service",
+  "charger_wait_started",
+  "charger_wait_ended",
+  "charger_trip_started",
+  "delay",
+  "breakdown",
+  "corridor_wait_started",
+  "corridor_wait_ended",
+  "replanned",
+  "moved_out_of_the_way",
+] as const;
+export type RobotEventKind = (typeof ROBOT_EVENT_KINDS)[number];
+
+/** Which of `target`, `ticks`, `level` and `reason` each kind of robot event has: the table of
+ * `ROBOT_EVENT_FIELDS` in the Python package. */
+const EVENT_FIELDS: Record<RobotEventKind, readonly string[]> = {
+  charging_started: ["level"],
+  charging_stopped: ["level"],
+  out_of_service: ["level"],
+  back_in_service: ["level"],
+  charger_wait_started: [],
+  charger_wait_ended: [],
+  charger_trip_started: ["target", "level", "reason"],
+  delay: ["target", "ticks"],
+  breakdown: ["target", "ticks"],
+  corridor_wait_started: ["target"],
+  corridor_wait_ended: ["target"],
+  replanned: [],
+  moved_out_of_the_way: ["target"],
+};
+
+/** One thing that happened to a robot besides the steps of an order. `node` is where the robot
+ * is: the node it stands on, or the node it left for a corridor. */
+export interface RobotEvent {
+  tick: number;
+  kind: RobotEventKind;
+  robot: string;
+  node: string;
+  target: string | null;
+  ticks: number | null;
+  /** The robot's energy at that tick, in the engine's integer units. */
+  level: number | null;
+  reason: string | null;
+}
+
+/** The numbers of the engine's battery model, in its integer energy units. A robot on a charger
+ * for t ticks from level e has min(capacity, e + t * charge_per_tick). */
+export interface BatteryModel {
+  capacity: number;
+  charge_per_tick: number;
+  low: number;
+  high: number;
+  back_in_service: number;
+  units_per_metre: number;
+}
 
 export const NODE_KINDS = ["intersection", "station", "storage", "charger", "parking"] as const;
 export type NodeKind = (typeof NODE_KINDS)[number];
@@ -46,6 +109,9 @@ export type TraceVisit = readonly [node: string, arrive: number, depart: number 
 export interface TraceRobot {
   id: string;
   visits: TraceVisit[];
+  /** The energy on arrival at each visit, in units; null without a battery model, and in
+   * version 1 traces. */
+  levels: number[] | null;
 }
 
 export interface TraceOrder {
@@ -77,7 +143,7 @@ export type Scalar = number | string | null;
 
 export interface Trace {
   format: typeof TRACE_FORMAT;
-  schema_version: typeof SUPPORTED_SCHEMA_VERSION;
+  schema_version: SchemaVersion;
   source: string;
   run: Record<string, unknown>;
   policy: string;
@@ -108,6 +174,10 @@ export interface Trace {
   kpis: Record<string, Scalar>;
   charging: Record<string, Scalar> | null;
   conflicts: { total: number; listed: TraceConflict[] };
+  /** Null without a battery model, and in version 1 traces. */
+  battery_model: BatteryModel | null;
+  /** In time order. Empty in version 1 traces, which do not record them. */
+  robot_events: RobotEvent[];
 }
 
 /** A trace that is malformed, or of a version this viewer does not read. */
@@ -204,6 +274,24 @@ const TOP = [
   "conflicts",
 ] as const;
 
+const BATTERY_FIELDS = [
+  "capacity",
+  "charge_per_tick",
+  "low",
+  "high",
+  "back_in_service",
+  "units_per_metre",
+] as const;
+const ROBOT_EVENT_KEYS = [
+  "tick",
+  "kind",
+  "robot",
+  "node",
+  "target",
+  "ticks",
+  "level",
+  "reason",
+] as const;
 const OUTCOME = ["delivered", "in_progress", "pending", "unreleased"] as const;
 const COUNTERS = [
   "breakdowns",
@@ -227,14 +315,16 @@ export function parseTrace(data: unknown): Trace {
   if (head["format"] !== TRACE_FORMAT) {
     fail("trace.format", `this is not a replay trace (expected "${TRACE_FORMAT}")`);
   }
-  if (head["schema_version"] !== SUPPORTED_SCHEMA_VERSION) {
+  const version = READABLE_SCHEMA_VERSIONS.find((known) => known === head["schema_version"]);
+  if (version === undefined) {
     fail(
       "trace.schema_version",
       `version ${JSON.stringify(head["schema_version"])} is not supported; ` +
-        `this viewer reads version ${SUPPORTED_SCHEMA_VERSION}`,
+        `this viewer reads versions ${READABLE_SCHEMA_VERSIONS.join(" and ")}`,
     );
   }
-  const top = object(data, "trace", TOP);
+  const v2 = version === 2;
+  const top = object(data, "trace", v2 ? [...TOP, "battery_model", "robot_events"] : TOP);
 
   const map = object(top["map"], "map", ["nodes", "edges"]);
   const nodes = list(map["nodes"], "map.nodes").map((item, i): TraceNode => {
@@ -270,7 +360,7 @@ export function parseTrace(data: unknown): Trace {
   const robotIds = new Set<string>();
   const robots = list(top["robots"], "robots").map((item, i): TraceRobot => {
     const where = `robots[${i}]`;
-    const robot = object(item, where, ["id", "visits"]);
+    const robot = object(item, where, v2 ? ["id", "visits", "levels"] : ["id", "visits"]);
     const id = text(robot["id"], `${where}.id`);
     if (robotIds.has(id)) fail(where, `duplicate robot id ${id}`);
     robotIds.add(id);
@@ -299,9 +389,42 @@ export function parseTrace(data: unknown): Trace {
         fail(at, `no edge ${before[0]} -> ${after[0]}`);
       }
     }
-    return { id, visits };
+    let levels: number[] | null = null;
+    if (v2 && robot["levels"] !== null) {
+      levels = list(robot["levels"], `${where}.levels`).map((level, j) =>
+        whole(level, `${where}.levels[${j}]`),
+      );
+      if (levels.length !== visits.length) fail(`${where}.levels`, "needs one level per visit");
+    }
+    return { id, visits, levels };
   });
   if (robots.length === 0) fail("robots", "a trace needs at least one robot");
+
+  let battery_model: BatteryModel | null = null;
+  if (v2 && top["battery_model"] !== null) {
+    const model = object(top["battery_model"], "battery_model", BATTERY_FIELDS);
+    const positive = (name: (typeof BATTERY_FIELDS)[number]): number => {
+      const value = whole(model[name], `battery_model.${name}`);
+      return value > 0 ? value : fail(`battery_model.${name}`, "must be positive");
+    };
+    battery_model = {
+      capacity: positive("capacity"),
+      charge_per_tick: positive("charge_per_tick"),
+      low: positive("low"),
+      high: positive("high"),
+      back_in_service: positive("back_in_service"),
+      units_per_metre: positive("units_per_metre"),
+    };
+  }
+  for (const robot of robots) {
+    if ((robot.levels === null) !== (battery_model === null)) {
+      fail(`robot ${robot.id}`, "levels are given exactly with a battery model");
+    }
+    const capacity = battery_model?.capacity ?? 0;
+    if (robot.levels?.some((level) => level > capacity)) {
+      fail(`robot ${robot.id}`, `a level is outside 0 to ${capacity}`);
+    }
+  }
 
   const orderIds = new Set<string>();
   const orders = list(top["orders"], "orders").map((item, i): TraceOrder => {
@@ -383,9 +506,55 @@ export function parseTrace(data: unknown): Trace {
   const tick_s = real(top["tick_s"], "trace.tick_s");
   if (tick_s <= 0) fail("trace.tick_s", "must be positive");
 
+  let earlier = 0;
+  const robot_events = (v2 ? list(top["robot_events"], "robot_events") : []).map(
+    (item, i): RobotEvent => {
+      const where = `robot_events[${i}]`;
+      const event = object(item, where, ROBOT_EVENT_KEYS);
+      const tick = whole(event["tick"], `${where}.tick`);
+      if (tick < earlier || tick > end_tick) {
+        fail(`${where}.tick`, "out of time order or outside the run");
+      }
+      earlier = tick;
+      const kind = oneOf(event["kind"], ROBOT_EVENT_KINDS, `${where}.kind`);
+      const robot = text(event["robot"], `${where}.robot`);
+      if (!robotIds.has(robot)) fail(`${where}.robot`, `unknown robot ${robot}`);
+      const has = (["target", "ticks", "level", "reason"] as const).filter(
+        (name) => event[name] !== null,
+      );
+      const expected = EVENT_FIELDS[kind];
+      if (has.length !== expected.length || has.some((name) => !expected.includes(name))) {
+        fail(where, `a ${kind} event has the fields ${[...expected].sort().join(", ") || "none"}`);
+      }
+      const ticks = event["ticks"] === null ? null : whole(event["ticks"], `${where}.ticks`);
+      if (ticks !== null && ticks <= 0) fail(`${where}.ticks`, "must be positive");
+      const level = event["level"] === null ? null : whole(event["level"], `${where}.level`);
+      if (level !== null && (battery_model === null || level > battery_model.capacity)) {
+        fail(`${where}.level`, "a level needs a battery model, and is at most its capacity");
+      }
+      const reason = event["reason"] === null ? null : text(event["reason"], `${where}.reason`);
+      if (reason !== null && reason !== "low" && reason !== "top_up") {
+        fail(`${where}.reason`, "must be low or top_up");
+      }
+      return {
+        tick,
+        kind,
+        robot,
+        node: onMap(text(event["node"], `${where}.node`), `${where}.node`),
+        target:
+          event["target"] === null
+            ? null
+            : onMap(text(event["target"], `${where}.target`), `${where}.target`),
+        ticks,
+        level,
+        reason,
+      };
+    },
+  );
+
   return {
     format: TRACE_FORMAT,
-    schema_version: SUPPORTED_SCHEMA_VERSION,
+    schema_version: version,
     source: text(top["source"], "trace.source"),
     run: object(top["run"], "run"),
     policy: text(top["policy"], "trace.policy"),
@@ -416,5 +585,7 @@ export function parseTrace(data: unknown): Trace {
     kpis: scalars(top["kpis"], "kpis"),
     charging: top["charging"] === null ? null : scalars(top["charging"], "charging"),
     conflicts: { total, listed },
+    battery_model,
+    robot_events,
   };
 }

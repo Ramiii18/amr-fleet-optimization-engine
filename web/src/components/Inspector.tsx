@@ -16,9 +16,12 @@ import {
   drivenMetres,
   orderCounts,
   orderStateAt,
+  robotLevelAt,
+  statusCounts,
 } from "../lib/replay";
-import type { NodeKind, Scalar, TraceEdge, TraceNode } from "../lib/trace";
-import { ACTIVITY_COLORS, ACTIVITY_LABEL, NODE_LABEL } from "../render/theme";
+import { type Level, STATUSES, STATUS_LABEL, STATUS_NOTE, type Status, statusesAt } from "../lib/state";
+import type { NodeKind, RobotEvent, RobotEventKind, Scalar, TraceEdge, TraceNode } from "../lib/trace";
+import { ACTIVITY_COLORS, ACTIVITY_LABEL, NODE_LABEL, STATUS_COLORS, STATUS_SHORT } from "../render/theme";
 import type { Selection } from "./MapCanvas";
 
 export type Tab = "overview" | "robots" | "orders" | "conflicts" | "map";
@@ -143,6 +146,7 @@ function Overview({ replay, playback, outcome, sourceLabel }: RunProps) {
   const counts = orderCounts(replay.orders, tick);
   const activities: Record<Activity, number> = { free: 0, "to pickup": 0, loaded: 0 };
   for (const track of replay.tracks) activities[activityAt(replay.activity.get(track.id), tick)] += 1;
+  const statuses = statusCounts(replay, tick);
   const orders = replay.orders.length;
   const charging = trace.charging;
   const run = trace.run;
@@ -195,6 +199,24 @@ function Overview({ replay, playback, outcome, sourceLabel }: RunProps) {
             </li>
           ))}
         </ul>
+        {replay.observed ? (
+          <ul className="key robots">
+            {STATUSES.filter((status) => statuses[status] > 0 || status === "charging" || status === "breakdown").map(
+              (status) => (
+                <li key={status} title={STATUS_NOTE[status]}>
+                  <span className="swatch round" style={{ background: STATUS_COLORS[status] }} />
+                  Robots: {STATUS_LABEL[status].toLowerCase()}
+                  <b>{statuses[status]}</b>
+                </li>
+              ),
+            )}
+          </ul>
+        ) : (
+          <p className="muted small">
+            Charging, service state, breakdowns and waits are not recorded in this trace (format version 1), so
+            they are unknown for this run, not absent from it.
+          </p>
+        )}
       </div>
 
       <h3>Whole run · computed by the engine</h3>
@@ -246,8 +268,9 @@ function Overview({ replay, playback, outcome, sourceLabel }: RunProps) {
       </dl>
       {(trace.counters.breakdowns > 0 || charging !== null) && (
         <p className="muted small">
-          Breakdowns{charging !== null ? " and charging" : ""} are totals of the run. The engine does not record when
-          each one happened, so the map does not show them.
+          {replay.observed
+            ? "These are totals of the run. When each breakdown and each charge happened is in the run's robot events: see the Robots tab and the badges on the map."
+            : "These are totals of the run. This trace (format version 1) does not record when each one happened, so the map does not show them."}
         </p>
       )}
 
@@ -307,16 +330,30 @@ function Robots({ replay, playback, selection, onSelect }: RunProps) {
           const activity = activityAt(replay.activity.get(track.id), tick);
           const from = track.nodes[pose.visit] ?? "";
           const to = track.nodes[pose.visit + 1] ?? "";
+          const statuses = statusesAt(replay.statuses.get(track.id), tick);
+          const level = robotLevelAt(replay, track.id, tick);
           return (
             <li key={track.id}>
               <button
                 type="button"
-                className={selection.robot === track.id ? "row selected" : "row"}
+                className={selection.robot === track.id ? "row robot selected" : "row robot"}
                 onClick={() => onSelect({ robot: track.id, node: null, order: null })}
               >
                 <span className="mono id">{track.id}</span>
                 <ActivityChip activity={activity} />
                 <span className="mono where">{pose.moving ? `${from} → ${to}` : from}</span>
+                <span className="row-extra">
+                  {level !== null && replay.battery !== null && (
+                    <span className="mono battery-figure" title={levelTitle(level, replay)}>
+                      {percent(level.units / replay.battery.capacity, 0)}
+                    </span>
+                  )}
+                  {statuses.map((status) => (
+                    <span key={status} className="status-chip" style={{ color: STATUS_COLORS[status] }} title={STATUS_NOTE[status]}>
+                      {STATUS_SHORT[status]}
+                    </span>
+                  ))}
+                </span>
               </button>
             </li>
           );
@@ -358,6 +395,16 @@ function RobotDetail({
   if (track === undefined) return null;
 
   const pose = poseAt(track, tick);
+  const timeline = replay.statuses.get(robotId);
+  const statuses = statusesAt(timeline, tick);
+  const disturbed = timeline?.intervals.filter(
+    (interval) =>
+      (interval.status === "breakdown" || interval.status === "delay") &&
+      interval.start <= tick &&
+      tick < interval.end,
+  );
+  const level = robotLevelAt(replay, robotId, tick);
+  const events = replay.robotEvents.get(robotId) ?? [];
   const activity = activityAt(changes, tick);
   const orderId = orderAt(changes, tick);
   const order = orderId === null ? undefined : replay.orderById.get(orderId);
@@ -379,10 +426,17 @@ function RobotDetail({
       <dl className="facts">
         <dt>Movement</dt>
         <dd>
-          {pose.moving && next !== undefined ? (
+          {pose.waiting && next !== undefined ? (
             <>
-              Driving <span className="mono">{here}</span> → <span className="mono">{next}</span> ·{" "}
-              {Math.round(pose.share * 100)}% of the edge
+              At the end of <span className="mono">{here}</span> → <span className="mono">{next}</span>, waiting to
+              enter <span className="mono">{next}</span>
+            </>
+          ) : pose.moving && next !== undefined ? (
+            <>
+              Driving <span className="mono">{here}</span> → <span className="mono">{next}</span>
+              {disturbed !== undefined && disturbed.length > 0
+                ? " · place on the edge not modelled"
+                : ` · ${Math.round(pose.share * 100)}% of the edge`}
             </>
           ) : (
             <>
@@ -414,7 +468,60 @@ function RobotDetail({
         </dd>
         <dt>Driven so far</dt>
         <dd>{metres(drivenMetres(replay, robotId, pose.visit, pose.share))} along its recorded path</dd>
+        <dt>Battery</dt>
+        <dd>
+          {!replay.observed ? (
+            <span className="muted">Not recorded in this trace (format version 1)</span>
+          ) : level === null || replay.battery === null ? (
+            <span className="muted">This run has no battery model</span>
+          ) : (
+            <>
+              <span className="mono">{percent(level.units / replay.battery.capacity, 1)}</span> ·{" "}
+              {metres(level.units / replay.battery.units_per_metre)} of driving
+            </>
+          )}
+        </dd>
       </dl>
+      {level !== null && replay.battery !== null && (
+        <>
+          <div
+            className="battery"
+            role="img"
+            aria-label={`Battery ${percent(level.units / replay.battery.capacity, 0)}`}
+          >
+            <span
+              className={level.units < replay.battery.low ? "battery-fill low" : "battery-fill"}
+              style={{ width: `${(level.units / replay.battery.capacity) * 100}%` }}
+            />
+            <i style={{ left: `${(replay.battery.low / replay.battery.capacity) * 100}%` }} title="Low threshold" />
+            <i style={{ left: `${(replay.battery.high / replay.battery.capacity) * 100}%` }} title="High threshold" />
+          </div>
+          <p className="muted small">{levelTitle(level, replay, tick)}</p>
+        </>
+      )}
+      {statuses.length > 0 && (
+        <ul className="status-list">
+          {statuses.map((status) => {
+            const interval = timeline?.intervals.find(
+              (candidate) => candidate.status === status && candidate.start <= tick && tick < candidate.end,
+            );
+            return (
+              <li key={status}>
+                <strong style={{ color: STATUS_COLORS[status] }}>
+                  {STATUS_LABEL[status]}
+                  {interval !== undefined &&
+                    interval.event.ticks !== null &&
+                    ` · ${duration(interval.event.ticks * replay.tickS)}`}
+                </strong>
+                <span>
+                  {STATUS_NOTE[status]}
+                  {interval !== undefined && ` Since ${clock(interval.start * replay.tickS)}.`}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <div className="strip-label">
         <span>Activity over the run</span>
         <span className="muted">click to jump</span>
@@ -441,12 +548,124 @@ function RobotDetail({
         ))}
         <i style={{ left: `${end > 0 ? (tick / end) * 100 : 0}%` }} />
       </div>
+      {replay.observed && (timeline?.intervals.length ?? 0) > 0 && (
+        <>
+          <div className="strip-label">
+            <span>Status over the run</span>
+            <span className="muted">from the robot&apos;s events</span>
+          </div>
+          <div
+            className="strip status"
+            role="img"
+            aria-label={`Statuses of ${robotId} over the run`}
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              playback.seek(((event.clientX - box.left) / box.width) * end);
+            }}
+          >
+            {timeline?.intervals.map((interval, index) => (
+              <span
+                key={index}
+                className={`lane-${STATUS_LANE[interval.status]}`}
+                title={STATUS_LABEL[interval.status]}
+                style={{
+                  left: `${(interval.start / end) * 100}%`,
+                  width: `max(2px, ${((Math.min(interval.end, end) - interval.start) / end) * 100}%)`,
+                  background: STATUS_COLORS[interval.status],
+                }}
+              />
+            ))}
+            <i style={{ left: `${end > 0 ? (tick / end) * 100 : 0}%` }} />
+          </div>
+        </>
+      )}
       <p className="muted small">
-        Free, to pickup and loaded come from the event log. The engine records no other state, such as charging or
-        being repaired.
+        {replay.observed
+          ? "Free, to pickup and loaded come from the order log; charging, service state, delays, breakdowns and waits from the robot's events."
+          : "Free, to pickup and loaded come from the order log. This trace (format version 1) records no other state, such as charging or a breakdown."}
       </p>
+      {replay.observed && (
+        <>
+          <h3>Events of {robotId}</h3>
+          {events.length === 0 ? (
+            <p className="muted small">Nothing besides its orders happened to this robot in this run.</p>
+          ) : (
+            <ul className="rows">
+              {events.slice(0, LIST_LIMIT).map((event, index) => (
+                <li key={index}>
+                  <button
+                    type="button"
+                    className={event.tick <= tick ? "row event past" : "row event"}
+                    onClick={() => {
+                      playback.pause();
+                      playback.seek(event.tick);
+                    }}
+                  >
+                    <span className="mono id">{clock(event.tick * replay.tickS)}</span>
+                    <span className="conflict-what">
+                      <span>{EVENT_LABEL[event.kind]}</span>
+                      <span className="mono muted">{eventDetail(event, replay)}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {events.length > LIST_LIMIT && (
+            <p className="muted small">
+              Showing the first {LIST_LIMIT} of {number(events.length)} events. The strip above shows all of them.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
+}
+
+/** Which row of the status strip each status is drawn in. */
+const STATUS_LANE: Record<Status, number> = {
+  charging: 0,
+  out_of_service: 1,
+  waiting_for_charger: 1,
+  breakdown: 2,
+  delay: 2,
+  corridor_wait: 2,
+};
+
+const EVENT_LABEL: Record<RobotEventKind, string> = {
+  charging_started: "Charging started",
+  charging_stopped: "Charging stopped",
+  out_of_service: "Out of service (battery low)",
+  back_in_service: "Back in service",
+  charger_wait_started: "Waiting for a charger",
+  charger_wait_ended: "A charger was found",
+  charger_trip_started: "Sent to a charger",
+  delay: "Delay on a traversal",
+  breakdown: "Breakdown on a traversal",
+  corridor_wait_started: "Waiting at the corridor end",
+  corridor_wait_ended: "Entered the node",
+  replanned: "New route adopted",
+  moved_out_of_the_way: "Moved out of the way",
+};
+
+function eventDetail(event: RobotEvent, replay: Replay): string {
+  const parts: string[] = [event.target === null ? event.node : `${event.node} → ${event.target}`];
+  if (event.ticks !== null) parts.push(`+${duration(event.ticks * replay.tickS)}`);
+  if (event.reason !== null) parts.push(event.reason === "low" ? "battery low" : "top-up while idle");
+  if (event.level !== null && replay.battery !== null) {
+    parts.push(`battery ${percent(event.level / replay.battery.capacity, 1)}`);
+  }
+  return parts.join(" · ");
+}
+
+/** Where a battery value comes from, in words: a reading and its age, or the charging formula. */
+function levelTitle(level: Level, replay: Replay, tick?: number): string {
+  if (level.source === "charging_formula") {
+    return "Calculated with the engine's charging formula while the robot stands on a charger. It is not a recorded reading.";
+  }
+  const when = `Engine reading at ${clock(level.asOf * replay.tickS)}`;
+  if (tick === undefined || tick - level.asOf < 1) return `${when}.`;
+  return `${when}, ${duration((tick - level.asOf) * replay.tickS)} ago. The engine records a level on arrival at a node, so no later value exists yet; none is estimated.`;
 }
 
 const STEPS: { key: keyof OrderLife; label: string }[] = [

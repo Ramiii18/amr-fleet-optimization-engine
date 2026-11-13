@@ -6,7 +6,15 @@ import type { Bounds, Corridor, Replay } from "../lib/replay";
 import type { TraceNode } from "../lib/trace";
 import { type View, fitView, pan, toScreen, zoomAt } from "../lib/view";
 import { type Scene, drawScene, pickAt } from "../render/scene";
-import { ACTIVITY_COLORS, ACTIVITY_LABEL, NODE_COLORS, NODE_LABEL } from "../render/theme";
+import {
+  ACTIVITY_COLORS,
+  ACTIVITY_LABEL,
+  NODE_COLORS,
+  NODE_LABEL,
+  STATUS_COLORS,
+  STATUS_SHORT,
+  STATUS_SIGN,
+} from "../render/theme";
 
 export interface Selection {
   robot: string | null;
@@ -48,12 +56,19 @@ interface Options {
   routes: boolean;
   orders: boolean;
   conflicts: boolean;
+  status: boolean;
   follow: boolean;
 }
 
 const TOGGLES: { key: keyof Options; label: string; title: string; needsRun: boolean }[] = [
   { key: "labels", label: "Labels", title: "Node names", needsRun: false },
   { key: "routes", label: "Route", title: "The selected robot's recorded path", needsRun: true },
+  {
+    key: "status",
+    label: "Status",
+    title: "Charging, out of service, breakdowns, delays and waits, from the run's robot events",
+    needsRun: true,
+  },
   { key: "orders", label: "Loads", title: "Loads waiting at their pickup", needsRun: true },
   { key: "conflicts", label: "Conflicts", title: "Where the conflict checker found conflicts", needsRun: true },
   { key: "follow", label: "Follow", title: "Keep the selected robot in the centre", needsRun: true },
@@ -85,6 +100,7 @@ export function MapCanvas({
     routes: true,
     orders: true,
     conflicts: true,
+    status: true,
     follow: false,
   });
   const [tip, setTip] = useState<Tip | null>(null);
@@ -139,6 +155,7 @@ export function MapCanvas({
       showRoutes: now.options.routes,
       showOrders: now.options.orders,
       showConflicts: now.options.conflicts,
+      showStatus: now.options.status,
     };
   }, []);
 
@@ -394,6 +411,18 @@ export function MapCanvas({
               <span key={activity} className="legend-item">
                 <span className={`robot-dot ${activity.replace(" ", "-")}`} style={{ background: ACTIVITY_COLORS[activity] }} />
                 {ACTIVITY_LABEL[activity]}
+              </span>
+            ))}
+          </div>
+        )}
+        {replay !== null && replay.observed && options.status && (
+          <div className="legend-row">
+            {(["charging", "out_of_service", "breakdown", "delay", "corridor_wait"] as const).map((status) => (
+              <span key={status} className="legend-item">
+                <span className={`status-mark ${status}`} style={{ borderColor: STATUS_COLORS[status], color: STATUS_COLORS[status] }}>
+                  {STATUS_SIGN[status]}
+                </span>
+                {STATUS_SHORT[status]}
               </span>
             ))}
           </div>

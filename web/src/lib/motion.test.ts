@@ -105,7 +105,7 @@ describe("poseAt on a hand-made path", () => {
     ["B", 120, 150],
     ["C", 190, 250],
   ] as const;
-  const track = buildTrack({ id: "R1", visits: visits.map((v) => [...v]) }, nodes);
+  const track = buildTrack({ id: "R1", visits: visits.map((v) => [...v]), levels: null }, nodes);
 
   it.each([
     [-5, 0, 0, false],
@@ -137,6 +137,7 @@ describe("poseAt on a hand-made path", () => {
           ["A", 0, 20],
           ["B", 120, null],
         ],
+        levels: null,
       },
       nodes,
     );
@@ -145,7 +146,7 @@ describe("poseAt on a hand-made path", () => {
   });
 
   it("refuses a visit that is not on the map", () => {
-    expect(() => buildTrack({ id: "R3", visits: [["Z", 0, 1]] }, nodes)).toThrow("unknown node Z");
+    expect(() => buildTrack({ id: "R3", visits: [["Z", 0, 1]], levels: null }, nodes)).toThrow("unknown node Z");
   });
 });
 

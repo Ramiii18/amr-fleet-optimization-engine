@@ -14,7 +14,7 @@
  * An event at tick t already counts at tick t.
  */
 
-import type { Trace, TraceNode, TraceRobot } from "./trace";
+import type { RobotEvent, Trace, TraceNode, TraceRobot } from "./trace";
 
 /** The three activities the event log supports. Nothing else is recorded, so nothing else is shown. */
 export type Activity = "free" | "to pickup" | "loaded";
@@ -30,9 +30,24 @@ export interface Track {
   /** Position of each visit's node, in metres. */
   xs: Float64Array;
   ys: Float64Array;
+  /**
+   * For the drive that leaves each visit: the tick the robot reaches the end of the corridor.
+   * It is the arrival at the next visit, unless the trace records that the robot had to wait at
+   * the end of the corridor before entering the node (a `corridor_wait_started` event): then it
+   * is the tick that wait began. `Infinity` for the last visit.
+   */
+  reach: Float64Array;
 }
 
-export function buildTrack(robot: TraceRobot, nodes: ReadonlyMap<string, TraceNode>): Track {
+/**
+ * `events` are the robot's own events, if the trace has any (version 2). Without them, or
+ * without a corridor wait among them, positions are exactly those of `viz/motion.py`.
+ */
+export function buildTrack(
+  robot: TraceRobot,
+  nodes: ReadonlyMap<string, TraceNode>,
+  events: readonly RobotEvent[] = [],
+): Track {
   const count = robot.visits.length;
   const track: Track = {
     id: robot.id,
@@ -41,6 +56,7 @@ export function buildTrack(robot: TraceRobot, nodes: ReadonlyMap<string, TraceNo
     depart: new Float64Array(count),
     xs: new Float64Array(count),
     ys: new Float64Array(count),
+    reach: new Float64Array(count).fill(Infinity),
   };
   robot.visits.forEach(([nodeId, arrive, depart], i) => {
     const node = nodes.get(nodeId);
@@ -50,8 +66,27 @@ export function buildTrack(robot: TraceRobot, nodes: ReadonlyMap<string, TraceNo
     track.depart[i] = depart ?? Infinity;
     track.xs[i] = node.x;
     track.ys[i] = node.y;
+    if (i > 0) track.reach[i - 1] = arrive;
   });
+  for (const event of events) {
+    if (event.kind !== "corridor_wait_started") continue;
+    // The drive it belongs to: the last departure before the wait began.
+    const index = countBefore(track.depart, event.tick) - 1;
+    if (index >= 0 && index < count - 1) track.reach[index] = event.tick;
+  }
   return track;
+}
+
+/** How many of the ascending `values` are < `x` (Python's `bisect_left`). */
+export function countBefore(values: ArrayLike<number>, x: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if ((values[middle] as number) < x) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 /** How many of the ascending `values` are <= `x` (Python's `bisect_right`). */
@@ -75,6 +110,8 @@ export interface Pose {
   moving: boolean;
   /** Share of that edge already driven, in time (0 while standing). */
   share: number;
+  /** True while it stands at the end of the corridor, not yet allowed into the next node. */
+  waiting: boolean;
 }
 
 /**
@@ -90,16 +127,29 @@ export function poseAt(track: Track, tick: number): Pose {
   const x = track.xs[index] as number;
   const y = track.ys[index] as number;
   if (index === last || tick <= (track.depart[index] as number)) {
-    return { x, y, visit: index, moving: false, share: 0 };
+    return { x, y, visit: index, moving: false, share: 0, waiting: false };
   }
   const depart = track.depart[index] as number;
-  const share = (tick - depart) / ((track.arrive[index + 1] as number) - depart);
+  const reach = track.reach[index] as number;
+  if (tick >= reach) {
+    // At the end of the corridor, by the node it will enter (`replay.state.position_at`).
+    return {
+      x: track.xs[index + 1] as number,
+      y: track.ys[index + 1] as number,
+      visit: index,
+      moving: true,
+      share: 1,
+      waiting: true,
+    };
+  }
+  const share = (tick - depart) / (reach - depart);
   return {
     x: x + share * ((track.xs[index + 1] as number) - x),
     y: y + share * ((track.ys[index + 1] as number) - y),
     visit: index,
     moving: true,
     share,
+    waiting: false,
   };
 }
 
