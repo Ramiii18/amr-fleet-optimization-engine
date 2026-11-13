@@ -43,7 +43,12 @@ def _samples(name: str) -> dict[str, Any]:
 def test_the_committed_fixtures_are_what_the_script_writes_now() -> None:
     expected = _script().fixture_files()
 
-    committed = {path.name: path.read_bytes().decode("ascii") for path in FIXTURES.iterdir()}
+    # Every file under the folder, by its path from it: the version 1 files at the top, and the
+    # version 2 files in v2/.
+    committed = {
+        path.relative_to(FIXTURES).as_posix(): path.read_bytes().decode("ascii")
+        for path in FIXTURES.rglob("*.json")
+    }
 
     assert sorted(committed) == sorted(expected)
     for name, text in expected.items():

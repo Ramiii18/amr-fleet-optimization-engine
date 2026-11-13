@@ -238,7 +238,7 @@ def test_the_api_documentation_describes_the_trace(client: TestClient) -> None:
     answers = document.json()["paths"]["/simulations/{job_id}/trace"]["get"]["responses"]
     assert set(answers) >= {"200", "404", "409", "410"}
     schema = answers["200"]["content"]["application/json"]["schema"]
-    assert schema["properties"]["schema_version"] == {"const": 1}
+    assert schema["properties"]["schema_version"] == {"const": 2}
     assert json.dumps(schema) == json.dumps(TRACE_JSON_SCHEMA)
 
 

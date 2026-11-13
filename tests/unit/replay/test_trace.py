@@ -319,7 +319,7 @@ BROKEN: list[tuple[str, Callable[[dict[str, Any]], None], str, bool]] = [
     ("an unknown field", _set(["colour"], "red"), r"trace: unknown field\(s\) \['colour'\]", True),
     ("a missing field", _delete(["events"]), r"trace: missing field\(s\) \['events'\]", True),
     ("another format", _set(["format"], "amr-scenario"), "trace.format", True),
-    ("a later version", _set(["schema_version"], 2), "unsupported version 2", True),
+    ("a later version", _set(["schema_version"], 3), "unsupported version 3", True),
     ("a version that is true", _set(["schema_version"], True), "unsupported version", True),
     (
         "a tick with a fraction",

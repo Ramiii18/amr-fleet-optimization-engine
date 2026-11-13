@@ -45,6 +45,26 @@ Rules:
 
 Parsing is strict, like map and scenario files (D32): unknown, missing and mistyped fields are
 rejected with their location. A trace is then checked as a whole: see `ReplayTrace`.
+
+**Version 2** (D35) adds what happens to robots besides orders. Everything above is unchanged,
+and three things are added::
+
+      "robots": [{"id", "visits": [...], "levels": [19200, 18200, ...] or null}],
+      "battery_model": {"capacity", "charge_per_tick", "low", "high", "back_in_service",
+                        "units_per_metre"} or null,
+      "robot_events": [{"tick", "kind", "robot", "node", "target", "ticks", "level", "reason"}]
+
+- ``levels`` has one entry per visit: the robot's energy, in units, on arrival at that visit.
+  These are the moments the simulator updates a level while driving. Between two of them the
+  trace says nothing about the level: a reader shows the last one, and does not interpolate.
+- ``battery_model`` holds the numbers of the simulator's charging formula, so that a reader can
+  repeat it while a robot stands on a charger: ``min(capacity, level + ticks * charge_per_tick)``.
+  A value computed that way is a calculation by the model's formula, not a recorded reading.
+- ``robot_events`` are defined in `sim.log.RobotEventKind`. A field that a kind does not have is
+  null. Runs without a battery model have null ``levels`` and ``battery_model``.
+
+A version 1 trace is still read: it has no robot events and no levels. `downgrade_to_v1` removes
+the additions from version 2 data, which gives exactly the version 1 trace of the same run.
 """
 
 import gzip
@@ -55,7 +75,14 @@ from dataclasses import asdict, dataclass
 
 from amr_optimizer.domain import OrderId, OrderValidationError, RobotId, TransportOrder
 from amr_optimizer.metrics import RunKpis, compute_charging_kpis, compute_kpis
-from amr_optimizer.sim import EventKind, LogEntry, SimulationResult
+from amr_optimizer.sim import (
+    BatteryRecord,
+    EventKind,
+    LogEntry,
+    RobotEvent,
+    RobotEventKind,
+    SimulationResult,
+)
 from amr_optimizer.traffic import (
     FOREVER,
     Conflict,
@@ -75,7 +102,10 @@ from amr_optimizer.warehouse import (
 )
 
 FORMAT_NAME = "amr-replay-trace"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+"""The version this package writes."""
+READABLE_VERSIONS = (1, 2)
+"""The versions this package reads."""
 SOURCE = (
     "Synthetic simulation output of the AMR Fleet Optimization Engine. "
     "No real robot was controlled or observed."
@@ -93,10 +123,15 @@ class TraceValidationError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class TraceRobot:
-    """One robot and its whole movement over the run. The path starts at tick 0."""
+    """One robot and its whole movement over the run. The path starts at tick 0.
+
+    With a battery model, ``levels`` holds the robot's energy on arrival at each visit, in
+    units; otherwise it is None.
+    """
 
     id: RobotId
     path: TimedPath
+    levels: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +172,27 @@ class TraceConflict:
 
 CONFLICT_KINDS = ("vertex", "head-on", "following")
 
+CHARGER_TRIP_REASONS = ("low", "top_up")
+
+_K = RobotEventKind
+ROBOT_EVENT_FIELDS: Mapping[RobotEventKind, frozenset[str]] = {
+    _K.CHARGING_STARTED: frozenset({"level"}),
+    _K.CHARGING_STOPPED: frozenset({"level"}),
+    _K.OUT_OF_SERVICE: frozenset({"level"}),
+    _K.BACK_IN_SERVICE: frozenset({"level"}),
+    _K.CHARGER_WAIT_STARTED: frozenset(),
+    _K.CHARGER_WAIT_ENDED: frozenset(),
+    _K.CHARGER_TRIP_STARTED: frozenset({"target", "level", "reason"}),
+    _K.DELAY: frozenset({"target", "ticks"}),
+    _K.BREAKDOWN: frozenset({"target", "ticks"}),
+    _K.CORRIDOR_WAIT_STARTED: frozenset({"target"}),
+    _K.CORRIDOR_WAIT_ENDED: frozenset({"target"}),
+    _K.REPLANNED: frozenset(),
+    _K.MOVED_OUT_OF_THE_WAY: frozenset({"target"}),
+}
+"""Which of ``target``, ``ticks``, ``level`` and ``reason`` each kind of robot event has. A
+trace is refused if an event lacks one of its fields or has one that its kind does not have."""
+
 
 @dataclass(frozen=True, slots=True)
 class ReplayTrace:
@@ -151,7 +207,11 @@ class ReplayTrace:
       release has no robot;
     - the outcome lists every order exactly once;
     - no more conflicts are listed than were counted, and each names known robots and nodes;
-    - ``run`` and the KPIs can be written as JSON.
+    - ``run`` and the KPIs can be written as JSON;
+    - battery levels exist exactly when there is a battery model: one per visit, within the
+      capacity;
+    - robot events are in time order, within the run, name known robots and nodes, and have
+      exactly the fields of their kind (`ROBOT_EVENT_FIELDS`).
     """
 
     run: Mapping[str, object]
@@ -174,6 +234,8 @@ class ReplayTrace:
     charging: Mapping[str, Scalar] | None
     conflicts_total: int
     conflicts: tuple[TraceConflict, ...]
+    battery_model: BatteryRecord | None = None
+    robot_events: tuple[RobotEvent, ...] = ()
 
     def __post_init__(self) -> None:
         _check(self)
@@ -254,7 +316,11 @@ def build_trace(
         nodes=scenario.graph.nodes,
         edges=scenario.graph.edges,
         robots=tuple(
-            TraceRobot(robot.robot_id, result.trajectories[robot.robot_id])
+            TraceRobot(
+                robot.robot_id,
+                result.trajectories[robot.robot_id],
+                result.energy_levels.get(robot.robot_id),
+            )
             for robot in scenario.robots
         ),
         orders=scenario.orders,
@@ -273,6 +339,8 @@ def build_trace(
         charging=scalar_values(asdict(charging)) if charging else None,
         conflicts_total=len(found),
         conflicts=tuple(found[:max_conflicts]),
+        battery_model=result.battery_record,
+        robot_events=result.robot_events,
     )
 
 
@@ -309,6 +377,8 @@ def _check(trace: ReplayTrace) -> None:
     _check_events(trace, graph, robots, orders)
     _check_outcome(trace, orders)
     _check_conflicts(trace, graph, robots)
+    _check_battery(trace)
+    _check_robot_events(trace, graph, robots)
     for name, values in (("run", trace.run), ("kpis", trace.kpis), ("charging", trace.charging)):
         try:
             json.dumps(values, allow_nan=False)
@@ -407,6 +477,66 @@ def _check_conflicts(trace: ReplayTrace, graph: WarehouseGraph, robots: set[Robo
             raise _fail(f"{where}: needs 0 <= start <= end")
 
 
+def _check_battery(trace: ReplayTrace) -> None:
+    model = trace.battery_model
+    if model is not None:
+        if not trace.battery:
+            raise _fail("battery_model: given for a run without a battery")
+        for name, value in asdict(model).items():
+            if value <= 0:
+                raise _fail(f"battery_model.{name} must be positive, got {value}")
+        if not model.low < model.high <= model.capacity:
+            raise _fail("battery_model: needs low < high <= capacity")
+        if model.back_in_service not in (model.low, model.high):
+            raise _fail("battery_model.back_in_service: must be the low or the high threshold")
+    for robot in trace.robots:
+        if (robot.levels is None) != (model is None):
+            raise _fail(f"robot {robot.id!r}: levels are given exactly with a battery model")
+        if robot.levels is None or model is None:
+            continue
+        if len(robot.levels) != len(robot.path.visits):
+            raise _fail(f"robot {robot.id!r}: needs one level per visit")
+        if not all(0 <= level <= model.capacity for level in robot.levels):
+            raise _fail(f"robot {robot.id!r}: a level is outside 0 to {model.capacity}")
+
+
+def _check_robot_events(trace: ReplayTrace, graph: WarehouseGraph, robots: set[RobotId]) -> None:
+    previous = 0
+    for index, event in enumerate(trace.robot_events):
+        where = f"robot_events[{index}]"
+        if not previous <= event.tick <= trace.end_tick:
+            raise _fail(
+                f"{where}: tick {event.tick} is out of time order or outside the run "
+                f"(0 to {trace.end_tick})"
+            )
+        previous = event.tick
+        if event.robot_id not in robots:
+            raise _fail(f"{where}: unknown robot {event.robot_id!r}")
+        for node in (event.node, event.target):
+            if node is not None and node not in graph:
+                raise _fail(f"{where}: unknown node {node!r}")
+        has = {
+            name
+            for name in ("target", "ticks", "level", "reason")
+            if getattr(event, name) is not None
+        }
+        expected = ROBOT_EVENT_FIELDS[event.kind]
+        if has != expected:
+            raise _fail(
+                f"{where}: a {event.kind.value} event has the fields {sorted(expected)}, "
+                f"got {sorted(has)}"
+            )
+        if event.ticks is not None and event.ticks <= 0:
+            raise _fail(f"{where}: ticks must be positive")
+        if event.level is not None:
+            if trace.battery_model is None:
+                raise _fail(f"{where}: a level without a battery model")
+            if not 0 <= event.level <= trace.battery_model.capacity:
+                raise _fail(f"{where}: level is outside 0 to {trace.battery_model.capacity}")
+        if event.reason is not None and event.reason not in CHARGER_TRIP_REASONS:
+            raise _fail(f"{where}: reason must be one of {list(CHARGER_TRIP_REASONS)}")
+
+
 # --- writing -----------------------------------------------------------------------------------
 
 
@@ -447,6 +577,7 @@ def trace_to_dict(trace: ReplayTrace) -> dict[str, object]:
                     [v.node, v.arrive, None if v.depart == FOREVER else v.depart]
                     for v in robot.path.visits
                 ],
+                "levels": None if robot.levels is None else list(robot.levels),
             }
             for robot in trace.robots
         ],
@@ -482,7 +613,39 @@ def trace_to_dict(trace: ReplayTrace) -> dict[str, object]:
                 for c in trace.conflicts
             ],
         },
+        "battery_model": None if trace.battery_model is None else asdict(trace.battery_model),
+        "robot_events": [
+            {
+                "tick": e.tick,
+                "kind": e.kind.value,
+                "robot": e.robot_id,
+                "node": e.node,
+                "target": e.target,
+                "ticks": e.ticks,
+                "level": e.level,
+                "reason": e.reason,
+            }
+            for e in trace.robot_events
+        ],
     }
+
+
+def downgrade_to_v1(data: Mapping[str, object]) -> dict[str, object]:
+    """Version 2 trace data without what version 2 added: the version 1 trace of the same run.
+
+    Version 2 only adds to version 1 (D35), so this removes the additions and changes nothing
+    else. The tests use it to show that the additions left every older field as it was.
+    """
+    if data.get("schema_version") != 2:
+        raise TraceValidationError("trace.schema_version: only version 2 data can be downgraded")
+    older: dict[str, object] = {
+        key: value for key, value in data.items() if key not in ("battery_model", "robot_events")
+    }
+    older["schema_version"] = 1
+    robots = data["robots"]
+    assert isinstance(robots, list)
+    older["robots"] = [{k: v for k, v in robot.items() if k != "levels"} for robot in robots]
+    return older
 
 
 def trace_to_json(trace: ReplayTrace) -> str:
@@ -537,14 +700,17 @@ _TOP = (
 def trace_from_dict(data: object) -> ReplayTrace:
     """Build a trace from parsed JSON. Raises `TraceValidationError` with the location of the
     first problem."""
-    top = _object(data, "trace", _TOP)
-    if top["format"] != FORMAT_NAME:
-        raise TraceValidationError(f"trace.format: must be {FORMAT_NAME!r}, got {top['format']!r}")
-    # The version is checked before anything else is read: a later version may differ anywhere.
-    if isinstance(top["schema_version"], bool) or top["schema_version"] != SCHEMA_VERSION:
+    head = _object(data, "trace", None)
+    if head.get("format") != FORMAT_NAME:
         raise TraceValidationError(
-            f"trace.schema_version: unsupported version {top['schema_version']!r}"
+            f"trace.format: must be {FORMAT_NAME!r}, got {head.get('format')!r}"
         )
+    # The version is checked before anything else is read: a later version may differ anywhere.
+    version = head.get("schema_version")
+    if isinstance(version, bool) or version not in READABLE_VERSIONS:
+        raise TraceValidationError(f"trace.schema_version: unsupported version {version!r}")
+    v2 = version == 2
+    top = _object(data, "trace", (*_TOP, "battery_model", "robot_events") if v2 else _TOP)
     _string(top, "source", "trace")
     map_ = _object(top["map"], "map", ("nodes", "edges"))
     outcome = _object(
@@ -580,7 +746,8 @@ def trace_from_dict(data: object) -> ReplayTrace:
                 _edge(item, f"map.edges[{i}]") for i, item in enumerate(_list(map_, "edges", "map"))
             ),
             robots=tuple(
-                _robot(item, f"robots[{i}]") for i, item in enumerate(_list(top, "robots", "trace"))
+                _robot(item, f"robots[{i}]", with_levels=v2)
+                for i, item in enumerate(_list(top, "robots", "trace"))
             ),
             orders=tuple(
                 _order(item, f"orders[{i}]") for i, item in enumerate(_list(top, "orders", "trace"))
@@ -605,6 +772,13 @@ def trace_from_dict(data: object) -> ReplayTrace:
                 _conflict(item, f"conflicts.listed[{i}]")
                 for i, item in enumerate(_list(conflicts, "listed", "conflicts"))
             ),
+            battery_model=_battery_model(top["battery_model"]) if v2 else None,
+            robot_events=tuple(
+                _robot_event(item, f"robot_events[{i}]")
+                for i, item in enumerate(_list(top, "robot_events", "trace"))
+            )
+            if v2
+            else (),
         )
     except (MapValidationError, OrderValidationError, InvalidTimedPathError) as error:
         raise TraceValidationError(f"trace: {error}") from error
@@ -696,8 +870,46 @@ def _edge(value: object, where: str) -> Edge:
     )
 
 
-def _robot(value: object, where: str) -> TraceRobot:
-    obj = _object(value, where, ("id", "visits"))
+_BATTERY_FIELDS = (
+    "capacity",
+    "charge_per_tick",
+    "low",
+    "high",
+    "back_in_service",
+    "units_per_metre",
+)
+
+
+def _battery_model(value: object) -> BatteryRecord | None:
+    if value is None:
+        return None
+    obj = _object(value, "battery_model", _BATTERY_FIELDS)
+    return BatteryRecord(**{name: _integer(obj, name, "battery_model") for name in _BATTERY_FIELDS})
+
+
+def _robot_event(value: object, where: str) -> RobotEvent:
+    obj = _object(
+        value, where, ("tick", "kind", "robot", "node", "target", "ticks", "level", "reason")
+    )
+    kind = _string(obj, "kind", where)
+    if kind not in {k.value for k in RobotEventKind}:
+        raise TraceValidationError(
+            f"{where}.kind: {kind!r} is not one of {[k.value for k in RobotEventKind]}"
+        )
+    return RobotEvent(
+        tick=_integer(obj, "tick", where),
+        kind=RobotEventKind(kind),
+        robot_id=RobotId(_string(obj, "robot", where)),
+        node=NodeId(_string(obj, "node", where)),
+        target=None if obj["target"] is None else NodeId(_string(obj, "target", where)),
+        ticks=None if obj["ticks"] is None else _integer(obj, "ticks", where),
+        level=None if obj["level"] is None else _integer(obj, "level", where),
+        reason=None if obj["reason"] is None else _string(obj, "reason", where),
+    )
+
+
+def _robot(value: object, where: str, *, with_levels: bool) -> TraceRobot:
+    obj = _object(value, where, ("id", "visits", "levels") if with_levels else ("id", "visits"))
     visits = []
     for i, item in enumerate(_list(obj, "visits", where)):
         at = f"{where}.visits[{i}]"
@@ -718,7 +930,13 @@ def _robot(value: object, where: str) -> TraceRobot:
         path = TimedPath(tuple(visits))
     except InvalidTimedPathError as error:
         raise TraceValidationError(f"{where}.visits: {error}") from error
-    return TraceRobot(RobotId(_string(obj, "id", where)), path)
+    levels: tuple[int, ...] | None = None
+    if with_levels and obj["levels"] is not None:
+        levels = tuple(
+            _whole(level, f"{where}.levels[{i}]")
+            for i, level in enumerate(_list(obj, "levels", where))
+        )
+    return TraceRobot(RobotId(_string(obj, "id", where)), path, levels)
 
 
 def _order(value: object, where: str) -> TransportOrder:

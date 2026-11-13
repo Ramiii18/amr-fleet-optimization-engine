@@ -1,4 +1,4 @@
-"""The replay trace format (D33) as a JSON Schema, draft 2020-12.
+"""The replay trace format (D33, D35) as a JSON Schema, draft 2020-12, in both versions.
 
 It describes the same structure as the strict parser in `trace.py`, for the API documentation
 and for clients in other languages. The schema covers structure and types only. That the parts
@@ -8,10 +8,16 @@ The tests validate real traces against this schema with ``jsonschema``, which sh
 with the parser.
 """
 
+import copy
 from typing import Any
 
-from amr_optimizer.replay.trace import CONFLICT_KINDS, FORMAT_NAME, SCHEMA_VERSION
-from amr_optimizer.sim import EventKind
+from amr_optimizer.replay.trace import (
+    CHARGER_TRIP_REASONS,
+    CONFLICT_KINDS,
+    FORMAT_NAME,
+    SCHEMA_VERSION,
+)
+from amr_optimizer.sim import EventKind, RobotEventKind
 from amr_optimizer.warehouse import NodeKind
 
 _TICK = {"type": "integer", "minimum": 0}
@@ -33,7 +39,7 @@ def _array(items: dict[str, Any]) -> dict[str, Any]:
     return {"type": "array", "items": items}
 
 
-TRACE_JSON_SCHEMA: dict[str, Any] = {
+TRACE_JSON_SCHEMA_V1: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "AMR replay trace",
     "description": "One finished run of the synthetic simulator: map, trajectories, orders, "
@@ -41,7 +47,7 @@ TRACE_JSON_SCHEMA: dict[str, Any] = {
     **_strict(
         {
             "format": {"const": FORMAT_NAME},
-            "schema_version": {"const": SCHEMA_VERSION},
+            "schema_version": {"const": 1},
             "source": {"type": "string"},
             "run": {"type": "object"},
             "policy": {"type": "string"},
@@ -147,3 +153,60 @@ TRACE_JSON_SCHEMA: dict[str, Any] = {
         }
     ),
 }
+
+
+def _version_2() -> dict[str, Any]:
+    """Version 1 with the additions of version 2 (D35): levels, the battery model and robot
+    events. Which fields each kind of event has is checked by the parser, not here."""
+    schema = copy.deepcopy(TRACE_JSON_SCHEMA_V1)
+    schema["description"] += (
+        " Version 2 adds battery levels on arrival at each visit, the battery model, and robot "
+        "events (charging, service, delays, breakdowns, waits)."
+    )
+    properties = schema["properties"]
+    properties["schema_version"] = {"const": SCHEMA_VERSION}
+    robot = properties["robots"]["items"]
+    robot["properties"]["levels"] = {
+        "description": "energy units on arrival at each visit; null without a battery model",
+        "anyOf": [_array(_TICK), {"type": "null"}],
+    }
+    robot["required"].append("levels")
+    positive = {"type": "integer", "exclusiveMinimum": 0}
+    properties["battery_model"] = {
+        "anyOf": [
+            _strict(
+                {
+                    name: positive
+                    for name in (
+                        "capacity",
+                        "charge_per_tick",
+                        "low",
+                        "high",
+                        "back_in_service",
+                        "units_per_metre",
+                    )
+                }
+            ),
+            {"type": "null"},
+        ]
+    }
+    properties["robot_events"] = _array(
+        _strict(
+            {
+                "tick": _TICK,
+                "kind": {"enum": [kind.value for kind in RobotEventKind]},
+                "robot": _ID,
+                "node": _ID,
+                "target": {"type": ["string", "null"]},
+                "ticks": {"anyOf": [positive, {"type": "null"}]},
+                "level": {"anyOf": [_TICK, {"type": "null"}]},
+                "reason": {"enum": [*CHARGER_TRIP_REASONS, None]},
+            }
+        )
+    )
+    schema["required"] += ["battery_model", "robot_events"]
+    return schema
+
+
+TRACE_JSON_SCHEMA: dict[str, Any] = _version_2()
+"""The schema of the version this package writes."""

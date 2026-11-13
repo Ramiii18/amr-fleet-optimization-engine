@@ -25,7 +25,9 @@ from pathlib import Path
 
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.domain import BatterySpec, ChargingPolicy, RobotId
-from amr_optimizer.replay import build_trace, trace_to_json
+from amr_optimizer.replay import build_trace, downgrade_to_v1, trace_to_json
+from amr_optimizer.replay.state import events_by_robot, level_at, status_at
+from amr_optimizer.replay.state import position_at as replay_position_at
 from amr_optimizer.scenario import ScenarioSpec, generate_scenario
 from amr_optimizer.sim import SimulationResult, simulate
 from amr_optimizer.traffic import DelayModel, Recovery, TimedPath
@@ -138,31 +140,137 @@ def samples_of(result: SimulationResult) -> dict[str, list[list[object]]]:
     return rows
 
 
+def _charging() -> tuple[SimulationResult, Settings]:
+    """Batteries that start low on a map with one charger: charging, time out of service and
+    waiting for the charger, with delays so that some traversals are longer than their edge."""
+    settings: Settings = {
+        "map": "small",
+        "robots": 3,
+        "orders_per_hour": 150.0,
+        "duration_s": 360.0,
+        "seed": 6,
+        "policy": "greedy",
+        "traffic": True,
+        "delays": {"share": 0.1, "min_s": 1.0, "max_s": 3.0},
+        "charging": "opportunistic-early",
+        "battery": {"start_min_share": 0.26, "start_max_share": 0.32},
+    }
+    spec = ScenarioSpec(robots=3, orders_per_hour=150.0, duration_s=360.0)
+    scenario = generate_scenario(generate_grid_warehouse(PRESETS["small"]), spec, seed=6)
+    result = simulate(
+        scenario,
+        POLICIES["greedy"](),
+        traffic=True,
+        delays=DelayModel(0.1, 10, 30),
+        delay_seed=6,
+        battery=BatterySpec(start_min_share=0.26, start_max_share=0.32),
+        battery_seed=6,
+        charging=ChargingPolicy.OPPORTUNISTIC_EARLY,
+    )
+    return result, settings
+
+
+V2_CASES: Mapping[str, Callable[[], tuple[SimulationResult, Settings]]] = {
+    **CASES,
+    "charging": _charging,
+}
+"""The runs of the version 2 fixtures: those of version 1, and one about charging."""
+
+V2_COLUMNS = [
+    "tick",
+    "x_m",
+    "y_m",
+    "activity",
+    "status",
+    "level_units",
+    "level_as_of_tick",
+    "level_source",
+]
+
+
+def samples_v2_of(result: SimulationResult) -> dict[str, list[list[object]]]:
+    """For every robot, rows of `V2_COLUMNS` from the reference functions of `replay.state`:
+    the position with waits at the end of corridors, the statuses, and the battery level with
+    the tick and the source of its value (null without a battery model)."""
+    graph = result.scenario.graph
+    activities = ActivityTimeline(result.log)
+    events = events_by_robot(result.robot_events)
+    rng = random.Random(1)
+    rows: dict[str, list[list[object]]] = {}
+    for robot in result.scenario.robots:
+        robot_id: RobotId = robot.robot_id
+        path = result.trajectories[robot_id]
+        own = events.get(robot_id, [])
+        changes = [e.tick for e in result.log if e.robot_id == robot_id]
+        ticks = set(sample_ticks(path, changes, result.end_tick, rng))
+        for event in own:  # at every robot event, just before it and just after it
+            ticks.update((float(event.tick), event.tick - 0.5, event.tick + 0.5))
+        rows[robot_id] = []
+        for tick in sorted(t for t in ticks if t >= 0):
+            x, y = replay_position_at(path, own, tick, graph)
+            activity = activities.at(robot_id, math.floor(tick))
+            row: list[object] = [tick, x, y, activity.value]
+            row.append([status.value for status in status_at(path, own, tick)])
+            if result.battery_record is None:
+                row += [None, None, None]
+            else:
+                levels = result.energy_levels[robot_id]
+                level = level_at(path, levels, own, result.battery_record, tick)
+                row += [level.units, level.as_of, level.source.value]
+            rows[robot_id].append(row)
+    return rows
+
+
+def _json(data: object) -> str:
+    return json.dumps(data, separators=(",", ":"), allow_nan=False) + "\n"
+
+
 def fixture_files() -> dict[str, str]:
-    """Every fixture file's name and exact text."""
+    """Every fixture file's name (relative to `FIXTURES`) and exact text.
+
+    The version 1 files are frozen in what they contain: they are the version 2 trace of the
+    same run with the additions of version 2 removed (`downgrade_to_v1`). If the simulator or
+    the trace ever changed an older field, these files would change, and the test that compares
+    them with the committed ones would fail.
+    """
     files: dict[str, str] = {}
-    for name, run in CASES.items():
+    for name, run in V2_CASES.items():
         result, settings = run()
-        files[f"{name}.trace.json"] = trace_to_json(build_trace(result, run=settings)) + "\n"
-        samples = {
-            "format": SAMPLES_FORMAT,
-            "version": SAMPLES_VERSION,
-            "trace": f"{name}.trace.json",
-            "source": "viz.motion.position_at and ActivityTimeline, on the run of the trace",
-            "columns": ["tick", "x_m", "y_m", "activity"],
-            "robots": samples_of(result),
-        }
-        files[f"{name}.samples.json"] = (
-            json.dumps(samples, separators=(",", ":"), allow_nan=False) + "\n"
+        trace = trace_to_json(build_trace(result, run=settings))
+        if name in CASES:
+            files[f"{name}.trace.json"] = _json(downgrade_to_v1(json.loads(trace)))
+            files[f"{name}.samples.json"] = _json(
+                {
+                    "format": SAMPLES_FORMAT,
+                    "version": SAMPLES_VERSION,
+                    "trace": f"{name}.trace.json",
+                    "source": "viz.motion.position_at and ActivityTimeline, on the run of the "
+                    "trace",
+                    "columns": ["tick", "x_m", "y_m", "activity"],
+                    "robots": samples_of(result),
+                }
+            )
+        files[f"v2/{name}.trace.json"] = trace + "\n"
+        files[f"v2/{name}.samples.json"] = _json(
+            {
+                "format": SAMPLES_FORMAT,
+                "version": 2,
+                "trace": f"{name}.trace.json",
+                "source": "replay.state (position_at, status_at, level_at) and "
+                "viz.motion.ActivityTimeline, on the run of the trace",
+                "columns": V2_COLUMNS,
+                "robots": samples_v2_of(result),
+            }
         )
     return files
 
 
 def main() -> None:
-    FIXTURES.mkdir(parents=True, exist_ok=True)
     for name, text in fixture_files().items():
+        path = FIXTURES / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         # newline="\n": identical bytes on every OS.
-        (FIXTURES / name).write_text(text, encoding="ascii", newline="\n")
+        path.write_text(text, encoding="ascii", newline="\n")
         print(f"{name}: {len(text) / 1000:.1f} kB")
 
 
