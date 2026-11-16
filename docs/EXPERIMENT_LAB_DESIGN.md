@@ -1,7 +1,19 @@
 # Experiment lab: design proposal (phase 2b)
 
-**Status: a proposal. Nothing in this document is built.** It follows phase 2a
-([plan](DIGITAL_TWIN_PLAN.md)) and needs the owner's approval before any implementation.
+**Status: approved by the owner on 2026-11-16 and partly built** (D36;
+[algorithms](algorithms.md), section 20). The text below is the proposal as it was approved.
+
+| Part of the proposal | State |
+|---|---|
+| Disturbance schedule as a value, next to the independent model (2.2) | Built |
+| Fingerprint, and a check that paired runs share it (2.3) | Built |
+| Reconciliation tests between events and the schedule (2.3) | Built |
+| Experiment file and runner, in worker processes (4) | Built, as a command; not on the HTTP service |
+| Paired statistics: t and bootstrap intervals, signed-rank, wins, Holm, margin, pairing diagnostics (3) | Built |
+| Pairing gain measured under both models (5, step 2) | Done: the schedule did not improve it |
+| Schedule in scenario files and in traces; episodes in the viewer (2.3) | Not built |
+| Results page in the viewer (4) | Not built |
+| Hierarchical bootstrap for pooled tail KPIs; pilot-based number of seeds; warm-up exclusion (3) | Not built |
 
 The lab compares the existing dispatch policies across scenarios and seeds. Its purpose is to
 support statements such as "policy A completes orders faster than policy B under these conditions",

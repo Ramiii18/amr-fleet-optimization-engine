@@ -696,10 +696,27 @@ behaviour. It closed one gap: a trace whose robot events contradict a robot's pa
 by both parsers (D35, amended), a rule first checked on 220 real runs. CI run 43456399400 on
 `c03e936` passed all five jobs. Phases 1 and 2a are ready to merge into `main`.
 
+### Phase 2b: the experiment lab (2026-11-16, branch `feature/amr-digital-twin-phase2b`)
+
+Approved by the owner on 2026-11-16 ([design](EXPERIMENT_LAB_DESIGN.md), D36).
+
+| Step | Content | Status |
+|---|---|---|
+| **2b.1** | Disturbance schedule as a value; the simulator follows one when given | **Done** |
+| **2b.2** | Fingerprint of a run's conditions; pairing diagnostics under both models | **Done** |
+| **2b.3** | Experiment files and a runner in worker processes (`python -m amr_optimizer.lab`) | **Done** |
+| **2b.4** | Paired statistics and a Markdown report; results as JSON | **Done** |
+| **2b.5** | Results and episodes in the viewer; the schedule in scenario files and traces | Not started |
+
+**Finding:** `insertion-fair` beats greedy on mean completion time under both disturbance models
+(20 seeds, two families). The schedule, built to give both policies identical disturbances, did
+**not** make the comparison more precise: intervals were wider than under the independent model
+([algorithms](algorithms.md), section 20.3). Without a schedule nothing changed: the published
+benchmarks reproduce exactly.
+
 **Next (proposed, not started):**
-1. The experiment lab: paired comparisons over seeds with intervals, on a disturbance model that is
-   the same for every policy. The design is in [EXPERIMENT_LAB_DESIGN.md](EXPERIMENT_LAB_DESIGN.md);
-   it needs the owner's approval.
+1. Step 2b.5, and a moderate-load family to test the pairing question where the system is not
+   overloaded.
 2. Scenario files through the service.
 3. One measured optimizer upgrade: traffic-aware cost estimates in dispatch.
 

@@ -2043,3 +2043,115 @@ a trace of 4.59 MB, 0.77 MB compressed, against 2.06 and 0.48 MB without the add
   separately, and every traversal's duration is fully explained by them.
 - *Why is a breakdown not shown as a stopped robot?* The model has no stopping place. Showing one
   would mean inventing it.
+
+## 20. The experiment lab (`traffic/disturbances.py`, `lab/`, D36)
+
+**Problem.** Comparing two dispatch policies on one run compares two draws. A claim needs
+replications, an interval, and both policies under the same conditions.
+
+**Run it.**
+
+```powershell
+.venv\Scripts\python.exe -m amr_optimizer.lab experiments\dispatch_disturbed.json --workers 8 --out results.json
+```
+
+`--model independent` runs the same experiment under the older disturbance model.
+
+### 20.1 The disturbance schedule
+
+- **Delay episodes.** For each corridor: a random start in its cycle, then alternately a gap
+  (exponential) and an episode (uniform length). With mean episode length L and a wanted share p of
+  slow time, the mean gap is L(1 - p)/p, so that a robot entering at a random moment is delayed
+  with probability p: the definition the independent model uses. A test checks the share on a long
+  horizon (0.15 asked, within 0.01).
+- **The amount of a delay** is drawn from a generator seeded with the seed, the corridor, the
+  episode's number and the robot: the same under every policy, different between robots.
+- **Breakdowns.** For each robot: gaps are exponential with the configured mean. The next corridor
+  entry at or after a breakdown's tick breaks down. Several that passed while the robot stood
+  still are used up by one entry, which gets the earliest repair time.
+- **Lookup.** Episodes of a corridor are sorted, so the episode at a tick is one binary search,
+  O(log E). Generation is O(episodes + breakdowns).
+- **Horizon.** A schedule ends at four order windows plus one hour. A longer run meets nothing
+  afterwards, and its row says so (`beyond_horizon`; none in the committed results).
+- **Invariants, tested on runs under three recovery policies:** every delay event equals the
+  schedule's delay for that robot, corridor and tick; every corridor entry inside an episode has a
+  delay event; every breakdown event is the earliest scheduled one not yet met; no event exists
+  without a scheduled cause.
+
+### 20.2 The statistics (`lab/analysis.py`)
+
+For a KPI x, with d = x(policy) - x(baseline) per seed:
+
+| Value | What it is | Why |
+|---|---|---|
+| Difference, t interval | mean of d, Student t with n - 1 degrees of freedom | the standard paired interval |
+| Bootstrap interval | percentiles of the mean of d over 10,000 resamples of whole seeds | does not assume symmetry: for maxima and P95 |
+| Wins, losses, ties; signed-rank p | counts over seeds, Wilcoxon's test | not driven by a few large differences |
+| Holm p | the t test's p-value, adjusted over all primary tests | several families and policies are several chances to be wrong |
+| Correlation, variance ratio | corr of x(policy) and x(baseline); var(d) / (var x(policy) + var x(baseline)) | how much pairing helped: the ratio is 1 for unrelated runs, near 0 when results move together |
+| Verdict | better or worse if the interval excludes zero; equivalent if it lies within the margin; else inconclusive | "no significant difference" is not "no difference" |
+
+The hand checks in the tests: differences -2, -4, -6, -8 give -5 with half-width
+3.1824 x sqrt(20/3) / 2; Holm on 0.01, 0.02, 0.03, 0.04 gives 0.04, 0.06, 0.06, 0.06.
+
+### 20.3 Results
+
+`experiments/dispatch_disturbed.json`: `insertion-fair` against greedy, 20 seeds, two families
+(medium map with 8 robots at 320 orders/h; large map with 10 robots at 200 orders/h; 30 minutes of
+orders), 10% delays of 1 to 4 s, breakdowns of 30 to 180 s with replanning. Mean completion time,
+`insertion-fair` minus greedy, in seconds. Full rows are in `docs/results/lab_dispatch_*.json`.
+
+| Family | Model | Difference [95% t interval] | Wins-losses | Correlation | Variance ratio | Holm p | Verdict |
+|---|---|---|---|---:|---:|---:|---|
+| medium, 8 robots | schedule | -224.5 [-411.1, -38.0] | 13-7 | 0.60 | 0.44 | 0.042 | better |
+| medium, 8 robots | independent | -131.5 [-173.7, -89.3] | 20-0 | 0.95 | 0.05 | < 0.001 | better |
+| large, 10 robots | schedule | -60.6 [-122.0, +0.9] | 13-7 | 0.83 | 0.20 | 0.053 | inconclusive |
+| large, 10 robots | independent | -126.7 [-184.0, -69.4] | 18-2 | 0.86 | 0.14 | < 0.001 | better |
+
+**What this shows.**
+- **Both models favour `insertion-fair` on mean completion time,** by 60 to 225 s. Under the
+  schedule the large family's interval just includes zero, so that case is inconclusive.
+- **The schedule did not sharpen the comparison.** The hypothesis of the design was that identical
+  disturbances would raise the correlation between the two policies' results. It did not: the
+  correlation is lower and the intervals wider under the schedule, most of all in the medium
+  family.
+- **Where the extra spread comes from** (a follow-up with one cause at a time, same seeds; not
+  committed as a results file):
+
+  | Cause alone | Model | Medium: half-width, correlation | Large: half-width, correlation |
+  |---|---|---|---|
+  | Delays | independent | 37 s, 0.82 | 12 s, 0.74 |
+  | Delays | schedule | 33 s, 0.87 | 15 s, 0.79 |
+  | Breakdowns | independent | 77 s, 0.85 | 47 s, 0.90 |
+  | Breakdowns | schedule | 110 s, 0.78 | 42 s, 0.89 |
+
+  Delays behave alike under both models. Scheduled breakdowns are noisier in the medium family
+  only, and the two causes together are noisier than either alone.
+- **Interpretation (not measured further).** Both families are overloaded: mean completion times
+  of 8 to 22 minutes for a 30-minute order window. Results then depend mostly on demand, which was
+  already identical under both models. A scheduled breakdown hits whichever corridor the robot is
+  on at that time, and that place differs between policies, so "the same breakdown" still costs
+  the two policies different amounts. The numbers of breakdowns also differ between the models
+  (about 60 to 84 per run scheduled, 90 to 106 independent), so the two rows of a family are two
+  scenarios, not one scenario measured twice.
+
+**Limitations.**
+- **Twenty seeds estimate a correlation roughly;** the comparison of the two models is itself one
+  experiment on two overloaded families. A moderate-load family is the obvious next test.
+- **No batteries** in experiments yet, and **one map per family** from the presets.
+- **Not in the trace or the viewer:** which episode an event came from is checked by tests, not
+  recorded in the trace; results are a JSON file and a Markdown table.
+- **Tail KPIs** (P95, maximum) are compared as one value per seed; pooled tails over orders would
+  need a hierarchical bootstrap, which is not built.
+- **The schedule's parameters are synthetic,** like every other parameter of the model.
+
+**Interview questions.**
+- *Why pair by seed?* The same orders and start positions affect both policies alike, so their
+  difference varies less than either result. The variance ratio measures how much less.
+- *Why is the same seed not enough for disturbances?* Draws are consumed per corridor entry, and
+  two policies enter different corridors at different times.
+- *Your schedule made the intervals wider. Why keep it?* It makes the conditions identical by
+  construction and checkable by a fingerprint. Whether that also buys precision is an empirical
+  question, and here the answer was no. Reporting that is the point of measuring.
+- *Why Holm?* Each family and policy is one more test. Holm keeps the chance of any false "better"
+  below alpha without assuming the tests are independent.

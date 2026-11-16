@@ -222,6 +222,26 @@ cd web; npm ci; npm run dev               # the viewer, on http://127.0.0.1:5173
 `amr-sim --trace run.json` writes a run's trace to a file, which the viewer opens without the
 service.
 
+## The experiment lab: comparing policies over seeds
+
+One run is one draw. The lab runs every policy on every seed of an experiment file and reports
+paired differences with intervals, with the primary KPI and the margin for "equivalent" fixed in
+the file before the runs.
+
+```powershell
+.venv\Scripts\python.exe -m amr_optimizer.lab experiments\dispatch_disturbed.json --workers 8 --out results.json
+```
+
+- **Same conditions, checked.** Each run carries a fingerprint of its orders, start positions and
+  disturbances; runs of one seed are compared only if their fingerprints are equal.
+- **Two disturbance models.** Draws at each corridor entry (the default everywhere else), or a
+  schedule of delay episodes and breakdowns fixed before the run (`--model`).
+- **Result so far** (20 seeds, two families): `insertion-fair` beats greedy on mean completion
+  time under both models. The schedule did not make the comparison more precise, which is
+  reported as measured ([algorithms, section 20](docs/algorithms.md); D36 in
+  [decisions](docs/DECISIONS.md)).
+- Results are a JSON file and a Markdown table. They are not shown in the viewer yet.
+
 ## Reproducing every number
 
 | Result | Command (`.venv\Scripts\python.exe scripts\...`) | Run time on the development laptop | Recorded in |

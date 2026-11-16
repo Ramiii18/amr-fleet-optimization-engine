@@ -865,3 +865,46 @@ robot's path.
   ([algorithms](algorithms.md), section 19).
 - **Also:** the viewer now checks the battery model's thresholds as Python already did.
 - **No format change:** version 2 is as it was, and the committed fixtures are unchanged.
+
+## D36: The experiment lab: disturbances as a schedule, and paired statistics over seeds
+**Status:** Accepted (2026-11-16)
+**Why:**
+- **One run is one draw.** "Policy A is faster than B" needs replications, an interval, and proof
+  that both policies faced the same conditions. The lab provides the three.
+- **The seed is the unit of replication.** Orders of one run share robots and congestion, so they
+  are not independent. Every statistic uses one value per seed and policy.
+- **A second disturbance model, next to the first.** The independent model (D25, D28) draws at each
+  corridor entry from the robot's stream, so with one seed two policies meet the same distribution
+  and not the same disturbances ([design](EXPERIMENT_LAB_DESIGN.md), section 1). A **schedule** is
+  generated before the run from the seed and the map:
+  - a delay episode belongs to a corridor and an interval; a robot entering then is delayed, by an
+    amount fixed by the seed, the corridor, the episode and the robot;
+  - a breakdown belongs to a robot and a tick; the robot's next corridor entry at or after that
+    tick breaks down. A robot that stood still through several meets one, with the earliest
+    repair time: otherwise it would break down several times in a row when it moves again.
+  - Episodes are a renewal process per corridor, with no shared grid of time windows.
+- **The independent model stays the default.** Without a schedule the simulator is unchanged, and
+  the published benchmarks reproduce (`scripts/check_published_results.py`: 0 of 3,300 values
+  differ).
+- **A fingerprint proves the pairing.** Each run's row carries a hash of its orders, start
+  positions and disturbances. The analysis refuses to compare runs of one seed whose fingerprints
+  differ.
+- **The judgement is fixed in the experiment file, before the runs:** the primary KPI, the margin
+  for "equivalent", the seeds. Primary tests are Holm-adjusted across families and policies;
+  other KPIs are exploratory. "Equivalent" needs the whole interval inside the margin; an interval
+  that only includes zero is "inconclusive".
+- **Owner's open questions, decided with the proposed defaults:** delay episodes are place-based;
+  the primary KPI is set per experiment (mean completion time in the committed one); runs end when
+  every order is delivered, and a row says whether all were.
+
+**Consequences:**
+- **Measured, and not what was hoped.** On the committed experiment (20 seeds, two families,
+  greedy against `insertion-fair`), the schedule did **not** make paired differences more precise
+  than the independent model. In the medium family the interval was four times wider
+  ([algorithms](algorithms.md), section 20). The schedule's value is that conditions are provably
+  identical, inspectable and exportable; it is not a gain in statistical power here.
+- **Two models, two sets of numbers.** Results under the schedule are not comparable with results
+  under the independent model, and every result names its model.
+- **Not built** (see the design's status): the schedule in scenario files and in traces, the
+  viewer's page for results, batteries in experiments, hierarchical bootstrap for pooled tail KPIs,
+  and the runner on the HTTP service.
