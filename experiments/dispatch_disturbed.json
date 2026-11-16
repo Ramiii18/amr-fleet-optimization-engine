@@ -1,0 +1,30 @@
+{
+  "format": "amr-experiment",
+  "version": 1,
+  "name": "Dispatch policies under delays and breakdowns",
+  "families": [
+    {"name": "medium-8", "map": "medium", "robots": 8, "orders_per_hour": 320.0, "duration_s": 1800.0},
+    {"name": "large-10", "map": "large", "robots": 10, "orders_per_hour": 200.0, "duration_s": 1800.0}
+  ],
+  "policies": ["greedy", "insertion-fair"],
+  "baseline": "greedy",
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  "disturbances": {
+    "model": "schedule",
+    "delay_share": 0.1,
+    "delay_min_s": 1.0,
+    "delay_max_s": 4.0,
+    "episode_min_s": 30.0,
+    "episode_max_s": 120.0,
+    "breakdown_share": 0.02,
+    "breakdown_gap_s": 400.0,
+    "repair_min_s": 30.0,
+    "repair_max_s": 180.0,
+    "recovery": "replan"
+  },
+  "primary_kpi": "completion_mean_s",
+  "kpis": ["completion_p95_s", "completion_max_s"],
+  "margin": 5.0,
+  "confidence": 0.95,
+  "resamples": 10000
+}

@@ -44,6 +44,7 @@ api = [ # the HTTP service (api/, D29); the versions tested
 [project.scripts]
 amr-sim = "amr_optimizer.cli:main" # the command-line runner, also `python -m amr_optimizer`
 amr-api = "amr_optimizer.api.serve:main" # the HTTP service (needs the `api` extra)
+amr-lab = "amr_optimizer.lab.__main__:main" # the experiment lab, also `python -m amr_optimizer.lab`
 
 # --- Packaging: "src layout". The importable package lives in src/amr_optimizer. ---
 [tool.setuptools.packages.find]

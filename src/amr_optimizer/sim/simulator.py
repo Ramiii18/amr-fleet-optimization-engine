@@ -83,8 +83,10 @@ from amr_optimizer.sim.traffic_control import PlannedJob, PlannedMove, TrafficCo
 from amr_optimizer.traffic import (
     FOREVER,
     NO_DELAYS,
+    Breakdown,
     Corridor,
     DelayModel,
+    DisturbanceSchedule,
     ExecutionPolicy,
     Progress,
     Recovery,
@@ -169,6 +171,7 @@ def simulate(
     breakdowns: DelayModel = NO_DELAYS,
     breakdown_seed: int = 0,
     recovery: Recovery = Recovery.WAIT,
+    disturbances: DisturbanceSchedule | None = None,
 ) -> SimulationResult:
     """Run ``scenario`` under ``policy`` until no events remain, or past ``max_tick``.
 
@@ -184,6 +187,10 @@ def simulate(
     ``breakdowns`` (traffic and ordered execution), a robot entering a corridor can break down
     there for a repair time, drawn like a delay from its own stream named after
     ``breakdown_seed``; breakdowns are announced, and ``recovery`` sets the response (D28).
+
+    With ``disturbances`` (traffic and ordered execution), delays and breakdowns come from a
+    schedule fixed before the run instead of being drawn at each corridor entry (D36). It
+    replaces ``delays`` and ``breakdowns``, which must then be left at their defaults.
     """
     if max_tick is not None and max_tick < 0:
         raise ValueError(f"max_tick must be non-negative, got {max_tick}")
@@ -199,7 +206,13 @@ def simulate(
         raise ValueError("a charging policy needs a battery")
     if breakdowns.probability > 0 and (not traffic or execution is not ExecutionPolicy.ORDERED):
         raise ValueError("breakdowns need traffic=True and ordered execution")
-    if breakdowns.probability == 0 and recovery is not Recovery.WAIT:
+    if disturbances is not None:
+        if not traffic or execution is not ExecutionPolicy.ORDERED:
+            raise ValueError("a disturbance schedule needs traffic=True and ordered execution")
+        if delays.probability > 0 or breakdowns.probability > 0:
+            raise ValueError("a disturbance schedule replaces the delay and breakdown models")
+    scheduled = disturbances is not None and bool(disturbances.breakdowns)
+    if breakdowns.probability == 0 and not scheduled and recovery is not Recovery.WAIT:
         raise ValueError("a recovery policy needs breakdowns")
     return _Simulation(
         scenario,
@@ -216,6 +229,7 @@ def simulate(
         breakdowns=breakdowns,
         breakdown_seed=breakdown_seed,
         recovery=recovery,
+        disturbances=disturbances,
     ).run()
 
 
@@ -290,6 +304,7 @@ class _Simulation:
         breakdowns: DelayModel = NO_DELAYS,
         breakdown_seed: int = 0,
         recovery: Recovery = Recovery.WAIT,
+        disturbances: DisturbanceSchedule | None = None,
     ) -> None:
         self.scenario = scenario
         self.policy = policy
@@ -353,6 +368,14 @@ class _Simulation:
             for r in scenario.robots
         }
         self._breakdown_count = self._breakdown_ticks = self._replans = 0
+        self._schedule = disturbances
+        self._due: dict[RobotId, tuple[Breakdown, ...]] = {}
+        self._due_index: dict[RobotId, int] = {}
+        if disturbances is not None:
+            self._due = {
+                r.robot_id: disturbances.breakdowns_of(r.robot_id) for r in scenario.robots
+            }
+            self._due_index = dict.fromkeys(self._due, 0)
         self._epochs: dict[RobotId, int] = {}  # see `_Depart`
         self._waiting: dict[RobotId, Resource] = {}  # robots waiting for a resource to free up
         self._decide = False  # did something happen this tick that the policy should see?
@@ -522,10 +545,14 @@ class _Simulation:
         track[-1] = Visit(track[-1].node, track[-1].arrive, self.now)
         cursor.in_corridor = True
         ticks = self.travel_times.edge_ticks(here, there)
-        extra = self._delays.draw(self._delay_streams[robot_id])
         repair = 0
-        if self._breakdowns.probability > 0:
-            repair = self._breakdowns.draw(self._breakdown_streams[robot_id])
+        if self._schedule is not None:
+            extra = self._schedule.delay_ticks(robot_id, here, there, self.now)
+            repair = self._due_breakdown(robot_id)
+        else:
+            extra = self._delays.draw(self._delay_streams[robot_id])
+            if self._breakdowns.probability > 0:
+                repair = self._breakdowns.draw(self._breakdown_streams[robot_id])
         cursor.known_reach = self.now + ticks + repair  # a delay is not announced; a repair is
         self._push(self.now + ticks + extra + repair, _Reach(robot_id))
         if extra:
@@ -575,6 +602,23 @@ class _Simulation:
             self._arrive_at_stop(robot_id)
         else:
             self._push(max(self.now, visits[cursor.index].depart), self._departure(robot_id))
+
+    def _due_breakdown(self, robot_id: RobotId) -> int:
+        """The repair time of the scheduled breakdown that this corridor entry meets, or 0 (D36).
+
+        Every breakdown scheduled up to now and not yet met is used up by this entry, and the
+        earliest one sets the repair time: a robot that stood still through several scheduled
+        breakdowns breaks down once, not several times in a row.
+        """
+        due = self._due[robot_id]
+        position = self._due_index[robot_id]
+        if position == len(due) or due[position].tick > self.now:
+            return 0
+        repair = due[position].repair_ticks
+        while position < len(due) and due[position].tick <= self.now:
+            position += 1
+        self._due_index[robot_id] = position
+        return repair
 
     def _hold(self, robot_id: RobotId, here: NodeId, there: NodeId) -> None:
         """Record that the robot stands at the end of the corridor ``here`` -> ``there``, once
