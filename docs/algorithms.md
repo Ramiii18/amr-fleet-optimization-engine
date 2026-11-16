@@ -2172,3 +2172,18 @@ maps, fleets and disturbances at 140 and 90 orders/h; mean completion about 4 mi
   question, and here the answer was no. Reporting that is the point of measuring.
 - *Why Holm?* Each family and policy is one more test. Holm keeps the chance of any false "better"
   below alpha without assuming the tests are independent.
+
+### 20.4 The results page in the viewer (`web/src/lib/results.ts`)
+
+- **Problem:** a table of twelve numbers per comparison hides the one thing to read first: where
+  the interval sits against zero and against the margin.
+- **Approach:** the viewer opens a results file and draws, per KPI, every comparison on one shared
+  axis: a dot for the difference, a bar for the interval, a line at zero and a band for the margin.
+  The axis is the smallest range that holds every interval, zero and the margin, plus 4%.
+- **Invariant:** the page computes no statistic. Every figure is the lab's; the parser only checks
+  that the file agrees with itself (the difference is the policy's mean minus the baseline's and
+  lies inside its interval; wins, losses and ties add up to the seeds; one run per family, policy
+  and seed).
+- **Cost:** linear in the size of the file.
+- **Limitations:** one file at a time, so the two disturbance models are compared by opening each;
+  no link from a row to a replay; delay episodes are not drawn on the map.

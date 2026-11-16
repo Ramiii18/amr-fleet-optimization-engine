@@ -905,6 +905,11 @@ robot's path.
   identical, inspectable and exportable; it is not a gain in statistical power here.
 - **Two models, two sets of numbers.** Results under the schedule are not comparable with results
   under the independent model, and every result names its model.
-- **Not built** (see the design's status): the schedule in scenario files and in traces, the
-  viewer's page for results, batteries in experiments, hierarchical bootstrap for pooled tail KPIs,
-  and the runner on the HTTP service.
+- **Not built** (see the design's status): the schedule in scenario files and in traces, batteries
+  in experiments, hierarchical bootstrap for pooled tail KPIs, and the runner on the HTTP service.
+- **The viewer's results page reads, it does not compute** (added 2026-11-16). It opens a results
+  file in the browser and shows the lab's own means, intervals and verdicts. Statistics exist in
+  one place, Python, so the page cannot disagree with the report. The parser refuses a file whose
+  figures contradict each other (a difference outside its interval, wins that do not add up to
+  the seeds, a run missing). It does not link a row to a replay: the results file holds KPIs, not
+  traces.

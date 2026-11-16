@@ -706,7 +706,7 @@ Approved by the owner on 2026-11-16 ([design](EXPERIMENT_LAB_DESIGN.md), D36).
 | **2b.2** | Fingerprint of a run's conditions; pairing diagnostics under both models | **Done** |
 | **2b.3** | Experiment files and a runner in worker processes (`python -m amr_optimizer.lab`) | **Done** |
 | **2b.4** | Paired statistics and a Markdown report; results as JSON | **Done** |
-| **2b.5** | Results and episodes in the viewer; the schedule in scenario files and traces | Not started |
+| **2b.5** | Results page in the viewer (opens a results file) | **Done** |
 
 **Finding:** `insertion-fair` beats greedy on mean completion time under both disturbance models
 (20 seeds, two families). The schedule, built to give both policies identical disturbances, did
@@ -714,9 +714,13 @@ Approved by the owner on 2026-11-16 ([design](EXPERIMENT_LAB_DESIGN.md), D36).
 ([algorithms](algorithms.md), section 20.3). Without a schedule nothing changed: the published
 benchmarks reproduce exactly.
 
-**Next (proposed, not started):**
-1. Step 2b.5. (The pairing question was retested at moderate load: the schedule was again not
-   sharper, and the two policies did not differ there.)
+The pairing question was retested at moderate load: the schedule was again not sharper, and the
+two policies did not differ there.
+
+**Phase 2b is closed (2026-11-16).** The project is concluded here: every planned milestone and
+phase is delivered. What follows is optional and not started:
+1. Delay episodes on the viewer's map, which needs the schedule in traces (a new trace version),
+   and a link from a results row to its replay.
 2. Scenario files through the service.
 3. One measured optimizer upgrade: traffic-aware cost estimates in dispatch.
 

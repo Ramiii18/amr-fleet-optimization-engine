@@ -98,7 +98,7 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
 - **Observation without interference.** Recording robot events changes no run: the older trace
   fixtures still come out byte for byte, and `scripts/check_published_results.py` re-runs published
   benchmark rows and compares every KPI with the committed results.
-- **Checks on every commit:** over 1,800 Python tests, ruff, and mypy in strict mode; 167 viewer
+- **Checks on every commit:** over 1,800 Python tests, ruff, and mypy in strict mode; 192 viewer
   tests, ESLint and the TypeScript compiler in strict mode; and a Docker build in CI.
 
 ## Quick start
@@ -240,7 +240,9 @@ the file before the runs.
   time under both models. The schedule did not make the comparison more precise, which is
   reported as measured ([algorithms, section 20](docs/algorithms.md); D36 in
   [decisions](docs/DECISIONS.md)).
-- Results are a JSON file and a Markdown table. They are not shown in the viewer yet.
+- Results are a JSON file and a Markdown table. The viewer opens the JSON file (**Experiment
+  results…**) and shows each difference with its interval, zero and the margin on one axis. It
+  shows the file's figures and computes none.
 
 ## Reproducing every number
 

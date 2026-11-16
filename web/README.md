@@ -42,6 +42,7 @@ npm run build       # type check, then a production build into dist/
 | Path | Content |
 |---|---|
 | `src/lib/trace.ts` | The trace format, and a strict check of a trace before it is used |
+| `src/lib/results.ts` | An experiment results file from the lab, checked against itself; the page shows its figures and computes none |
 | `src/lib/motion.ts` | Position and activity at any moment: the port of `viz/motion.py` |
 | `src/lib/state.ts` | Statuses and battery level at any moment: the port of `replay/state.py` |
 | `src/lib/replay.ts` | A trace prepared for playback: tracks, orders by logged step, corridors, conflicts |

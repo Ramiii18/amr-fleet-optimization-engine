@@ -1575,3 +1575,186 @@ button.link:hover {
     animation-duration: 2.4s;
   }
 }
+
+/* --- experiment results -------------------------------------------------------------------- */
+
+/* The results page covers the replay, which stays mounted underneath and keeps its state. */
+.results {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  z-index: 5;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+  background: var(--bg);
+}
+
+.results-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.results-head h2 {
+  font-size: 17px;
+}
+
+.results-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.results-facts > div {
+  padding: 10px 14px;
+  background: var(--surface);
+}
+
+.results-facts dt {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.results-facts dd.flag {
+  color: var(--warn);
+  font-weight: 650;
+}
+
+.results-families {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 12px 0 4px;
+  color: var(--text-2);
+}
+
+.results-group {
+  margin-top: 22px;
+}
+
+.results-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.primary-tag {
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.results-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.results table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+.results th,
+.results td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: 400;
+}
+
+.results thead th {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.results tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.results .num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.interval {
+  display: block;
+}
+
+.interval .margin {
+  fill: var(--surface-3);
+}
+
+.interval .zero {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.interval .whisker {
+  stroke: var(--text-2);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.interval .point {
+  fill: var(--text-2);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.interval.better .whisker {
+  stroke: var(--good);
+}
+
+.interval.better .point {
+  fill: var(--good);
+}
+
+.interval.worse .whisker {
+  stroke: var(--bad);
+}
+
+.interval.worse .point {
+  fill: var(--bad);
+}
+
+.verdict {
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.verdict.better {
+  border-color: var(--good);
+  color: var(--good);
+}
+
+.verdict.worse {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.results-note {
+  max-width: 96ch;
+  margin-top: 18px;
+}

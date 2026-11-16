@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Inspector, type Tab } from "./components/Inspector";
 import { MapCanvas, type MapHandle, type Selection } from "./components/MapCanvas";
 import { PlaybackBar } from "./components/PlaybackBar";
+import { ResultsPage } from "./components/ResultsPage";
 import { RunPanel, type RunPhase } from "./components/RunPanel";
 import { usePlaybackClock } from "./hooks";
 import {
@@ -18,6 +19,7 @@ import {
 } from "./lib/api";
 import { bytes } from "./lib/format";
 import { Playback } from "./lib/playback";
+import { type LabResults, ResultsFormatError, parseResults } from "./lib/results";
 import { type Replay, boundsOf, buildReplay, corridorsOf, neighbourTick } from "./lib/replay";
 import { type Preset, type RunForm, applyPreset, defaultForm, formOfRequest, validateForm } from "./lib/runForm";
 import { TraceFormatError, parseTrace } from "./lib/trace";
@@ -34,7 +36,9 @@ interface Loaded {
 }
 
 function message(error: unknown): string {
-  if (error instanceof ApiError || error instanceof TraceFormatError) return error.message;
+  if (error instanceof ApiError || error instanceof TraceFormatError || error instanceof ResultsFormatError) {
+    return error.message;
+  }
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -51,6 +55,9 @@ export function App() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [selection, setSelection] = useState<Selection>(NO_SELECTION);
   const [tab, setTab] = useState<Tab>("map");
+  /** An experiment results file, shown in place of the replay while it is open. */
+  const [lab, setLab] = useState<{ results: LabResults; label: string } | { error: string } | null>(null);
+  const labInput = useRef<HTMLInputElement>(null);
   const mapRef = useRef<MapHandle>(null);
   /** Counts runs, so that the answer to an older request cannot replace a newer one. */
   const runToken = useRef(0);
@@ -218,6 +225,16 @@ export function App() {
     [show],
   );
 
+  const onOpenResults = useCallback(async (file: File): Promise<void> => {
+    try {
+      const results = parseResults(JSON.parse(await file.text()));
+      setLab({ results, label: `File ${file.name} (${bytes(file.size)})` });
+    } catch (error) {
+      const reason = error instanceof SyntaxError ? "it is not valid JSON" : message(error);
+      setLab({ error: `${file.name} cannot be shown: ${reason}` });
+    }
+  }, []);
+
   const onPreset = useCallback(
     (preset: Preset): void => {
       setForm(
@@ -277,7 +294,7 @@ export function App() {
     const onKey = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       if (target !== null && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || lab !== null) return;
       const key = event.key;
       if (key === "f" || key === "F") mapRef.current?.fit();
       else if (key === "+" || key === "=") mapRef.current?.zoom(1.35);
@@ -306,7 +323,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playback, replay]);
+  }, [playback, replay, lab]);
 
   const outcome: SimulationOutcome | null = loaded?.job?.result ?? null;
   const placeholder =
@@ -334,11 +351,43 @@ export function App() {
         <p className="disclosure" role="note">
           <strong>Synthetic simulation.</strong> No real robot is controlled or observed. Not a safety system.
         </p>
+        <button className="secondary" type="button" onClick={() => labInput.current?.click()}>
+          Experiment results…
+        </button>
+        <input
+          ref={labInput}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          aria-label="Open an experiment results file"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file !== undefined) void onOpenResults(file);
+          }}
+        />
         <div className={`service ${service}`} role="status">
           <span className="dot" aria-hidden="true" />
           {service === "up" ? `Engine ${version ?? ""} connected` : service === "down" ? "Engine offline" : "Connecting…"}
         </div>
       </header>
+
+      {lab !== null &&
+        ("error" in lab ? (
+          <main className="results">
+            <div className="results-head">
+              <div role="alert">
+                <h2>The results file could not be opened.</h2>
+                <p className="muted">{lab.error}</p>
+              </div>
+              <button className="secondary" type="button" onClick={() => setLab(null)}>
+                Back to the replay
+              </button>
+            </div>
+          </main>
+        ) : (
+          <ResultsPage results={lab.results} label={lab.label} onClose={() => setLab(null)} />
+        ))}
 
       <aside className="left" aria-label="Simulation setup">
         <RunPanel

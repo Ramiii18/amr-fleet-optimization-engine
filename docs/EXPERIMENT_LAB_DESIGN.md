@@ -12,7 +12,7 @@
 | Paired statistics: t and bootstrap intervals, signed-rank, wins, Holm, margin, pairing diagnostics (3) | Built |
 | Pairing gain measured under both models (5, step 2) | Done: the schedule did not improve it |
 | Schedule in scenario files and in traces; episodes in the viewer (2.3) | Not built |
-| Results page in the viewer (4) | Not built |
+| Results page in the viewer (4) | Built for a results file opened in the browser; no link from a row to its replay |
 | Hierarchical bootstrap for pooled tail KPIs; pilot-based number of seeds; warm-up exclusion (3) | Not built |
 
 The lab compares the existing dispatch policies across scenarios and seeds. Its purpose is to
