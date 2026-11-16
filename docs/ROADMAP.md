@@ -715,8 +715,8 @@ Approved by the owner on 2026-11-16 ([design](EXPERIMENT_LAB_DESIGN.md), D36).
 benchmarks reproduce exactly.
 
 **Next (proposed, not started):**
-1. Step 2b.5, and a moderate-load family to test the pairing question where the system is not
-   overloaded.
+1. Step 2b.5. (The pairing question was retested at moderate load: the schedule was again not
+   sharper, and the two policies did not differ there.)
 2. Scenario files through the service.
 3. One measured optimizer upgrade: traffic-aware cost estimates in dispatch.
 

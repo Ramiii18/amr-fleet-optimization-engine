@@ -2135,9 +2135,26 @@ orders), 10% delays of 1 to 4 s, breakdowns of 30 to 180 s with replanning. Mean
   (about 60 to 84 per run scheduled, 90 to 106 independent), so the two rows of a family are two
   scenarios, not one scenario measured twice.
 
+**The same question at moderate load** (`experiments/dispatch_disturbed_moderate.json`: the same
+maps, fleets and disturbances at 140 and 90 orders/h; mean completion about 4 minutes; rows in
+`docs/results/lab_dispatch_moderate_*.json`):
+
+| Family | Model | Difference [95% t interval] | Wins-losses | Correlation | Variance ratio | Holm p | Verdict |
+|---|---|---|---|---:|---:|---:|---|
+| medium, 8 robots | schedule | -31.8 [-80.0, +16.5] | 12-8 | 0.80 | 0.27 | 0.37 | inconclusive |
+| medium, 8 robots | independent | -18.6 [-37.4, +0.1] | 11-9 | 0.90 | 0.10 | 0.10 | inconclusive |
+| large, 10 robots | schedule | -7.7 [-22.3, +6.9] | 12-8 | 0.76 | 0.24 | 0.37 | inconclusive |
+| large, 10 robots | independent | -0.7 [-12.9, +11.5] | 10-10 | 0.75 | 0.25 | 0.90 | inconclusive |
+
+- **At moderate load, 20 seeds show no difference between the two policies** under either model.
+  None of the intervals fits inside the 5 s margin either, so this is "inconclusive", not
+  "equivalent". The advantage of `insertion-fair` above belongs to the overloaded families.
+- **The schedule is again not sharper:** equal on the large map, and an interval 2.5 times wider
+  on the medium map. Overload was therefore not the reason for the first result.
+
 **Limitations.**
-- **Twenty seeds estimate a correlation roughly;** the comparison of the two models is itself one
-  experiment on two overloaded families. A moderate-load family is the obvious next test.
+- **Twenty seeds estimate a correlation roughly;** the comparison of the two models rests on four
+  families of two maps.
 - **No batteries** in experiments yet, and **one map per family** from the presets.
 - **Not in the trace or the viewer:** which episode an event came from is checked by tests, not
   recorded in the trace; results are a JSON file and a Markdown table.
