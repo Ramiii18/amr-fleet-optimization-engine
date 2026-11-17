@@ -83,3 +83,29 @@ def test_the_scorer_finds_a_shift_and_a_missing_cell(tmp_path: Path) -> None:
     assert "shift of +0 rows, +1 columns" in lines
     assert "| storage | 42 | 100.0% | 97.6% |" in lines
     assert "Same storage cells: no" in lines
+
+
+def test_the_degraded_plan_is_deterministic(tmp_path: Path) -> None:
+    generator = script("make_synthetic_floorplan")
+    layout = load_layout(TRUTH / "plain_hall.layout.json")
+    for name in ("a.png", "b.png"):
+        meta = generator.draw(layout, tmp_path / name, generator.DEGRADED_PX_PER_M, dimensions=True)
+        generator.degrade(
+            tmp_path / name, tmp_path / name, angle_deg=1.5, blur_px=0.8, noise=0.06, seed=7
+        )
+    assert (tmp_path / "a.png").read_bytes() == (tmp_path / "b.png").read_bytes()
+    assert meta["px_per_m"] == 21.7
+    committed = json.loads((TRUTH / "plain_hall.degraded.json").read_text(encoding="utf-8"))
+    assert (committed["px_per_m"], committed["rotation_deg"], committed["noise_seed"]) == (
+        21.7,
+        1.5,
+        7,
+    )
+
+
+def test_the_render_can_straighten_a_tilted_plan(tmp_path: Path) -> None:
+    render = script("render_layout").render
+    plan = TRUTH / "plain_hall.degraded.png"
+    for out in ("a.png", "b.png"):
+        render(TRUTH / "plain_hall.layout.json", tmp_path / out, plan, 21.7, (60.0, 60.0), -1.5)
+    assert (tmp_path / "a.png").read_bytes() == (tmp_path / "b.png").read_bytes()

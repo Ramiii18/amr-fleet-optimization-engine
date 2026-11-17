@@ -2337,7 +2337,9 @@ the image and the procedure transcribes it. `score_transcription.py` compares in
 best shift of up to three cells (O(cells × 49) for the shift search): per-class precision and recall,
 the arrows, the scale, the checker, and the difference in mean completion time on the same seeds.
 
-**Result and its limits.** Three of three synthetic plans were transcribed exactly. The plans are
-pixel-exact drawings on a whole-metre lattice, and the agents decoded them from pixel values, so
-this tests the procedure's completeness, not reading real plans. Harder plans and a vision-only
-condition are the next measurement.
+**Result and its limits.** Three of three clean synthetic plans were transcribed exactly, but the
+agents decoded those pixel-exact drawings from pixel values. In a second round the plans were
+degraded (non-integer scale, rotation, blur, noise, dimension text) and the agents worked from the
+image alone: two exact, one with 6 wrong cells of 182, where a rack end was read as an aisle. Three
+synthetic plans with one transcription each are evidence about this procedure on such plans, not an
+error rate.

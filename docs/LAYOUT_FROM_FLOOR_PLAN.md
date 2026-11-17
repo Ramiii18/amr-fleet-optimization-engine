@@ -103,6 +103,9 @@ assigned) is a node; neighbours share an edge only up, down, left and right.
        --plan <plan>.png --px-per-m <pixels per metre> --origin-px <x> <y>
    ```
 
+   If the plan is tilted, add `--rotate-deg <degrees>` (counter-clockwise) to straighten it before
+   it is drawn; `--origin-px` then refers to the straightened image.
+
    **Open the comparison image and look at it.** It shows the plan, the compiled map, and the map
    with your cells drawn over the plan. List every mismatch: a missing aisle, a shifted rack, a wrong
    direction, a symbol in the wrong cell, cells that do not line up with the plan. Fix and render

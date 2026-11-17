@@ -1100,8 +1100,10 @@ Three ground truths (`layouts/ground_truth/`), each drawn as a plan image by
 wall stubs in a two-lane cross aisle (25 × 22 m), and a hall with vertical and horizontal rack zones
 and an open zone with four columns (30 × 22 m). Each plan was transcribed by a separate agent
 (Claude Opus 5.5, run as a subagent of this session) that received only the plan image and
-`docs/LAYOUT_FROM_FLOOR_PLAN.md`. A grep of the three agents' transcripts for the truth and example
-paths found no access. Transcriptions and their notes: `layouts/ground_truth/transcriptions/`.
+`docs/LAYOUT_FROM_FLOOR_PLAN.md`. Blindness was audited on the agents' full transcripts, call by call:
+no tool call touched a truth, example or generator file. (A first check, committed with this
+section, searched the task output files, which turned out to be empty; it proved nothing and was
+replaced by this audit.) Transcriptions and their notes: `layouts/ground_truth/transcriptions/`.
 Code at `843d539` plus the L4 working tree.
 
 ```powershell
@@ -1134,3 +1136,49 @@ Each agent made one render, looked at it, saw no mismatch and stopped; each took
   step works.
 - **Not measured:** plans with noise, blur, rotation, non-integer scale or no pixel access; real
   plans (by design, never in this repository); more than one transcription per plan.
+
+### Second round: degraded plans, image only (2026-11-17)
+
+The same three truths, drawn by `make_synthetic_floorplan.py --degraded ANGLE` at 21.7 pixels per
+metre (not a whole number) with the building's width and depth written along its outline, then
+rotated (plain hall 1.5°, L-shaped hall -1.2°, mixed hall 2.0°, counter-clockwise), blurred
+(Gaussian, 0.8 px) and with seeded noise (standard deviation 0.06, seed 7). Three new agents
+(Claude Opus 5.5, subagents), each given only its degraded plan and the procedure, **image only**:
+they looked at the plan with the Read tool and could run the `check` and `render_layout.py`
+commands (the render reads the plan to draw it), but no code of theirs could read the plan's
+pixels.
+
+**Audit of their transcripts, call by call:** the three agents made 14, 10 and 11 tool calls: Read
+(the procedure, the plan, their renders), Write and Edit of their own files, `check`, and
+`render_layout.py`. None ran code that reads pixels (no PIL, `imread`, numpy, OpenCV or inline
+Python); the only pattern hits were the letters "pil" in the word "compiled". None touched a truth,
+example or generator file. For comparison, the three agents of the first round, which were allowed
+to, read pixel values with `plt.imread` and numpy in 6, 5 and 8 calls.
+
+| Plan | Cells agreeing (after alignment) | One-way cells with the right arrow | Scale error | Checker | Mean completion, truth vs transcription (greedy, 10 seeds) |
+|---|---|---|---|---|---|
+| plain hall | **176 of 182 (96.7%)**, shift 0, 0 | 32 of 32 | 0.0% | fit, 6 robots | 49.9 s vs 49.8 s, -0.1 [-1.5, +1.3], **not paired** (storage cells differ) |
+| L-shaped hall | 550 of 550, shift 0, 0 | 84 of 84 | 0.0% | fit, 8 robots | 61.7 s vs 61.7 s, +0.0 [+0.0, +0.0] |
+| mixed hall | 660 of 660, shift 0, 0 | 99 of 99 | 0.0% | fit, 8 robots | 79.8 s vs 79.8 s, +0.0 [+0.0, +0.0] |
+
+Plain hall, per class (precision / recall): blocked 97.2% / 94.6%, floor 92.9% / 100.0%, storage
+100.0% / 95.2%, stations, chargers, parking and candidate positions 100% / 100%. The 6 wrong cells
+are all in column 11, the single-deep rack against the right wall: the agent extended both cross
+aisles one cell into that column (rows 2, 3, 10, 11 read as floor; they are wall and rack ends),
+which left the two end bays touching floor on two sides; to pass the checker it made those two bays
+(rows 4 and 9) blocked. Its notes name exactly this as its main uncertainty. The agents estimated
+the scale at 21.9, 21.8 and 21.65 pixels per metre and the tilt at 1.5°, 1.1° and 2.0°; each needed
+one corrected render for the origin of the straightened image.
+
+### Reading the second round
+
+- **From the image alone, 2 of 3 degraded plans were transcribed exactly, and the third with 6
+  wrong cells of 182 (3.3%).** The scale and the grid size were right in all three, every arrow was
+  right, and every symbol was in its cell.
+- **The error that occurred is the kind that matters:** a rack end read as an aisle. The checker
+  caught its consequence, and the agent repaired it the wrong way (dropping two storage locations
+  instead of questioning the aisle). The cost in simulated completion time was too small to see
+  (-0.1 s, interval [-1.5, +1.3]), but the run is not paired, because the storage cells differ.
+- **Still not shown:** scanned or photographed plans, CAD exports with dense text, hand sketches,
+  plans that do not sit on a whole-metre module, and repeat transcriptions of one plan. Three plans
+  and one transcription each do not give an error rate.

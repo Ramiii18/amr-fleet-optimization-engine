@@ -1176,3 +1176,17 @@ Scripts: `make_synthetic_floorplan.py`, `render_layout.py`, `score_transcription
 - **Not built:** the raster importer (declined, D37); harder synthetic plans (noise, rotation,
   non-integer scale, text and dimension lines) and a vision-only condition without pixel access.
   Both are the obvious next measurement.
+
+**Amended (2026-11-17, second round, on the owner's request):** degraded plans, image only.
+- The generator gained `--degraded ANGLE`: 21.7 pixels per metre, dimension text, rotation, blur and
+  seeded noise, deterministic. `render_layout.py` gained `--rotate-deg` to straighten a tilted
+  plan, and the procedure mentions it.
+- Three new agents saw only the degraded plan and the procedure, and no code of theirs read pixels
+  (audited call by call). Two plans were transcribed exactly; the plain hall had 6 wrong cells of
+  182, all in one column where a rack end was read as an aisle ([benchmarks](benchmarks.md)).
+- **Correction:** the first round's statement that a grep found no access to truth files rested on
+  empty files (the task output files) and proved nothing. The audit was redone on the full
+  transcripts of all six agents: no call touched a truth, example or generator file.
+- What this shows: on clean and moderately degraded synthetic plans the procedure gives exact or
+  nearly exact layouts, and the checker catches the consequences of a misread rack end. It is still
+  three plans with one transcription each, synthetic, on a whole-metre module.

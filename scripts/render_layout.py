@@ -34,6 +34,7 @@ def render(
     plan: Path | None = None,
     px_per_m: float | None = None,
     origin_px: tuple[float, float] = (0.0, 0.0),
+    rotate_deg: float = 0.0,
 ) -> None:
     layout = load_layout(layout_path)
     graph = compile_layout(layout)
@@ -49,6 +50,11 @@ def render(
         if px_per_m is None or px_per_m <= 0:
             raise ValueError("--plan needs a positive --px-per-m")
         image = plt.imread(plan)
+        if rotate_deg:  # straighten a tilted plan first; --origin-px refers to the result
+            from scipy import ndimage
+
+            image = ndimage.rotate(image, rotate_deg, axes=(1, 0), reshape=True, order=1, cval=1.0)
+            image = image.clip(0.0, 1.0)
         h, w = image.shape[:2]
         left = -cell / 2 - origin_px[0] / px_per_m
         top = (rows - 0.5) * cell + origin_px[1] / px_per_m
@@ -103,9 +109,18 @@ def main() -> int:
         metavar=("X", "Y"),
         help="the plan pixel of the top-left corner of the layout's first cell",
     )
+    parser.add_argument(
+        "--rotate-deg",
+        type=float,
+        default=0.0,
+        help="rotate the plan counter-clockwise by this many degrees before drawing it, to "
+        "straighten a tilted plan; --origin-px then refers to the straightened image",
+    )
     args = parser.parse_args()
     try:
-        render(args.layout, args.out, args.plan, args.px_per_m, tuple(args.origin_px))
+        render(
+            args.layout, args.out, args.plan, args.px_per_m, tuple(args.origin_px), args.rotate_deg
+        )
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

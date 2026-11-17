@@ -1,0 +1,22 @@
+{
+  "format": "amr-layout",
+  "version": 1,
+  "description": "Synthetic plan transcription",
+  "cell_m": 1.0,
+  "grid": [
+    "#############",
+    "##C#?#?#C#?##",
+    "#...........#",
+    "#^##v##^##v.#",
+    "#^SSvSS^SSv##",
+    "P^SSvSS^SSvS#",
+    "#^SSvSS^SSvS#",
+    "P^SSvSS^SSvS#",
+    "#^SSvSS^SSvS#",
+    "?^SSvSS^SSv##",
+    "#^##v##^##v.#",
+    "#...........#",
+    "##T?#?T#?T###",
+    "#############"
+  ]
+}

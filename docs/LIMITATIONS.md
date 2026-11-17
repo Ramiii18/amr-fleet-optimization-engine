@@ -229,10 +229,11 @@ limits in mind.
 
 - **A layout is a grid approximation of a building:** square cells of one size, axis-aligned, with
   no curves or diagonal racks. The cell size is also the closest two robots can be (D23, D38).
-- **The vision step is measured on clean synthetic plans only.** Three of three were transcribed
-  exactly, but those plans are pixel-exact drawings that the transcribing agents decoded from pixel
-  values. Scanned, rotated, noisy or hand-drawn plans were not tried ([benchmarks](benchmarks.md),
-  D42). A transcription is a reading of a picture, to be checked by rendering and confirmed by a
+- **The vision step is measured on six synthetic plans only.** Three clean plans were transcribed
+  exactly, decoded from pixel values. Three degraded ones (rotated, blurred, noisy, at a non-integer
+  scale), read from the image alone, gave two exact layouts and one with 6 wrong cells of 182 (a
+  rack end read as an aisle). Scanned, photographed, CAD or hand-drawn plans and repeat
+  transcriptions were not tried, so there is no error rate ([benchmarks](benchmarks.md), D42). A transcription is a reading of a picture, to be checked by rendering and confirmed by a
   person.
 
 ## Evaluation

@@ -78,10 +78,14 @@ def _arrow_cells(layout: Layout) -> list[tuple[int, int, str]]:
     return painted
 
 
-def draw(layout: Layout, out: Path) -> dict[str, object]:
+def draw(
+    layout: Layout, out: Path, px_per_m: float = PX_PER_M, dimensions: bool = False
+) -> dict[str, object]:
+    """Draw the plan of ``layout`` into ``out``. With ``dimensions``, the building's width and
+    depth are also written along its outline, as on an architect's drawing."""
     rows, cols, cell = layout.rows, layout.columns, layout.cell_m
     width_m, height_m = cols * cell + 2 * MARGIN_M, rows * cell + 2 * MARGIN_M + LEGEND_M
-    fig = plt.figure(figsize=(width_m * PX_PER_M / 100, height_m * PX_PER_M / 100), dpi=100)
+    fig = plt.figure(figsize=(width_m * px_per_m / 100, height_m * px_per_m / 100), dpi=100)
     ax = fig.add_axes((0, 0, 1, 1))
     ax.set_xlim(-MARGIN_M, cols * cell + MARGIN_M)
     ax.set_ylim(-(rows * cell + MARGIN_M + LEGEND_M), MARGIN_M)  # y down: plan coordinates
@@ -203,7 +207,7 @@ def draw(layout: Layout, out: Path) -> dict[str, object]:
     ax.text(x0 + bar / 2, y0 - 0.2, "metres", ha="center", va="top", fontsize=7)
     ax.text(
         0,
-        MARGIN_M - 0.6,
+        MARGIN_M - (0.15 if dimensions else 0.6),
         "SYNTHETIC FLOOR PLAN - invented for testing, not a real site",
         ha="left",
         va="top",
@@ -211,30 +215,88 @@ def draw(layout: Layout, out: Path) -> dict[str, object]:
         color="#333333",
     )
 
+    if dimensions:
+        w, h = cols * cell, rows * cell
+        style = {"color": "#555555", "linewidth": 0.6}
+        ax.annotate("", (0, 0.6), (w, 0.6), arrowprops={"arrowstyle": "<->", **style})
+        ax.text(w / 2, 0.75, f"{w:.2f} m", ha="center", va="bottom", fontsize=7, color="#555555")
+        ax.annotate("", (-0.6, 0), (-0.6, -h), arrowprops={"arrowstyle": "<->", **style})
+        ax.text(
+            -0.75,
+            -h / 2,
+            f"{h:.2f} m",
+            ha="right",
+            va="center",
+            rotation=90,
+            fontsize=7,
+            color="#555555",
+        )
+
     fig.savefig(out, dpi=100, metadata={"Software": None}, facecolor="white")
     plt.close(fig)
     # The layout's top-left corner is at (0, 0) in metres; in pixels it is one margin in.
     return {
         "image": out.name,
-        "px_per_m": PX_PER_M,
-        "origin_px": [MARGIN_M * PX_PER_M, MARGIN_M * PX_PER_M],
+        "px_per_m": px_per_m,
+        "origin_px": [MARGIN_M * px_per_m, MARGIN_M * px_per_m],
         "cell_m": cell,
         "rows": rows,
         "columns": cols,
     }
 
 
+def degrade(
+    clean: Path, out: Path, *, angle_deg: float, blur_px: float, noise: float, seed: int
+) -> None:
+    """A worse copy of a plan image: rotated by ``angle_deg`` (counter-clockwise, white fill),
+    blurred (Gaussian, ``blur_px`` pixels), and with seeded Gaussian noise of standard deviation
+    ``noise`` on a 0 to 1 scale. Deterministic for one seed."""
+    import numpy as np
+    from scipy import ndimage
+
+    image = plt.imread(clean)[..., :3].astype(np.float64)
+    image = ndimage.rotate(image, angle_deg, axes=(1, 0), reshape=True, order=1, cval=1.0)
+    image = ndimage.gaussian_filter(image, sigma=(blur_px, blur_px, 0))
+    image = image + np.random.default_rng(seed).normal(0.0, noise, image.shape)
+    plt.imsave(out, np.clip(image, 0.0, 1.0), format="png", metadata={"Software": None})
+
+
+DEGRADED_PX_PER_M = 21.7  # not a whole number of pixels per metre
+BLUR_PX, NOISE, SEED = 0.8, 0.06, 7
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("layout", type=Path)
+    parser.add_argument(
+        "--degraded",
+        type=float,
+        metavar="ANGLE",
+        help="instead, write <name>.degraded.png: drawn at 21.7 px per metre with dimension "
+        "text, rotated by ANGLE degrees, blurred and with seeded noise",
+    )
     args = parser.parse_args()
     layout = load_layout(args.layout)
     stem = args.layout.name.removesuffix(".layout.json")
-    image = args.layout.with_name(f"{stem}.plan.png")
-    meta = draw(layout, image)
-    side = args.layout.with_name(f"{stem}.plan.json")
+    if args.degraded is None:
+        image = args.layout.with_name(f"{stem}.plan.png")
+        meta = draw(layout, image)
+        side = args.layout.with_name(f"{stem}.plan.json")
+    else:
+        image = args.layout.with_name(f"{stem}.degraded.png")
+        meta = draw(layout, image, DEGRADED_PX_PER_M, dimensions=True)
+        degrade(image, image, angle_deg=args.degraded, blur_px=BLUR_PX, noise=NOISE, seed=SEED)
+        meta |= {
+            "image": image.name,
+            "origin_px": "not meaningful after rotation",
+            "rotation_deg": args.degraded,
+            "blur_px": BLUR_PX,
+            "noise_sd": NOISE,
+            "noise_seed": SEED,
+        }
+        side = args.layout.with_name(f"{stem}.degraded.json")
     side.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8", newline="\n")
-    print(f"{image}: {meta['columns']} x {meta['rows']} cells at {PX_PER_M} px per metre")
+    print(f"{image}: {meta['columns']} x {meta['rows']} cells at {meta['px_per_m']} px per metre")
     return 0
 
 

@@ -1,0 +1,12 @@
+{
+  "image": "mixed_hall.degraded.png",
+  "px_per_m": 21.7,
+  "origin_px": "not meaningful after rotation",
+  "cell_m": 1.0,
+  "rows": 22,
+  "columns": 30,
+  "rotation_deg": 2.0,
+  "blur_px": 0.8,
+  "noise_sd": 0.06,
+  "noise_seed": 7
+}
