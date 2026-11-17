@@ -170,7 +170,7 @@ def test_impossible_screening_is_refused(
     base: Layout, counts: dict[str, int], message: str
 ) -> None:
     with pytest.raises(ScreeningError, match=message):
-        screen(base, top=2, **counts)
+        screen(base, top=2, stations=counts["stations"], chargers=counts["chargers"])
 
 
 def test_the_command_writes_candidates_proxies_and_an_experiment(tmp_path: Path) -> None:
@@ -245,3 +245,24 @@ def test_the_command_writes_candidates_proxies_and_an_experiment(tmp_path: Path)
 def test_the_template_may_not_set_what_screening_writes() -> None:
     with pytest.raises(ScreeningError, match="'layouts'"):
         experiment_for({"a": "a.layout.json"}, "b.layout.json", {"layouts": []})
+
+
+def test_slot_roles_keep_stations_and_chargers_apart() -> None:
+    station_slots = [c for c in BASE.slots() if c[0] == 12]  # the dock wall
+    charger_slots = [c for c in BASE.slots() if c[0] == 1]  # the opposite wall
+    for candidate in screen(
+        BASE,
+        stations=3,
+        chargers=2,
+        top=3,
+        station_slots=station_slots,
+        charger_slots=charger_slots,
+    ):
+        assert set(candidate.stations) <= set(station_slots)
+        assert set(candidate.chargers) <= set(charger_slots)
+    with pytest.raises(ScreeningError, match="not candidate slots"):
+        screen(BASE, stations=1, chargers=0, top=1, station_slots=[(0, 0)])
+    with pytest.raises(ScreeningError, match="station slots"):
+        screen(BASE, stations=7, chargers=0, top=1, station_slots=station_slots)
+    with pytest.raises(ScreeningError, match="charger slots"):
+        screen(BASE, stations=1, chargers=6, top=1, charger_slots=charger_slots)

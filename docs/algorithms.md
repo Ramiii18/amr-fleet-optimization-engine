@@ -2317,6 +2317,11 @@ all primary tests. Runs whose keys differ are refused, not compared unpaired.
 the charging KPIs (trips, time out of service, waiting for a charger, occupancy, lowest level),
 which the analysis can compare.
 
+**Named contrasts (D44).** A layout experiment may name its primary tests as pairs of layouts. The
+primary KPI on those pairs is Holm-corrected over all of them; every other layout against the
+baseline is exploratory. Without named pairs, every layout against the baseline is primary, as
+before.
+
 **Limitations.** Candidates must share storage cells and station counts. The viewer's results page
 reads policy comparisons (results version 1) only.
 

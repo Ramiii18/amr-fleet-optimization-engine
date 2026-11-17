@@ -320,3 +320,61 @@ def test_charging_kpis_need_a_battery() -> None:
     del data["battery"]
     with pytest.raises(ExperimentValidationError, match="unknown KPI 'charger_wait_s'"):
         experiment_from_dict(data)
+
+
+# --- named primary contrasts (L7) ---------------------------------------------------------------
+
+OTHER = edited(HALL, {(12, 9): "?", (12, 8): "T"})
+
+
+def test_named_contrasts_are_the_only_primary_tests(folder: Path) -> None:
+    save_layout(OTHER, folder / "other.layout.json")
+    data = layout_experiment(
+        layouts=[
+            {"name": "baseline", "map": "baseline.layout.json"},
+            {"name": "moved", "map": "moved.layout.json"},
+            {"name": "other", "map": "other.layout.json"},
+        ],
+        contrasts=[["moved", "other"], ["moved", "baseline"]],
+        seeds=[0, 1, 2],
+    )
+    experiment = experiment_from_dict(data, base_dir=folder)
+    assert experiment.contrasts == (("moved", "other"), ("moved", "baseline"))
+    assert experiment.to_dict()["contrasts"] == [["moved", "other"], ["moved", "baseline"]]
+    contrasts = analyse(experiment, run_experiment(experiment))
+    rows = [(c.variant, c.baseline, c.kpi, c.holm_p is not None) for c in contrasts]
+    assert rows == [
+        ("hall-4/greedy/moved", "other", "completion_mean_s", True),
+        ("hall-4/greedy/moved", "other", "completion_max_s", False),
+        ("hall-4/greedy/moved", "baseline", "completion_mean_s", True),
+        ("hall-4/greedy/moved", "baseline", "completion_max_s", False),
+        ("hall-4/greedy/other", "baseline", "completion_mean_s", False),  # exploratory
+        ("hall-4/greedy/other", "baseline", "completion_max_s", False),
+    ]
+    primary = [contrasts[0], contrasts[2]]
+    from amr_optimizer.lab import holm
+
+    expected = holm([c.p_value for c in primary])
+    assert [c.holm_p for c in primary] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("contrasts", "reason"),
+    [
+        ([["moved", "nowhere"]], "needs two different layouts"),
+        ([["moved", "moved"]], "needs two different layouts"),
+        ([["moved", "baseline"], ["moved", "baseline"]], "listed once"),
+        ([["moved"]], r"contrasts\[0\]: expected \[variant, reference\]"),
+        ("moved", "expected a list of pairs"),
+    ],
+)
+def test_broken_contrasts_are_refused(folder: Path, contrasts: object, reason: str) -> None:
+    with pytest.raises(ExperimentValidationError, match=reason):
+        experiment_from_dict(layout_experiment(contrasts=contrasts), base_dir=folder)
+
+
+def test_contrasts_need_a_layout_comparison() -> None:
+    data = battery_experiment()
+    data["contrasts"] = [["a", "b"]]
+    with pytest.raises(ExperimentValidationError, match="need a layout comparison"):
+        experiment_from_dict(data)

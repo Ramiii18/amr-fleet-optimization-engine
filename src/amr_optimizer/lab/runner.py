@@ -263,11 +263,14 @@ def analyse(experiment: Experiment, rows: Sequence[Mapping[str, object]]) -> lis
     tests carry a Holm-adjusted p-value over all families and policies; the rest is
     exploratory. Raises `UnpairedRunsError` if the runs of a seed differ in fingerprint.
 
-    In an experiment that compares layouts: for every family and policy, every layout against
-    the baseline layout, paired by seed. The runs of one seed must then share their pairing key
-    across layouts (D41), and their fingerprint across policies on one layout."""
+    In an experiment that compares layouts: for every family and policy, the experiment's named
+    contrasts (pairs of layouts), then every other layout against the baseline layout, paired by
+    seed. With named contrasts, only those are primary tests (Holm over them); without, every
+    layout against the baseline is. The runs of one seed must share their pairing key across
+    layouts (D41), and their fingerprint across policies on one layout."""
     if experiment.compares_layouts:
-        return _with_holm(experiment, _layout_contrasts(experiment, rows))
+        layout_contrasts, primary = _layout_contrasts(experiment, rows)
+        return _with_holm(experiment, layout_contrasts, primary)
     by_key = {(str(r["family"]), int(str(r["seed"])), str(r["policy"])): r for r in rows}
     contrasts: list[Contrast] = []
     rng = random.Random(0)
@@ -310,7 +313,8 @@ def analyse(experiment: Experiment, rows: Sequence[Mapping[str, object]]) -> lis
 
 def _layout_contrasts(
     experiment: Experiment, rows: Sequence[Mapping[str, object]]
-) -> list[Contrast]:
+) -> tuple[list[Contrast], set[int]]:
+    """The contrasts of a layout comparison, and the indices of the primary tests among them."""
     by_key = {
         (str(r["family"]), str(r["layout"]), int(str(r["seed"])), str(r["policy"])): r for r in rows
     }
@@ -341,26 +345,35 @@ def _layout_contrasts(
                         "faced different conditions (their pairing keys differ: orders, starts "
                         "or disturbances are not the same by index)"
                     )
+    named = list(experiment.contrasts)
+    pairs = named + [
+        (layout, experiment.baseline)
+        for layout in layouts
+        if layout != experiment.baseline and (layout, experiment.baseline) not in named
+    ]
     contrasts: list[Contrast] = []
+    primary: set[int] = set()
     rng = random.Random(0)
     for family in experiment.families:
         for policy in experiment.policies:
-            for layout in layouts:
-                if layout == experiment.baseline:
-                    continue
+            for layout, reference in pairs:
                 for kpi in (experiment.primary_kpi, *experiment.kpis):
                     values, base = (
                         [
                             float(str(row(family.name, name, s, policy)[kpi]))
                             for s in experiment.seeds
                         ]
-                        for name in (layout, experiment.baseline)
+                        for name in (layout, reference)
                     )
+                    if kpi == experiment.primary_kpi and (
+                        not named or (layout, reference) in named
+                    ):
+                        primary.add(len(contrasts))
                     contrasts.append(
                         paired_contrast(
                             kpi,
                             f"{family.name}/{policy}/{layout}",
-                            experiment.baseline,
+                            reference,
                             values,
                             base,
                             margin=experiment.margin if kpi == experiment.primary_kpi else 0.0,
@@ -369,12 +382,19 @@ def _layout_contrasts(
                             rng=rng,
                         )
                     )
-    return contrasts
+    return contrasts, primary
 
 
-def _with_holm(experiment: Experiment, contrasts: list[Contrast]) -> list[Contrast]:
-    """The primary KPI's tests with Holm-adjusted p-values over all of them."""
-    primary = [i for i, c in enumerate(contrasts) if c.kpi == experiment.primary_kpi]
+def _with_holm(
+    experiment: Experiment, contrasts: list[Contrast], chosen: set[int] | None = None
+) -> list[Contrast]:
+    """The primary tests with Holm-adjusted p-values over all of them: by default every test of
+    the primary KPI, or else the ``chosen`` ones."""
+    primary = [
+        i
+        for i, c in enumerate(contrasts)
+        if (c.kpi == experiment.primary_kpi if chosen is None else i in chosen)
+    ]
     if all(not math.isnan(contrasts[i].p_value) for i in primary):
         adjusted = holm([contrasts[i].p_value for i in primary])
         for i, p in zip(primary, adjusted, strict=True):

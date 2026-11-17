@@ -63,6 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     screen_.add_argument("--stations", type=int, required=True)
     screen_.add_argument("--chargers", type=int, required=True)
     screen_.add_argument("--top", type=int, default=4, help="station sets kept by the proxy")
+    screen_.add_argument(
+        "--station-rows", type=int, nargs="+", help="only slots in these grid rows take stations"
+    )
+    screen_.add_argument(
+        "--charger-rows", type=int, nargs="+", help="only slots in these grid rows take chargers"
+    )
     screen_.add_argument("--out", type=Path, required=True, help="folder for the candidates")
     screen_.add_argument("--baseline", help="the baseline layout, relative to --out")
     screen_.add_argument("--template", type=Path, help="experiment template (JSON)")
@@ -95,7 +101,19 @@ def main(argv: list[str] | None = None) -> int:
 def _screen(args: argparse.Namespace) -> int:
     try:
         base = load_layout(args.base)
-        candidates = screen(base, stations=args.stations, chargers=args.chargers, top=args.top)
+        slots = base.slots()
+        candidates = screen(
+            base,
+            stations=args.stations,
+            chargers=args.chargers,
+            top=args.top,
+            station_slots=None
+            if args.station_rows is None
+            else [c for c in slots if c[0] in args.station_rows],
+            charger_slots=None
+            if args.charger_rows is None
+            else [c for c in slots if c[0] in args.charger_rows],
+        )
         written = write_candidates(base, candidates, args.out)
         rows = [
             {

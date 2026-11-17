@@ -24,6 +24,9 @@ charger. Choosing ``p`` chargers to minimise the total is the p-median problem, 
 separable; it is solved exactly with CP-SAT (one worker, deterministic) and checked against brute
 force in the tests.
 
+**Slot roles.** By default any slot can take either role. ``station_slots`` and ``charger_slots``
+restrict them, for a hall whose stations belong on a dock wall and whose chargers elsewhere.
+
 **Parking is not chosen:** parking spots stay where the base layout draws them, and slots chosen
 for nothing are blocked in the candidates.
 
@@ -39,7 +42,7 @@ the map and one on the reversed map). Integer costs for CP-SAT are millimetres.
 
 import itertools
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -151,11 +154,13 @@ def _gap(costs: SlotCosts, stations: Sequence[Cell]) -> float:
 
 
 def _chargers(
-    costs: SlotCosts, stations: Sequence[Cell], count: int
+    costs: SlotCosts, stations: Sequence[Cell], count: int, allowed: Sequence[Cell]
 ) -> tuple[tuple[Cell, ...], float]:
     if count == 0:
         return (), 0.0
-    free = [cell for cell in costs.slots if cell not in stations]
+    free = [cell for cell in allowed if cell not in stations]
+    if len(free) < count:
+        raise ScreeningError(f"{count} chargers do not fit the {len(free)} free charger slots")
     matrix = [
         [round((costs.between_m[i, j] + costs.to_storage_m[j]) * 1000) for j in free]
         for i in stations
@@ -164,17 +169,33 @@ def _chargers(
     return tuple(free[j] for j in chosen), total / 1000 / len(stations)
 
 
-def screen(base: Layout, *, stations: int, chargers: int, top: int) -> list[Candidate]:
+def screen(
+    base: Layout,
+    *,
+    stations: int,
+    chargers: int,
+    top: int,
+    station_slots: Collection[Cell] | None = None,
+    charger_slots: Collection[Cell] | None = None,
+) -> list[Candidate]:
     """The ``top`` best station sets by the proxy (``proxy-1`` is the best), then the ``spread``
-    control; each with its p-median chargers. Deterministic: ties go to the earlier slots."""
+    control; each with its p-median chargers. Stations are chosen among ``station_slots`` and
+    chargers among ``charger_slots`` (both default to every slot). Deterministic: ties go to the
+    earlier slots."""
     if any(char in row for row in base.grid for char in "TC"):
         raise ScreeningError("the base layout must leave stations and chargers to its slots (?)")
     costs = slot_costs(base)
-    slots = costs.slots
-    if stations < 1 or chargers < 0 or top < 1 or stations + chargers > len(slots):
+    for name, given in (("station", station_slots), ("charger", charger_slots)):
+        if given is not None and not set(given) <= set(costs.slots):
+            raise ScreeningError(f"some {name} slots are not candidate slots of the base")
+    slots = tuple(c for c in costs.slots if station_slots is None or c in station_slots)
+    for_chargers = tuple(c for c in costs.slots if charger_slots is None or c in charger_slots)
+    if stations < 1 or chargers < 0 or top < 1 or stations + chargers > len(costs.slots):
         raise ScreeningError(
-            f"{stations} stations and {chargers} chargers do not fit {len(slots)} slots"
+            f"{stations} stations and {chargers} chargers do not fit {len(costs.slots)} slots"
         )
+    if stations > len(slots):
+        raise ScreeningError(f"{stations} stations do not fit the {len(slots)} station slots")
     if math.comb(len(slots), stations) > MAX_COMBINATIONS:
         raise ScreeningError(f"too many station sets to enumerate ({len(slots)} slots)")
     sets = list(itertools.combinations(slots, stations))
@@ -189,7 +210,7 @@ def screen(base: Layout, *, stations: int, chargers: int, top: int) -> list[Cand
         chosen.append(("spread", spread))
     candidates = []
     for name, station_set in chosen:
-        charger_set, charger_trip = _chargers(costs, station_set, chargers)
+        charger_set, charger_trip = _chargers(costs, station_set, chargers, for_chargers)
         candidates.append(
             Candidate(
                 name,

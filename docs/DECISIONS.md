@@ -1227,3 +1227,26 @@ Scripts: `make_synthetic_floorplan.py`, `render_layout.py`, `score_transcription
 - **Near-ties are expected.** On the L-shaped example with 4 stations, the four best sets by proxy
   were within 1 m of each other per order (38.6 to 39.6 m) and the spread control was 47.5 m, so a
   ranking among the proxy-best sets is unlikely to be resolved by any simulation.
+
+## D44: L7 tooling: slot roles, primary contrasts named in advance, and a pilot that sets the loads
+**Status:** Accepted (2026-11-17, Phase 3, L7). Code: `layout/screening.py`, `lab/experiment.py`,
+`lab/runner.py`, `scripts/pilot_capacity.py`.
+**Why:**
+- **Slot roles.** The study hall has station slots along a dock wall and charger slots in the
+  opposite wall (owner's decision). `screen(..., station_slots=, charger_slots=)` and
+  `--station-rows`/`--charger-rows` keep each role in its slots.
+- **Primary tests named in advance.** The owner fixed the primary tests before any run: proxy-best
+  against spread, and proxy-best and spread each against the baseline, per policy and family.
+  Proxy-best against spread is not a comparison with the baseline, which was all the lab could do.
+  A layout experiment may now list `contrasts`, pairs of layouts (variant, reference): those pairs
+  on the primary KPI are the primary tests, Holm-corrected over all of them. Every other layout is
+  still compared with the baseline, as exploratory (no Holm).
+- **Loads from a pilot, by a rule fixed before it ran.** A layout's capacity is unknown until it
+  exists. `pilot_capacity.py` runs the **baseline only**, on pilot seeds 100 to 104 (never the
+  study's), under the study's own conditions. The capacity C is the mean throughput of `cpsat-fair`
+  at the highest load swept; the families run at 0.60 C and 0.85 C, rounded to 10 orders per hour.
+
+**Consequences:**
+- The pilot cannot favour a candidate: none exists when it runs.
+- Kendall's tau between the proxy ranking and the simulated ranking is secondary (owner's
+  decision) and is computed after the runs, as stated in the pre-registration.

@@ -35,6 +35,10 @@
 - ``layouts``: ``[{"name": "baseline", "map": "hall.layout.json"}, ...]``. The experiment then
   compares **layouts**, not policies: families give the fleet and load but no map, ``baseline``
   names a layout, and each policy (one or more) is compared across layouts, paired by seed.
+- ``contrasts`` (with ``layouts``): ``[["proxy-1", "spread"], ["proxy-1", "baseline"], ...]``, the
+  pairs of layouts (variant, reference) named in advance as the **primary tests**: the primary KPI
+  on these pairs is Holm-corrected over all of them. Every other layout is still compared with the
+  baseline, as exploratory. Without ``contrasts``, every layout against the baseline is primary.
 - ``battery``: ``{"charging": "opportunistic", "capacity_m": 3600.0, ...}`` (the fields of
   `BatterySpec`, all optional). Robots run on batteries (D26, D27), the map must have a charger,
   and the charging KPIs may be named as KPIs.
@@ -141,6 +145,7 @@ class Experiment:
     resamples: int = 10_000
     layouts: tuple[LayoutChoice, ...] = ()
     battery: Battery | None = None
+    contrasts: tuple[tuple[str, str], ...] = ()
     base_dir: Path | None = field(default=None, compare=False)
     """Where relative map paths start: the experiment file's folder. Not part of the file."""
 
@@ -189,6 +194,13 @@ class Experiment:
                 raise fail(f"the baseline {self.baseline!r} is not among the layouts")
             for layout in self.layouts:
                 self._check_map(f"layout {layout.name!r}", layout.map)
+            for variant, reference in self.contrasts:
+                if variant == reference or not {variant, reference} <= set(names):
+                    raise fail(f"contrast {[variant, reference]}: needs two different layouts")
+            if len(set(self.contrasts)) != len(self.contrasts):
+                raise fail("each contrast is listed once")
+        elif self.contrasts:
+            raise fail("contrasts name layouts: they need a layout comparison")
         elif self.baseline not in self.policies:
             raise fail(f"the baseline {self.baseline!r} is not among the policies")
         known = KPI_NAMES + (CHARGING_KPI_NAMES if self.battery is not None else ())
@@ -239,7 +251,7 @@ class Experiment:
             return {name: getattr(value, name) for name in value.__slots__}  # type: ignore[attr-defined]
 
         own = plain(self)
-        for name in ("base_dir", "layouts", "battery"):
+        for name in ("base_dir", "layouts", "battery", "contrasts"):
             del own[name]
         families = [plain(family) for family in self.families]
         if self.compares_layouts:
@@ -259,6 +271,8 @@ class Experiment:
             data["layouts"] = [plain(layout) for layout in self.layouts]
         if self.battery is not None:
             data["battery"] = plain(self.battery)
+        if self.contrasts:
+            data["contrasts"] = [list(pair) for pair in self.contrasts]
         return data
 
 
@@ -293,7 +307,7 @@ def experiment_from_dict(data: object, *, base_dir: Path | None = None) -> Exper
     place of the first problem. Relative map paths are resolved against ``base_dir``."""
     optional: tuple[str, ...] = ("kpis", "margin", "confidence", "resamples", "primary_kpi")
     if isinstance(data, dict) and data.get("version") == 2:
-        optional += ("layouts", "battery")
+        optional += ("layouts", "battery", "contrasts")
     required = (
         "format",
         "version",
@@ -322,6 +336,15 @@ def experiment_from_dict(data: object, *, base_dir: Path | None = None) -> Exper
                     _typed(obj["map"], str, f"layouts[{i}].map"),
                 )
             )
+    contrasts = []
+    if "contrasts" in top:
+        if not isinstance(top["contrasts"], list):
+            raise ExperimentValidationError("experiment.contrasts: expected a list of pairs")
+        for i, pair in enumerate(top["contrasts"]):
+            names = _items(pair, str, f"contrasts[{i}]")
+            if len(names) != 2:
+                raise ExperimentValidationError(f"contrasts[{i}]: expected [variant, reference]")
+            contrasts.append((names[0], names[1]))
     battery = None
     if "battery" in top:
         names = tuple(f.name for f in fields(Battery))
@@ -382,6 +405,7 @@ def experiment_from_dict(data: object, *, base_dir: Path | None = None) -> Exper
         kpis=_items(top.get("kpis", []), str, "experiment.kpis"),
         layouts=tuple(layouts),
         battery=battery,
+        contrasts=tuple(contrasts),
         base_dir=base_dir,
         **extra,  # type: ignore[arg-type]
     )
