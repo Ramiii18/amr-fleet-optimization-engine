@@ -17,7 +17,7 @@ from pathlib import Path
 
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.domain import BatterySpec, ChargingPolicy
-from amr_optimizer.layout import check_well_formed, holding_kinds
+from amr_optimizer.layout import check_well_formed, holding_kinds, load_map_file
 from amr_optimizer.metrics import (
     ChargingKpis,
     OrderTimeline,
@@ -30,7 +30,7 @@ from amr_optimizer.replay import build_trace, trace_to_json
 from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario, load_scenario
 from amr_optimizer.sim import simulate
 from amr_optimizer.traffic import NO_DELAYS, DelayModel, ExecutionPolicy
-from amr_optimizer.warehouse import PRESETS, WarehouseGraph, generate_grid_warehouse, load_graph
+from amr_optimizer.warehouse import PRESETS, WarehouseGraph, generate_grid_warehouse
 
 # Options that describe a generated scenario, with their defaults. A scenario file replaces them.
 GENERATED = {"map": "medium", "robots": 5, "orders_per_hour": 60.0, "duration_s": 3600.0}
@@ -67,7 +67,8 @@ def _parser() -> argparse.ArgumentParser:
         "--map, --robots, --orders-per-hour and --duration-s",
     )
     parser.add_argument(
-        "--map", help=f"a preset ({', '.join(PRESETS)}) or a JSON map file (default medium)"
+        "--map",
+        help=f"a preset ({', '.join(PRESETS)}), a JSON map file or a layout file (default medium)",
     )
     parser.add_argument("--robots", type=int, help="default 5")
     parser.add_argument("--orders-per-hour", type=float, help="default 60")
@@ -168,7 +169,7 @@ def _write_timeline(rows: Sequence[OrderTimeline], path: Path) -> None:
 def _load_map(name: str) -> WarehouseGraph:
     if name in PRESETS:
         return generate_grid_warehouse(PRESETS[name])
-    return load_graph(name)
+    return load_map_file(name)
 
 
 def _scenario(args: argparse.Namespace) -> tuple[Scenario, str]:

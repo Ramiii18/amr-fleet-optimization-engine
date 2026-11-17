@@ -29,7 +29,7 @@ from amr_optimizer.layout.compiler import compile_layout
 from amr_optimizer.layout.model import Layout, LayoutFormatError
 from amr_optimizer.warehouse import MapValidationError, WarehouseGraph
 from amr_optimizer.warehouse.io import FORMAT_NAME as MAP_FORMAT_NAME
-from amr_optimizer.warehouse.io import graph_from_dict
+from amr_optimizer.warehouse.io import MapFormatError, graph_from_dict
 
 FORMAT_NAME = "amr-layout"
 FORMAT_VERSION = 1
@@ -102,7 +102,7 @@ def map_from_dict(data: object) -> WarehouseGraph:
     if isinstance(data, Mapping) and data.get("format") == FORMAT_NAME:
         return compile_layout(layout_from_dict(dict(data)))
     if isinstance(data, Mapping) and "format" in data and data["format"] != MAP_FORMAT_NAME:
-        raise MapValidationError(
+        raise MapFormatError(
             f"map: 'format' must be {MAP_FORMAT_NAME!r} or {FORMAT_NAME!r}, "
             f"got {data.get('format')!r}"
         )

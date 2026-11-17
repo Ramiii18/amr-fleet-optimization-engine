@@ -1075,3 +1075,36 @@ stated in D37.
   (more do not fit the map). Whether the service should check the fleet size is left to the owner.
 - **Not checked:** where robots start. A scenario file may start a robot on an intersection, which
   holds an aisle node until the robot's first plan; D24 assumes robots wait on endpoints.
+
+## D40: Every place that names a map takes a map file or a layout file, and every lab row carries a map hash
+**Status:** Accepted (2026-11-17, Phase 3, L3a). Code: `layout/io.py` (`load_map_file`,
+`map_from_dict`), `layout/__main__.py`, `lab/experiment.py`, `lab/runner.py`
+([algorithms](algorithms.md), section 21.3).
+**Why:**
+- **One loader, told apart by `format`.** `amr-sim --map`, scenario files (a path or an inline
+  object) and lab families read map files and layout files alike; a layout is compiled on the way
+  in. There is no separate `--layout` option to keep in step.
+- **A command for the two things a person does with a layout file:**
+  `python -m amr_optimizer.layout compile` writes its map file, and `check` prints the checker's
+  report for a map or layout file (exit code 1 if it breaks a rule, 2 if it cannot be read).
+- **Lab families name a preset or a file,** relative to the experiment file as in scenario files
+  (D32). The folder is kept on the experiment but is not part of it: results never record where
+  they were made.
+- **A map hash on every row, apart from the fingerprint.** The hash covers the compiled map's
+  nodes, kinds, coordinates and edges in order, so the same map under another file name has the
+  same hash and a changed map a different one. Kept as its own field, the fingerprint means what
+  it meant, and the committed results still reproduce: every value of every committed row is
+  unchanged; rows only gain the field.
+- **The lab checks are a script, not a test.** `check_published_results.py --lab` re-runs the
+  committed lab results from the experiment stored in each file and compares every committed
+  value. Its first run (all four files, 20 seeds): 320 runs, 9,280 values, 0 differ, in 58 s.
+
+**Consequences:**
+- **Layout runs need no new code in the simulator, the trace or the viewer.** A trace carries its
+  map, and a trace of a layout run (`tests/data/layout/`) is reproduced byte for byte by a
+  Python test and read by the viewer's tests; it also played by hand in Chrome.
+- **A finer cell costs time and flatters capacity.** Measured on the L-shaped hall: at 0.5 m, 2.7
+  times the nodes, decisions 2.4 to 2.7 times slower on average, and completion 5 to 6% faster
+  because robots may follow half a metre apart ([benchmarks](benchmarks.md)). The default stays
+  1.0 m (D37).
+- **The service still takes preset names only.**

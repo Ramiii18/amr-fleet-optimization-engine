@@ -12,8 +12,9 @@ Format (version 1)::
       "orders": [{"id": "O01", "pickup": "S00-01", "dropoff": "ST00", "release_s": 0}, ...]
     }
 
-- ``map`` is a preset name, the path of a map file (a relative path is relative to the
-  scenario file), or a map object in the map file format (`amr_optimizer.warehouse.io`).
+- ``map`` is a preset name, the path of a map or layout file (a relative path is relative to
+  the scenario file), or a map or layout object (`amr_optimizer.warehouse.io`,
+  `amr_optimizer.layout`).
 - ``description``, ``tick_s``, ``speed_mps``, ``load_s`` and ``unload_s`` are optional. The
   defaults are those of generated scenarios (`ScenarioSpec`).
 - Times are in seconds. They become ticks by rounding up (D12), so nothing happens earlier
@@ -41,16 +42,10 @@ from amr_optimizer.domain import (
     TimeModel,
     TransportOrder,
 )
+from amr_optimizer.layout import load_map_file, map_from_dict
 from amr_optimizer.scenario.generator import ScenarioSpec
 from amr_optimizer.scenario.model import Scenario, ScenarioValidationError
-from amr_optimizer.warehouse import (
-    PRESETS,
-    NodeId,
-    WarehouseGraph,
-    generate_grid_warehouse,
-    load_graph,
-)
-from amr_optimizer.warehouse.io import graph_from_dict
+from amr_optimizer.warehouse import PRESETS, NodeId, WarehouseGraph, generate_grid_warehouse
 
 FORMAT_NAME = "amr-scenario"
 FORMAT_VERSION = 1
@@ -117,10 +112,10 @@ def scenario_from_dict(data: object, *, base_dir: Path | None = None) -> Scenari
 
 def _parse_map(value: object, base_dir: Path | None) -> WarehouseGraph:
     if isinstance(value, dict):
-        return graph_from_dict(value)
+        return map_from_dict(value)
     if not isinstance(value, str):
         raise ScenarioFormatError(
-            "scenario.map: expected a preset name, a map file path or a map object"
+            "scenario.map: expected a preset name, a map or layout file path, or a map object"
         )
     if value in PRESETS:
         return generate_grid_warehouse(PRESETS[value])
@@ -131,7 +126,7 @@ def _parse_map(value: object, base_dir: Path | None) -> WarehouseGraph:
         raise ScenarioFormatError(
             f"scenario.map: {value!r} is neither a preset ({', '.join(PRESETS)}) nor a map file"
         )
-    return load_graph(path)
+    return load_map_file(path)
 
 
 def _parse_robot(value: object, where: str) -> RobotState:

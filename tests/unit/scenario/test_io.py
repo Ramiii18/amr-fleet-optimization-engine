@@ -131,7 +131,7 @@ def _mutate(path: str, value: object) -> dict[str, Any]:
         ("robots", ..., r"missing field\(s\) \['robots'\]"),
         ("colour", "blue", r"unknown field\(s\) \['colour'\]"),
         ("description", 7, "scenario.description: expected a string"),
-        ("map", 3, "expected a preset name, a map file path or a map object"),
+        ("map", 3, "expected a preset name, a map or layout file path, or a map object"),
         ("robots", {"id": "R1"}, "scenario.robots: expected a list"),
         ("robots.0", "R1", r"robots\[0\]: expected an object"),
         ("robots.0.node", 5, r"robots\[0\].node: expected a non-empty string"),

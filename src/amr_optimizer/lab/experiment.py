@@ -19,6 +19,8 @@
 
 - A **family** is one map, fleet size and load. Seeds replicate a family, and a conclusion
   holds for that family only. Every family is analysed on its own.
+- A family's ``map`` is a preset name, or the path of a map file or a layout file (D38). A
+  relative path is relative to the experiment file, as in scenario files (D32).
 - Each seed gives the scenario (orders, start positions) and the disturbances of one
   replication. Every policy runs every seed of every family.
 - ``disturbances.model`` is ``none``, ``independent`` (a draw per corridor entry, D25 and D28:
@@ -34,7 +36,7 @@ error that names its place.
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from amr_optimizer.dispatch import POLICIES
@@ -89,6 +91,15 @@ class Experiment:
     margin: float = 0.0
     confidence: float = 0.95
     resamples: int = 10_000
+    base_dir: Path | None = field(default=None, compare=False)
+    """Where relative map paths start: the experiment file's folder. Not part of the file."""
+
+    def map_source(self, family: Family) -> str | Path:
+        """A preset name, or the path of the family's map or layout file."""
+        if family.map in PRESETS:
+            return family.map
+        path = Path(family.map)
+        return path if path.is_absolute() or self.base_dir is None else self.base_dir / path
 
     def __post_init__(self) -> None:
         def fail(message: str) -> ExperimentValidationError:
@@ -113,8 +124,12 @@ class Experiment:
         if self.primary_kpi in self.kpis or len(set(self.kpis)) != len(self.kpis):
             raise fail("each KPI is listed once, and the primary KPI not among the others")
         for family in self.families:
-            if family.map not in PRESETS:
-                raise fail(f"family {family.name!r}: unknown map {family.map!r}")
+            source = self.map_source(family)
+            if isinstance(source, Path) and not source.is_file():
+                raise fail(
+                    f"family {family.name!r}: unknown map {family.map!r}: neither a preset "
+                    f"({', '.join(PRESETS)}) nor a map or layout file"
+                )
             if family.robots < 1 or family.orders_per_hour <= 0 or family.duration_s <= 0:
                 raise fail(f"family {family.name!r}: robots, load and duration must be positive")
         d = self.disturbances
@@ -135,10 +150,12 @@ class Experiment:
         def plain(value: object) -> dict[str, object]:
             return {name: getattr(value, name) for name in value.__slots__}  # type: ignore[attr-defined]
 
+        own = plain(self)
+        del own["base_dir"]
         return {
             "format": FORMAT_NAME,
             "version": FORMAT_VERSION,
-            **plain(self),
+            **own,
             "families": [plain(family) for family in self.families],
             "policies": list(self.policies),
             "seeds": list(self.seeds),
@@ -173,9 +190,9 @@ def _items[T](value: object, kind: type[T], where: str) -> tuple[T, ...]:
     return tuple(_typed(item, kind, f"{where}[{i}]") for i, item in enumerate(value))
 
 
-def experiment_from_dict(data: object) -> Experiment:
+def experiment_from_dict(data: object, *, base_dir: Path | None = None) -> Experiment:
     """Build an experiment from parsed JSON, or raise `ExperimentValidationError` naming the
-    place of the first problem."""
+    place of the first problem. Relative map paths are resolved against ``base_dir``."""
     optional = ("kpis", "margin", "confidence", "resamples", "primary_kpi")
     required = (
         "format",
@@ -236,6 +253,7 @@ def experiment_from_dict(data: object) -> Experiment:
         seeds=_items(top["seeds"], int, "experiment.seeds"),
         disturbances=disturbances,
         kpis=_items(top.get("kpis", []), str, "experiment.kpis"),
+        base_dir=base_dir,
         **extra,  # type: ignore[arg-type]
     )
 
@@ -245,4 +263,4 @@ def load_experiment(path: str | Path) -> Experiment:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise ExperimentValidationError(f"{path}: not valid JSON: {error}") from error
-    return experiment_from_dict(data)
+    return experiment_from_dict(data, base_dir=Path(path).parent)

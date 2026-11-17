@@ -1056,3 +1056,39 @@ replan minus retime, and recovery fractions with bootstrap intervals (breakdowns
 - **Recovery fractions with intervals.**
   - Re-timing recovers 43% [39%, 47%] to 86% [83%, 89%] of the cost of breakdowns.
   - Replanning recovers 75% [73%, 77%] to 96% [95%, 97%].
+
+## Layouts: what a finer cell costs (Phase 3, L3a, 2026-11-17)
+
+```powershell
+.venv\Scripts\python.exe scripts\measure_cell_size.py --seeds 5
+```
+
+Code of the L3a commit (the script was run on its working tree, on top of `88ace9e`); 8 s on the
+development laptop. The L-shaped example hall at 1.0 m, and the same hall refined to 0.5 m (every
+cell becomes 2 × 2; each endpoint keeps one cell, so both have the same 110 storage locations, 2
+stations, 2 chargers and 3 parking spots). 8 robots, 200 orders/h for 1800 s, traffic on, no
+disturbances, seeds 0–4; every run delivered every order with 0 conflicts.
+
+```text
+l_hall.layout.json: 8 robots, 200 orders/h for 1800 s, traffic on, seeds 0-4
+| cell | nodes | edges | policy | completion mean (s) | decision ms mean / P95 / max | wall s per run |
+|---|---:|---:|---|---:|---|---:|
+| 1 m | 273 | 494 | greedy | 62.8 | 1.2 / 2.0 / 3.1 | 0.16 |
+| 1 m | 273 | 494 | cpsat-fair | 62.9 | 1.4 / 2.4 / 12.6 | 0.19 |
+| 0.5 m | 741 | 1834 | greedy | 59.4 | 3.2 / 5.7 / 9.2 | 0.37 |
+| 0.5 m | 741 | 1834 | cpsat-fair | 59.2 | 3.3 / 6.3 / 38.7 | 0.42 |
+```
+
+### Reading the results
+
+- **Size.** Halving the cell gives 2.7 times the nodes and 3.7 times the edges (floor cells
+  quadruple; the endpoints were kept equal on purpose).
+- **Time.** Decisions take 2.4 to 2.7 times longer on average and 2.6 to 2.9 times at P95; a run
+  takes 2.2 to 2.3 times as long. All are milliseconds here. I had expected about twice the SIPP
+  work per job; the measured factor is a little higher.
+- **The finer map is faster for the robots, and that is the warning.** Mean completion drops by 3.4
+  to 3.7 s (5 to 6%), because at 0.5 m one robot occupies half a metre: robots follow each other
+  more closely and pass side by side in a 1 m aisle. That is capacity the model grants, not
+  capacity a real robot about a metre long would have (D23, D37). The default stays 1.0 m.
+- **Not measured:** a hall drawn at 0.5 m by hand, which would also double the storage cells along
+  each rack face; other halls and loads; five seeds give means, not tested differences.

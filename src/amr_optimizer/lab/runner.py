@@ -4,6 +4,10 @@ Every policy runs every seed of every family. A run gives one row: its KPIs, wha
 it, and a **fingerprint** of everything exogenous (orders, start positions, disturbances).
 Rows of one family and seed must have equal fingerprints whatever the policy: that is checked,
 and it is what makes the paired differences meaningful.
+
+Every row also carries a **map hash**: a hash of the compiled map's content, so that a result can
+never be attributed to the wrong map, whatever the map file was called (D40). It is kept apart from
+the fingerprint, which therefore means what it meant before.
 """
 
 import json
@@ -17,7 +21,7 @@ from pathlib import Path
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.lab.analysis import Contrast, holm, paired_contrast
 from amr_optimizer.lab.experiment import KPI_NAMES, Disturbances, Experiment, Family
-from amr_optimizer.layout import require_well_formed
+from amr_optimizer.layout import load_map_file, require_well_formed
 from amr_optimizer.metrics import compute_kpis
 from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario
 from amr_optimizer.sim import RobotEventKind, simulate
@@ -30,7 +34,8 @@ from amr_optimizer.traffic import (
     fingerprint,
     generate_disturbances,
 )
-from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse
+from amr_optimizer.warehouse import PRESETS, WarehouseGraph, generate_grid_warehouse
+from amr_optimizer.warehouse.io import graph_to_dict
 
 RESULTS_FORMAT = "amr-experiment-results"
 RESULTS_VERSION = 1
@@ -61,12 +66,28 @@ def schedule_for(
     return generate_disturbances(scenario.graph, [r.robot_id for r in scenario.robots], spec, seed)
 
 
-def run_one(family: Family, d: Disturbances, seed: int, policy: str) -> Row:
-    """One run: ``policy`` on replication ``seed`` of ``family``."""
+def family_graph(source: str | Path) -> WarehouseGraph:
+    """The map of a family: a preset by name, or a map or layout file by path."""
+    if isinstance(source, str) and source in PRESETS:
+        return generate_grid_warehouse(PRESETS[source])
+    return load_map_file(source)
+
+
+def map_hash(graph: WarehouseGraph) -> str:
+    """A short hash of the map's content: its nodes, kinds, coordinates and edges, in order."""
+    return fingerprint(graph_to_dict(graph))
+
+
+def run_one(
+    family: Family, d: Disturbances, seed: int, policy: str, source: str | Path | None = None
+) -> Row:
+    """One run: ``policy`` on replication ``seed`` of ``family``, whose map is ``source`` (by
+    default the family's ``map``, which must then be a preset or an absolute path)."""
     spec = ScenarioSpec(
         robots=family.robots, orders_per_hour=family.orders_per_hour, duration_s=family.duration_s
     )
-    scenario = generate_scenario(generate_grid_warehouse(PRESETS[family.map]), spec, seed=seed)
+    graph = family_graph(family.map if source is None else source)
+    scenario = generate_scenario(graph, spec, seed=seed)
     tick_s = scenario.time_model.tick_s
     conditions: object = asdict(d) | {"seed": seed}
     schedule = None
@@ -110,6 +131,7 @@ def run_one(family: Family, d: Disturbances, seed: int, policy: str) -> Row:
             [[r.robot_id, r.node] for r in scenario.robots],
             conditions,
         ),
+        "map_hash": map_hash(graph),
         **{name: kpis[name] for name in KPI_NAMES},
         "all_delivered": result.all_delivered,
         "end_tick": result.end_tick,
@@ -125,17 +147,18 @@ def run_one(family: Family, d: Disturbances, seed: int, policy: str) -> Row:
     }
 
 
-def _run(args: tuple[Family, Disturbances, int, str]) -> Row:
+def _run(args: tuple[Family, Disturbances, int, str, str | Path]) -> Row:
     return run_one(*args)
 
 
 def run_experiment(experiment: Experiment, *, workers: int = 1) -> list[Row]:
     """Every run of ``experiment``, in the order family, seed, policy. With ``workers`` > 1 the
     runs are spread over that many processes; the rows are the same."""
+    sources = {family.name: experiment.map_source(family) for family in experiment.families}
     for family in experiment.families:  # refuse an unfit map before any run (D39)
-        require_well_formed(generate_grid_warehouse(PRESETS[family.map]), robots=family.robots)
+        require_well_formed(family_graph(sources[family.name]), robots=family.robots)
     jobs = [
-        (family, experiment.disturbances, seed, policy)
+        (family, experiment.disturbances, seed, policy, sources[family.name])
         for family in experiment.families
         for seed in experiment.seeds
         for policy in experiment.policies

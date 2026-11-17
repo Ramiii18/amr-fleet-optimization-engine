@@ -2266,3 +2266,28 @@ hand-built maps are unchanged.
 **Limitations.** The bound is sufficient, not necessary: runs below it may succeed. Robot start
 positions are not checked. The service is not wired: it accepts presets only, but allows fleets
 above the small and medium maps' guarantees.
+
+### 21.3 Running on a layout (`layout/io.py`, `lab/`, D40)
+
+**Problem.** A layout must run wherever a map runs: the command line, scenario files and the lab,
+with nothing in between to keep in step, and a lab result must name the map it came from.
+
+**Approach.** One loader reads a JSON file and looks at its `format`: a layout is compiled, a map
+is read. Lab families name a preset or a file relative to the experiment file. Every row gains a
+map hash: SHA-256 of the compiled map in canonical JSON, cut to 16 hex digits, the same hash as the
+fingerprint uses. It is a separate field, so the fingerprint, which pairs runs of one seed, keeps
+its meaning, and committed results still reproduce value for value.
+
+**Cell size, measured.** The same hall at 1.0 m and refined to 0.5 m, with the same endpoints:
+
+| | 1.0 m | 0.5 m |
+|---|---:|---:|
+| Nodes / edges | 273 / 494 | 741 / 1834 |
+| Decision mean, `cpsat-fair` | 1.4 ms | 3.3 ms |
+| Completion mean, `cpsat-fair` | 62.9 s | 59.2 s |
+
+The finer map is faster for the robots because each one occupies half a metre (D23). That is not a
+better plan but a more generous model, which is why the default stays 1.0 m.
+
+**Limitations.** One hall, one load, five seeds for the cell-size figures. The service still takes
+preset names only.
