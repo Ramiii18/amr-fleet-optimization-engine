@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from amr_optimizer.cli import TIMELINE_COLUMNS, main
+from amr_optimizer.layout import Layout, compile_layout
 from amr_optimizer.replay import trace_from_json
 from amr_optimizer.warehouse import PRESETS, generate_grid_warehouse, save_graph
 
@@ -239,3 +240,48 @@ def test_a_trace_in_a_missing_folder_is_a_usage_error(tmp_path: Path) -> None:
         main([*SMALL_RUN, "--trace", str(tmp_path / "missing" / "run.json")])
 
     assert exit_info.value.code == 2
+
+
+# --- a map unfit for traffic is refused before the run (D39) -------------------------------------
+
+
+def _unfit_map(tmp_path: Path) -> Path:
+    """A storage cell between two floor cells: not a dead end."""
+    path = tmp_path / "unfit.json"
+    save_graph(compile_layout(Layout(("....", "#S#T", "#..#"))), path)
+    return path
+
+
+def test_an_unfit_map_is_refused_with_traffic_before_the_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import amr_optimizer.cli as cli
+
+    def no_run(*_: object, **__: object) -> object:
+        raise AssertionError("the simulation started")
+
+    monkeypatch.setattr(cli, "simulate", no_run)
+    run = ["--map", str(_unfit_map(tmp_path)), "--robots", "1", "--duration-s", "60", "--traffic"]
+    with pytest.raises(SystemExit) as stopped:
+        main(run)
+    assert stopped.value.code == 2
+    err = capsys.readouterr().err
+    assert "the map is not fit for traffic" in err
+    assert "[leaf-endpoints] endpoint S-r001-c001 (storage) has 2 neighbours" in err
+
+
+def test_a_fleet_too_large_for_a_preset_is_refused_with_traffic(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        main(["--map", "small", "--robots", "7", "--duration-s", "60", "--traffic"])
+    assert "7 robots need at least 20 holding spots" in capsys.readouterr().err
+
+
+def test_an_unfit_map_only_warns_in_free_flow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["--map", str(_unfit_map(tmp_path)), "--robots", "1", "--duration-s", "60"]) == 0
+    err = capsys.readouterr().err
+    assert "amr-sim: warning: [leaf-endpoints] endpoint S-r001-c001" in err
+    assert "(with --traffic the run would be refused)" in err

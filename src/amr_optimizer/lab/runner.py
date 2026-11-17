@@ -17,6 +17,7 @@ from pathlib import Path
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.lab.analysis import Contrast, holm, paired_contrast
 from amr_optimizer.lab.experiment import KPI_NAMES, Disturbances, Experiment, Family
+from amr_optimizer.layout import require_well_formed
 from amr_optimizer.metrics import compute_kpis
 from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario
 from amr_optimizer.sim import RobotEventKind, simulate
@@ -131,6 +132,8 @@ def _run(args: tuple[Family, Disturbances, int, str]) -> Row:
 def run_experiment(experiment: Experiment, *, workers: int = 1) -> list[Row]:
     """Every run of ``experiment``, in the order family, seed, policy. With ``workers`` > 1 the
     runs are spread over that many processes; the rows are the same."""
+    for family in experiment.families:  # refuse an unfit map before any run (D39)
+        require_well_formed(generate_grid_warehouse(PRESETS[family.map]), robots=family.robots)
     jobs = [
         (family, experiment.disturbances, seed, policy)
         for family in experiment.families

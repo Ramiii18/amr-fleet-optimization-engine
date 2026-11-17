@@ -17,6 +17,7 @@ from pathlib import Path
 
 from amr_optimizer.dispatch import POLICIES
 from amr_optimizer.domain import BatterySpec, ChargingPolicy
+from amr_optimizer.layout import check_well_formed, holding_kinds
 from amr_optimizer.metrics import (
     ChargingKpis,
     OrderTimeline,
@@ -200,6 +201,29 @@ def _scenario(args: argparse.Namespace) -> tuple[Scenario, str]:
     )
 
 
+def _check_map(scenario: Scenario, traffic: bool, battery: BatterySpec | None) -> None:
+    """With traffic, refuse a map or a fleet that the traffic planner cannot handle, before the
+    run (D39). In free flow nothing is planned around other robots, so problems are warnings."""
+    graph = scenario.graph
+    if not traffic:
+        for violation in check_well_formed(graph).violations:
+            print(
+                f"amr-sim: warning: [{violation.rule}] {violation.message} "
+                "(with --traffic the run would be refused)",
+                file=sys.stderr,
+            )
+        return
+    kinds = holding_kinds(batteries=battery is not None)
+    report = check_well_formed(
+        graph,
+        robots=len(scenario.robots),
+        battery=battery,
+        dropoffs_hold=any(graph.node(order.dropoff).kind in kinds for order in scenario.orders),
+    )
+    if not report.ok:
+        _parser().error(report.describe())
+
+
 def _report(kpis: RunKpis) -> list[str]:
     return [
         f"  throughput         {kpis.throughput_per_h:8.1f} orders/h",
@@ -240,6 +264,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if trace_file is not None and not trace_file.parent.is_dir():
         _parser().error(f"--trace: folder {trace_file.parent} does not exist")
     scenario, description = _scenario(args)
+    battery = BatterySpec() if args.charging else None
+    _check_map(scenario, args.traffic, battery)
     interval = scenario.time_model.to_ticks(args.round_s) or None
     low, high = (scenario.time_model.to_ticks(s) for s in args.delay_s)
     if not 1 <= low <= high:
@@ -257,7 +283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         delays=delays,
         delay_seed=args.seed,
         execution=execution,
-        battery=BatterySpec() if args.charging else None,
+        battery=battery,
         battery_seed=args.seed,
         charging=charging,
     )

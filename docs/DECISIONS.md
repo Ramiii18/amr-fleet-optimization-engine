@@ -940,6 +940,8 @@ onwards); this entry records the pipeline and the design choices the owner appro
     now on (`sim/traffic_control.py`, `_holding_spot`), and every other robot can block two: its
     hold and its planned pickup at a storage location. When a drop-off can be a holding spot
     (put-away orders in scenario files) it is 3N − 2. With batteries, chargers do not count.
+    **Corrected in D39:** a busy robot still waiting at its start blocks that spot too, so the
+    bound is 3N − 1 (4N − 2 with put-aways).
   - **The checker sits above `domain`,** because the charger rule needs `safe_low_m`: strong
     connectivity in `routing/`, the rules in the new `layout/` package.
   - **The checker is required at the entry points** (the command line with traffic, the lab), not
@@ -1023,3 +1025,53 @@ section 21.1).
   and 50 edges with its slot assigned), a small hall (101 nodes) and an L-shaped hall with a row of
   columns in a two-lane cross aisle (273 nodes). All are strongly connected with leaf endpoints,
   checked against NetworkX.
+
+## D39: A map is checked for the traffic planner before the run, at the entry points
+**Status:** Accepted (2026-11-17, Phase 3, L2). Code: `routing/connectivity.py`,
+`layout/wellformed.py` ([algorithms](algorithms.md), section 21.2). Corrects the holding-spot bound
+stated in D37.
+**Why:**
+- **D24's guarantee rests on the map and the fleet size.** On a map without dead-end endpoints, a
+  path can run through a parked robot. On a map that is not strongly connected, a goal can be
+  unreachable. With too few holding spots, a robot can find none free. Each of these stops a run
+  halfway with `TrafficPlanningError`. A check first names the problem.
+- **Six rules**, each a `Violation` with its name, its nodes and a message:
+  `leaf-endpoints` (one neighbour, an intersection, joined both ways), `strongly-connected`,
+  `storage-and-stations`, `holding-spots` (with a fleet size), `chargers` and `battery-threshold`
+  (with batteries).
+- **Strong connectivity by Tarjan's algorithm, iterative,** in `routing/`: O(V + E), and no
+  recursion limit on long aisles (a 20,000-node loop is tested). NetworkX is the oracle on 60
+  seeded random graphs, in `tests/oracle/` only.
+- **The holding-spot bound, from the code: 3N − 1** for N robots (4N − 2 when orders can end at a
+  holding spot). A robot planning a job or a move needs one spot that nobody occupies from now on
+  (`ReservationTable.is_free_from`). Each other robot can block three at once: the spot it is still
+  waiting on before it departs, the storage location it will load at, and the spot its plan ends
+  on. Its own start does not count against it (`end_hold` frees it), but one spot may be excluded
+  for it: the one it stands on when it is moved away. So 3(N − 1) + 1 + 1. D37 said 2N − 1; it
+  missed the start, which `end_hold` frees for the planning robot but not for the others.
+  - **The bound is reached:** a test builds the state in the reservation table, with two robots
+    and four holding spots (3N − 2), and the move fails; with five it succeeds. That a simulation
+    reaches this state is plausible (SIPP plans waits at the start), not shown.
+  - It is a sufficient condition. A run below it may well succeed; it is just not guaranteed.
+- **The battery rule mirrors `EnergyModel` exactly,** in the same integer units, so the checker
+  refuses exactly the maps the model refuses (tested on both sides of the threshold). It is a
+  violation, not a warning: below the threshold the run cannot start. `farthest_endpoints` (new in
+  `domain/energy.py`) names the two endpoints behind the bound; `safe_low_m` uses it and returns
+  the same value as before.
+- **Wired in at the entry points, not in `simulate`** (D37). The command line refuses an unfit map
+  or fleet with traffic, with every violation listed (exit code 2), and warns in free flow, which
+  plans nothing around other robots. The lab refuses before any run. For scenario files the
+  command line works out whether an order ends at a holding spot. `simulate` is unchanged, so
+  hand-built maps in tests and scripts behave as before.
+
+**Consequences:**
+- **Presets.** All three pass every rule. The largest fleets they guarantee: small 6 robots
+  (19 holding spots), medium 26 (79), large 72 (215). The three example layouts pass too.
+- **The command line now refuses fleets it used to run.** `--map small --robots 7 --traffic` and
+  above are refused: the run might have worked, but nothing guaranteed it. No committed test,
+  benchmark or example uses such a fleet.
+- **The service is not wired,** as decided in D37: it accepts preset names only, but it allows up
+  to 50 robots, so a simulation on the small map with 7 to 19 robots runs without the guarantee
+  (more do not fit the map). Whether the service should check the fleet size is left to the owner.
+- **Not checked:** where robots start. A scenario file may start a robot on an intersection, which
+  holds an aisle node until the robot's first plan; D24 assumes robots wait on endpoints.

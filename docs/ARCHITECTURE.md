@@ -11,6 +11,7 @@ src/amr_optimizer/
                io.py         JSON map format (strict parser, one item per line)
   routing/     route.py      Route, SearchResult, validate_route
                dijkstra.py   shortest_path, shortest_path_lengths (one-to-all)
+               connectivity.py  strongly connected components (iterative Tarjan, D39)
                astar.py      A* (requires a consistent heuristic)
                heuristics.py zero, euclidean, manhattan
   domain/      timing.py     TimeModel (integer ticks), TravelTimes (per-edge travel ticks)
@@ -51,6 +52,7 @@ src/amr_optimizer/
                compiler.py   compile_layout: one node per cell, one-way rule, ids from the cell
                io.py         layout files (strict parser, one row per line); one loader for map
                              and layout files
+               wellformed.py check_well_formed: is a map fit for the traffic planner (D39)
   replay/      trace.py      ReplayTrace: a finished run as a versioned record for viewers (map,
                              visits, orders, event log, KPIs, conflicts); strict parser (D33)
                schema.py     the same format as a JSON Schema, for other languages and the API docs
@@ -92,7 +94,8 @@ Dockerfile     the service as a container image (Python 3.13 slim, unprivileged 
 `warehouse`. Dispatch policies implement the interface in `sim/policy.py`; the simulator never imports a
 policy. `traffic` knows nothing about the simulator. `replay` reads a finished run (`sim`, `metrics`,
 `traffic`) and the simulator never imports it, so recording a trace cannot change a run (D33). `layout`
-sits on `warehouse` and compiles layout files into graphs. `api`
+sits on `domain` and `routing`: it compiles layout files into graphs and checks any map before a run
+with traffic. `api`
 sits on top of everything and nothing imports it (D29). The command line uses `replay` too.
 
 **The viewer is outside this graph.** `web/` shares no code with the Python package. It depends on

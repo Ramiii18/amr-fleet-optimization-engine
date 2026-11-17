@@ -133,9 +133,20 @@ def safe_low_m(graph: WarehouseGraph) -> float:
     and the drive to a charger is a fourth, each at most the longest shortest route between two
     endpoints.
     """
+    return 4 * farthest_endpoints(graph)[0]
+
+
+def farthest_endpoints(graph: WarehouseGraph) -> tuple[float, NodeId | None, NodeId | None]:
+    """The longest shortest route between two endpoints, in metres, and its two ends (the
+    first such pair in node order); ``(0.0, None, None)`` without two connected endpoints.
+    Unreachable pairs are skipped: the well-formedness checker reports them (D39)."""
     endpoints: Sequence[NodeId] = [n.id for n in graph.nodes if n.kind is not NodeKind.INTERSECTION]
     longest = 0.0
+    ends: tuple[NodeId | None, NodeId | None] = (None, None)
     for source in endpoints:
         lengths = shortest_path_lengths(graph, source)
-        longest = max(longest, max(lengths.get(t, 0.0) for t in endpoints))
-    return 4 * longest
+        for target in endpoints:
+            length = lengths.get(target, 0.0)
+            if length > longest:
+                longest, ends = length, (source, target)
+    return longest, ends[0], ends[1]

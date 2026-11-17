@@ -14,8 +14,10 @@ import pytest
 from amr_optimizer.routing import (
     astar,
     euclidean,
+    is_strongly_connected,
     shortest_path,
     shortest_path_lengths,
+    strongly_connected_components,
     validate_route,
 )
 from amr_optimizer.warehouse import Edge, EdgeKey, Node, NodeId, WarehouseGraph
@@ -128,3 +130,34 @@ def test_random_graphs_cover_both_reachable_and_unreachable_queries() -> None:
 
     assert reachable > 100
     assert unreachable > 50
+
+
+# --- strongly connected components (D39) ----------------------------------------------------
+
+
+@pytest.mark.parametrize("seed", SEEDS)
+def test_strongly_connected_components_match_networkx(seed: int) -> None:
+    graph = random_geometric_digraph(seed)
+    reference = to_networkx(graph, set())
+    components = strongly_connected_components(graph)
+    assert {frozenset(c) for c in components} == {
+        frozenset(c) for c in nx.strongly_connected_components(reference)
+    }
+    assert sorted(n for c in components for n in c) == sorted(node.id for node in graph)
+    assert is_strongly_connected(graph) == nx.is_strongly_connected(reference)
+    # Reverse topological order: an edge between two components points to an earlier one.
+    position = {node: i for i, component in enumerate(components) for node in component}
+    for edge in graph.edges:
+        assert position[edge.target] <= position[edge.source]
+
+
+def test_strong_connectivity_has_no_recursion_limit() -> None:
+    """A one-way loop of 20,000 nodes: a recursive search would exceed Python's limit."""
+    count = 20_000
+    nodes = [Node(NodeId(f"n{i}"), float(i), 0.0) for i in range(count)]
+    edges = [Edge(nodes[i].id, nodes[i + 1].id, 1.0) for i in range(count - 1)]
+    edges.append(Edge(nodes[-1].id, nodes[0].id, float(count)))
+    graph = WarehouseGraph(nodes, edges)
+    assert is_strongly_connected(graph)
+    graph_open = WarehouseGraph(nodes, edges[:-1])
+    assert len(strongly_connected_components(graph_open)) == count

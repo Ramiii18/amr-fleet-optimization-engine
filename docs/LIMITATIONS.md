@@ -42,8 +42,11 @@ limits in mind.
   - The delay model is independent per edge, with no correlated slow-downs and no breakdowns.
   - The M4 and M5 benchmarks ran without delays.
 - **Well-formed layouts only.** Planning is guaranteed to succeed because every stopping place is a
-  dead-end spur. On maps without that property, prioritized planning can fail, and the simulator stops
-  with an error rather than hiding it.
+  dead-end spur, the map is strongly connected and there are enough holding spots (3N − 1 for N
+  robots). The command line and the lab check this before a run with traffic and refuse a map or a
+  fleet that breaks it (D39). The guarantee is sufficient, not necessary. The service does not
+  check: it accepts presets only, but allows fleets above what the small (6 robots) and medium (26)
+  maps guarantee. Robot start positions in scenario files are not checked.
 - **The measured cost of traffic mixes two effects.** It includes waiting for other robots and the short
   drive to a holding spot after each delivery, which free flow does not make. They are not separated.
 

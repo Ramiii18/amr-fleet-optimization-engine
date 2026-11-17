@@ -26,6 +26,7 @@ from amr_optimizer.lab import (
     write_results,
 )
 from amr_optimizer.lab.__main__ import main
+from amr_optimizer.layout import NotWellFormedError
 
 ROOT = Path(__file__).resolve().parents[3]
 COMMITTED = ROOT / "experiments" / "dispatch_disturbed.json"
@@ -286,3 +287,17 @@ def test_results_without_a_number_are_written_as_null(tmp_path: Path) -> None:
     write_results(tmp_path / "r.json", data)
 
     assert json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))["rows"] == [{"x": None}]
+
+
+def test_a_fleet_too_large_for_its_map_is_refused_before_any_run(monkeypatch: Any) -> None:
+    """The small preset has 19 holding spots: 6 robots fit (3N - 1 = 17), 7 do not (20)."""
+    import amr_optimizer.lab.runner as runner
+
+    def no_run(*_: object) -> object:
+        raise AssertionError("a run started")
+
+    monkeypatch.setattr(runner, "_run", no_run)
+    families = [dict(SMALL["families"][0], robots=7)]
+    experiment = experiment_from_dict(dict(SMALL, families=families))
+    with pytest.raises(NotWellFormedError, match="7 robots need at least 20 holding spots"):
+        run_experiment(experiment)

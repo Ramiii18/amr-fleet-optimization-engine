@@ -2228,3 +2228,41 @@ narrower than a cell. `cell_m` is also the minimum spacing between robots (D23),
 storage cells and how often a robot meets disturbances, so layouts are compared at one cell size
 (D37). The compiler does not decide whether a map suits the traffic planner: a storage cell that
 touches a cross aisle compiles with two neighbours, and the checker reports it.
+
+### 21.2 Is a map fit for traffic? (`routing/connectivity.py`, `layout/wellformed.py`, D39)
+
+**Problem.** The traffic planner never fails on a well-formed map (D24), but nothing checked that a
+map is well formed. A layout drawn by hand or transcribed from a picture can break the rules
+silently, and the run then stops halfway.
+
+**The rules.**
+
+| Rule | Why the planner needs it | Cost |
+|---|---|---|
+| Every endpoint is a leaf: one neighbour, an intersection, joined both ways | no path passes through a parked robot; a robot can always leave | O(V + E) |
+| Strongly connected | every goal is reachable from wherever a robot stands | O(V + E) |
+| At least one storage location and one station | generated orders need both | O(V) |
+| At least 3N − 1 holding spots for N robots (4N − 2 with put-aways) | a free spot always exists | O(V) |
+| A charger, and a low threshold of at least four longest endpoint routes (with batteries) | as `EnergyModel` requires | one Dijkstra per endpoint |
+
+**Tarjan's algorithm, iteratively.** A depth-first search numbers nodes as it reaches them (index)
+and keeps, for each, the smallest index reachable from its subtree through one edge back into the
+current path (low). A node with low = index is the root of a component: the nodes above it on the
+stack are that component. Each node is pushed and popped once and each edge looked at once:
+O(V + E). An explicit stack of (node, remaining edges) replaces recursion, so a long aisle cannot
+exceed Python's recursion limit. Components come out in reverse topological order; the tests check
+that order and agreement with NetworkX on 60 seeded random graphs.
+
+**The holding-spot bound, derived from the code.** A robot that plans needs one holding spot free
+from now on. Another robot blocks at most three: its start while it still waits there, its
+pickup, its final hold. Its own start is freed (`end_hold`), but the spot it is moved off is
+excluded. So 3(N − 1) + 2 = 3N − 1. A test builds the worst state directly: with 3N − 2 spots the
+move fails, with 3N − 1 it succeeds.
+
+**Where it runs.** At the entry points: the command line with traffic (refusal, exit code 2) or in
+free flow (warnings), and the lab before any run. Not in `simulate`, so tests and scripts that use
+hand-built maps are unchanged.
+
+**Limitations.** The bound is sufficient, not necessary: runs below it may succeed. Robot start
+positions are not checked. The service is not wired: it accepts presets only, but allows fleets
+above the small and medium maps' guarantees.
