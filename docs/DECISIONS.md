@@ -913,3 +913,69 @@ robot's path.
   figures contradict each other (a difference outside its interval, wins that do not add up to
   the seeds, a run missing). It does not link a row to a replay: the results file holds KPIs, not
   traces.
+
+
+## D37: Phase 3: floor plans become checked layout files, and layouts are compared in the lab
+**Status:** Accepted (2026-11-17). The plan and the owner's answers are in the
+[roadmap](ROADMAP.md), "Phase 3: layout". Each part gets its own decision when it is built (D38
+onwards); this entry records the pipeline and the design choices the owner approved before any code.
+**Why:**
+- **One map is the largest limit on every result so far** ([limitations](LIMITATIONS.md),
+  "Evaluation"). Phase 3 asks where stations and chargers should go on a given floor plan, and
+  whether a cheap static estimate picks the layout that the simulation with traffic prefers.
+- **The pipeline.** A floor plan (image, PDF or sketch) is transcribed into a layout file during a
+  working session, by a documented procedure that is checked by rendering. The layout file compiles
+  deterministically to a `WarehouseGraph` and the existing map format. A checker refuses a map the
+  traffic planner cannot handle. Static screening proposes candidate layouts, and the lab compares
+  them in simulation with paired seeds. The engine, the service and the viewer never call a model.
+- **The layout file** (`amr-layout`, version 1) is strict JSON holding a text grid, one character per
+  cell: blocked, two-way floor, one-way floor (an arrow per direction), storage, station, charger,
+  parking, and candidate slots that screening may fill. Text diffs line by line, can be reviewed in a
+  pull request, written from a picture and fixed by hand, and compiles trivially deterministically.
+  The legend and the rules are recorded in D38.
+- **Design changes approved before building** (the reasons are in the plan):
+  - **Endpoints link only to the floor cells beside them, never to each other,** and must have
+    exactly one. Otherwise side-by-side storage cells on a rack face could not be leaves.
+  - **The holding-spot bound is 2N − 1 for N robots, not N + 1.** A holding spot must be free from
+    now on (`sim/traffic_control.py`, `_holding_spot`), and every other robot can block two: its
+    hold and its planned pickup at a storage location. When a drop-off can be a holding spot
+    (put-away orders in scenario files) it is 3N − 2. With batteries, chargers do not count.
+  - **The checker sits above `domain`,** because the charger rule needs `safe_low_m`: strong
+    connectivity in `routing/`, the rules in the new `layout/` package.
+  - **The checker is required at the entry points** (the command line with traffic, the lab), not
+    inside `simulate`. Free flow needs no well-formed map, and existing free-flow scenario files
+    keep running. The service accepts preset names only, so nothing changes there.
+  - **`cell_m` is 1.0 m by default** (owner's choice). It is also the minimum spacing between robots
+    (D23), the number of storage cells and how often a robot meets disturbances, so layouts are
+    compared only at one cell size. A finer size is measured once, for the record.
+  - **The lab gains a layout axis.** Today it compares policies on one map; runs on different maps
+    can never share a fingerprint. A new experiment version lists layouts and a baseline layout,
+    and pairs runs by seed with a key that is the same across layouts. The existing fingerprint
+    stays as it is and every row gains a hash of its map, so committed results still reproduce and a
+    result can never be attributed to the wrong map.
+  - **The disturbance schedule is the model for layout studies.** Its episodes are seeded per
+    corridor by node ids and its breakdowns per robot, so with stable cell ids every corridor that
+    two layouts share meets the same episodes.
+  - **The station proxy is the mean round trip** between storage and a station (one-way aisles make
+    the two directions differ). Under uniform demand it is separable, so on its own it clusters the
+    stations; congestion is what the simulation adds.
+  - **Scope of the study** (owner's choice): stations and chargers are decided, parking is placed by
+    a fixed rule. Chargers matter only with batteries, so experiment files gain a battery block.
+  - **Loads are fixed by a pilot on the baseline layout only,** committed with the rest of the
+    pre-registration before any candidate runs. Kendall's tau between the proxy and the simulation is
+    reported with a bootstrap interval over seeds.
+  - **The vision step is scored after alignment,** with stated conventions (origin, storage as rack
+    faces beside aisles, symbols explained in the plan's legend). Its blind transcription is made by
+    a separate agent of the same model family: blind to the answer, not independent in method.
+  - **One `--map` option** accepts map and layout files, recognised by their `format` field, so the
+    command line, scenario files and the lab share one loader.
+
+**Consequences:**
+- **Privacy.** `layouts/private/` is git-ignored from the first commit of the phase, before any file
+  is placed there. Real plans and anything computed from them stay there and are reported in the
+  chat only. Every committed layout and image is synthetic, and descriptions identify no site.
+- **No new runtime dependency.** The raster importer was declined (no `layout` extra). The search
+  over aisle directions is decided after the study, only if layout turns out to matter.
+- **Nothing that exists changes.** Presets compile as before, `scripts/check_published_results.py`
+  must pass after every increment that touches the simulator, scenarios, maps or the lab, and one
+  committed lab experiment is re-run and compared value for value.

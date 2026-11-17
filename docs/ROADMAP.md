@@ -724,6 +724,29 @@ phase is delivered. What follows is optional and not started:
 2. Scenario files through the service.
 3. One measured optimizer upgrade: traffic-aware cost estimates in dispatch.
 
+## Phase 3: layout (started 2026-11-17, branch `feature/amr-layout`)
+
+**Question:** given a floor plan, where should stations and chargers go, and does a cheap static
+estimate pick the layout that the simulation with traffic prefers? The pipeline and the approved
+design changes are recorded in D37. Everything committed is synthetic; real plans stay in the
+git-ignored `layouts/private/`.
+
+**Owner's choices (2026-11-17):** cell size 1.0 m by default; stations and chargers are decision
+variables, parking is placed by a fixed rule, and experiment files gain a battery block; no raster
+importer; the aisle-direction search is decided after L7.
+
+| Step | Content | Acceptance | Status |
+|---|---|---|---|
+| **L0** | Branch, `layouts/private/` ignored, this plan, D37 | Branch from `main` at `09225c0`; checks green | **Done** |
+| **L1** | `layout/` package: format, strict parser with located errors, compiler, writer, one loader for map and layout files; 3 synthetic examples (D38) | The hand-checked example gives 31 nodes and 50 edges, edge by edge; one-way and endpoint rules on hand grids; malformed files refused with their location; the same bytes twice | Not started |
+| **L2** | Strong connectivity (`routing/`) and the well-formedness checker (`layout/`), wired in at the entry points (D39) | Presets and examples pass; every rule broken on purpose and reported with its node; agreement with NetworkX on at least 60 seeded graphs; a bad map refused before the run; published results reproduce | Not started |
+| **L3a** | Running on layouts: `--map` takes layout files, a `layout` command, map files in the lab, a map hash per row, a custom-map trace in the viewer, 1.0 m against 0.5 m measured | Every example runs under greedy and `cpsat-fair` with traffic, all delivered, 0 conflicts; a committed lab experiment re-run with 0 differing values | Not started |
+| **L3b** | Layout comparisons in the lab: experiment version 2, pairing across layouts, a battery block (D40) | Cross-layout pairing test; version 1 files unchanged | Not started |
+| **L4** | Vision step: procedure, render and synthetic-plan scripts, 3 ground truths, a blind transcription, scores (D41) | Deterministic scripts; scores and the KPI gap between truth and transcription recorded as measured | Not started |
+| **L6** | Static screening: round-trip station proxy, a spread control, CP-SAT p-median for chargers, candidates and an experiment file (D42) | CP-SAT equals brute force on at least 200 small instances; candidates fully assigned and well formed; deterministic | Not started |
+| **L7** | The study on a synthetic L-shaped hall: pre-registration commit, then the runs | All delivered, 0 conflicts; contrasts, Holm p, Kendall's tau with its interval and the explanation recorded verbatim | Not started |
+| **L8** | (optional, decided after L7) Search over one-way aisle directions | Strong connectivity asserted; deterministic and capped | Not decided |
+| **L9** | Closing docs: README, algorithms section 21, limitations, architecture, overview | Docs link test; every number traced to a script and a run | Not started |
 ## Phase 2 backlog (unordered)
 
 - **From P2:** a CP-SAT schedule of charging slots over a horizon (intervals with charger capacity),
