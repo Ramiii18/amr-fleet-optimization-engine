@@ -1144,3 +1144,35 @@ stated in D37.
   order goes to physically, and moving a charger changes where the third robot starts; that is the
   difference being measured. Layouts that differ in storage cells or station counts cannot be
   compared this way, and are refused rather than compared unpaired.
+
+## D42: The vision step is a documented procedure, checked by rendering and measured on synthetic plans
+**Status:** Accepted (2026-11-17, Phase 3, L4). Procedure: [`LAYOUT_FROM_FLOOR_PLAN.md`](LAYOUT_FROM_FLOOR_PLAN.md).
+Scripts: `make_synthetic_floorplan.py`, `render_layout.py`, `score_transcription.py`
+([algorithms](algorithms.md), section 21.5).
+**Why:**
+- **Judgement stays outside the engine.** Reading a plan is done in a session, by a person or a
+  model; its only output is a layout file that is reviewed. The engine never reads images and never
+  calls a model.
+- **Auditable by rendering.** `render_layout.py` draws the plan, the compiled map and the map over
+  the plan with the layout's cells, in one frame in metres. The procedure requires opening that
+  image, listing mismatches, at most three rounds, and never claiming a match without looking.
+- **Conventions make it scorable:** the grid starts at the building's outer top-left corner; each
+  rack bay is one storage location; rack ends and columns are blocked; symbols come from the plan's
+  legend; a painted arrow makes the whole aisle between two crossings one-way.
+- **Measured blind.** The ground truths were made by the same session that wrote the procedure, so
+  the transcriptions were made by separate agents given only the plan image and the procedure. They
+  are blind to the answer, not independent in method: same model family.
+- **Scored in metres, not by cell index.** Every truth cell's centre is looked up in the
+  transcription after the best shift of up to three cells, so a different cell size or origin still
+  compares; then the checker; then the cost of the errors in simulated completion time.
+
+**Consequences:**
+- **First measurement: three of three plans transcribed exactly**
+  ([benchmarks](benchmarks.md)). The plans are clean, lattice-aligned drawings, and the agents were
+  allowed to inspect pixel values, which they used to decode them. The result shows that the
+  procedure is complete enough to follow; it is not evidence about real or messy plans.
+- **Real plans stay private** (`layouts/private/`, D37); only their results are reported, in the
+  conversation.
+- **Not built:** the raster importer (declined, D37); harder synthetic plans (noise, rotation,
+  non-integer scale, text and dimension lines) and a vision-only condition without pixel access.
+  Both are the obvious next measurement.

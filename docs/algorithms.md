@@ -2319,3 +2319,25 @@ which the analysis can compare.
 
 **Limitations.** Candidates must share storage cells and station counts. The viewer's results page
 reads policy comparisons (results version 1) only.
+
+### 21.5 From a floor plan to a layout: the vision step (D42)
+
+**Problem.** A layout must come from a site's plan, but reading a plan is judgement: the scale, which
+dark areas are racks, where an aisle's one-way stretch ends. The engine should not make those calls,
+and whoever makes them must be checked.
+
+**Approach.** A procedure (`docs/LAYOUT_FROM_FLOOR_PLAN.md`): read and write down what the plan shows,
+choose the cell size, list uncertainties, write the layout and pass the checker, render the compiled
+map over the plan and compare, at most three rounds, then show the owner. Conventions fix what a
+plan leaves open, so that a transcription can be scored.
+
+**Measuring it.** `make_synthetic_floorplan.py` draws a plan from a known layout (solid areas, rack
+bays, columns, symbols with a legend, painted arrows, a scale bar, no grid). An agent that sees only
+the image and the procedure transcribes it. `score_transcription.py` compares in metres after the
+best shift of up to three cells (O(cells × 49) for the shift search): per-class precision and recall,
+the arrows, the scale, the checker, and the difference in mean completion time on the same seeds.
+
+**Result and its limits.** Three of three synthetic plans were transcribed exactly. The plans are
+pixel-exact drawings on a whole-metre lattice, and the agents decoded them from pixel values, so
+this tests the procedure's completeness, not reading real plans. Harder plans and a vision-only
+condition are the next measurement.

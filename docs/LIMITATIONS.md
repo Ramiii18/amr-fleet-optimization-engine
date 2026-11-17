@@ -225,6 +225,16 @@ limits in mind.
 - **Performance was measured once:** in Chrome on the development laptop, on the largest run the
   service accepts ([algorithms](algorithms.md), section 18).
 
+## Layouts from floor plans (Phase 3)
+
+- **A layout is a grid approximation of a building:** square cells of one size, axis-aligned, with
+  no curves or diagonal racks. The cell size is also the closest two robots can be (D23, D38).
+- **The vision step is measured on clean synthetic plans only.** Three of three were transcribed
+  exactly, but those plans are pixel-exact drawings that the transcribing agents decoded from pixel
+  values. Scanned, rotated, noisy or hand-drawn plans were not tried ([benchmarks](benchmarks.md),
+  D42). A transcription is a reading of a picture, to be checked by rendering and confirmed by a
+  person.
+
 ## Evaluation
 
 - **One map.** All comparisons use the generated large map (461 nodes, 6 stations): uniform demand,

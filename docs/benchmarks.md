@@ -1092,3 +1092,45 @@ l_hall.layout.json: 8 robots, 200 orders/h for 1800 s, traffic on, seeds 0-4
   capacity a real robot about a metre long would have (D23, D37). The default stays 1.0 m.
 - **Not measured:** a hall drawn at 0.5 m by hand, which would also double the storage cells along
   each rack face; other halls and loads; five seeds give means, not tested differences.
+
+## The vision step: blind transcription of synthetic plans (Phase 3, L4, 2026-11-17)
+
+Three ground truths (`layouts/ground_truth/`), each drawn as a plan image by
+`scripts/make_synthetic_floorplan.py`: a plain hall (13 × 14 m), an L-shaped hall with a row of
+wall stubs in a two-lane cross aisle (25 × 22 m), and a hall with vertical and horizontal rack zones
+and an open zone with four columns (30 × 22 m). Each plan was transcribed by a separate agent
+(Claude Opus 5.5, run as a subagent of this session) that received only the plan image and
+`docs/LAYOUT_FROM_FLOOR_PLAN.md`. A grep of the three agents' transcripts for the truth and example
+paths found no access. Transcriptions and their notes: `layouts/ground_truth/transcriptions/`.
+Code at `843d539` plus the L4 working tree.
+
+```powershell
+.venv\Scripts\python.exe scripts\score_transcription.py layouts\ground_truth\<name>.layout.json `
+    layouts\ground_truth\transcriptions\<name>.layout.json --robots <6 or 8>
+```
+
+| Plan | Cells agreeing (after alignment) | Lowest precision / recall of any class | One-way cells with the right arrow | Scale error | Checker | Mean completion, truth vs transcription (greedy, 10 seeds) |
+|---|---|---|---|---|---|---|
+| plain hall | 182 of 182, shift 0, 0 | 100.0% / 100.0% | 32 of 32 | 0.0% (cell, width, depth) | fit, 6 robots | 49.9 s vs 49.9 s, +0.0 [+0.0, +0.0] |
+| L-shaped hall | 550 of 550, shift 0, 0 | 100.0% / 100.0% | 84 of 84 | 0.0% | fit, 8 robots | 61.7 s vs 61.7 s, +0.0 [+0.0, +0.0] |
+| mixed hall | 660 of 660, shift 0, 0 | 100.0% / 100.0% | 99 of 99 | 0.0% | fit, 8 robots | 79.8 s vs 79.8 s, +0.0 [+0.0, +0.0] |
+
+Each agent made one render, looked at it, saw no mismatch and stopped; each took about two minutes.
+
+### Reading the results
+
+- **Every transcription is identical to its truth**, so the simulated difference is zero by
+  construction.
+- **This says little about real plans, and the reason is the test, not the agents.** The plans are
+  drawn by a program on an exact 24-pixel-per-metre lattice with flat colours. The prompt allowed
+  the agents to inspect pixel values of the plan, and all three did: they measured the scale bar
+  and the wall corner in pixels and classified every 24-pixel cell by its colours. That decodes a
+  clean drawing; it does not test reading a picture. A scanned or photographed plan, a CAD export
+  with dimension lines and text, a plan that is rotated or not on a whole-metre lattice, or a hand
+  sketch would each be harder, and none was tried.
+- **What it does show:** the procedure document is enough, without any other file, for an agent
+  to find the scale and origin, apply the conventions (rack ends, the extent of one-way aisles,
+  symbols in wall niches) and produce a layout that passes the checker, and the render-and-compare
+  step works.
+- **Not measured:** plans with noise, blur, rotation, non-integer scale or no pixel access; real
+  plans (by design, never in this repository); more than one transcription per plan.

@@ -1,0 +1,11 @@
+{
+  "image": "plain_hall.plan.png",
+  "px_per_m": 24,
+  "origin_px": [
+    48.0,
+    48.0
+  ],
+  "cell_m": 1.0,
+  "rows": 14,
+  "columns": 13
+}

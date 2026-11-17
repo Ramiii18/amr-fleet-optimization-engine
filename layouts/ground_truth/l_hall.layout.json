@@ -1,0 +1,30 @@
+{
+  "format": "amr-layout",
+  "version": 1,
+  "description": "Synthetic L-shaped hall with a row of columns in a cross aisle",
+  "cell_m": 1.0,
+  "grid": [
+    "#########################",
+    "##C##?##?#C##############",
+    "#..........##############",
+    "#^##v##^##v##############",
+    "#^SSvSS^SSvS#############",
+    "P^SSvSS^SSvS#############",
+    "#^SSvSS^SSvS#############",
+    "?^SSvSS^SSvS#############",
+    "#^SSvSS^SSvS#############",
+    "#^##v##^##v##############",
+    "#..#.....#.....#.....#.##",
+    "#......................##",
+    "#^##v##^##v##^##v##^##v##",
+    "#^SSvSS^SSvSS^SSvSS^SSvS#",
+    "P^SSvSS^SSvSS^SSvSS^SSvS#",
+    "#^SSvSS^SSvSS^SSvSS^SSvS#",
+    "P^SSvSS^SSvSS^SSvSS^SSvS#",
+    "#^SSvSS^SSvSS^SSvSS^SSvS#",
+    "#^##v##^##v##^##v##^##v##",
+    "#......................##",
+    "##T##?##?##?##T##?##?####",
+    "#########################"
+  ]
+}
