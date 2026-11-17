@@ -979,3 +979,47 @@ onwards); this entry records the pipeline and the design choices the owner appro
 - **Nothing that exists changes.** Presets compile as before, `scripts/check_published_results.py`
   must pass after every increment that touches the simulator, scenarios, maps or the lab, and one
   committed lab experiment is re-run and compared value for value.
+
+## D38: The layout file: one character per cell, compiled to one node per cell
+**Status:** Accepted (2026-11-17, Phase 3, L1). Code: `layout/` ([algorithms](algorithms.md),
+section 21.1).
+**Why:**
+- **The legend.** `#` blocked; `.` two-way floor; `^ v < >` one-way floor; `S` storage, `T`
+  station, `C` charger, `P` parking (endpoints); `?` a candidate slot that screening may make a
+  station, charger or parking spot. Ten characters cover what the engine models and nothing more.
+- **One node per cell, no contraction.** Each cell holds one robot (D23), so a two-cell-wide aisle
+  is two lanes. Joining a chain of cells into one long edge would let one robot block a whole
+  aisle. Contraction can be added later as an option, measured.
+- **Coordinates.** Text row 0 is the top; the cell at row r and column c is at x = c · cell_m,
+  y = (rows − 1 − r) · cell_m, as the map model's y-up frame wants.
+- **Edges only between 4-neighbours, of length `cell_m`.** They are axis-aligned, so the Manhattan
+  heuristic stays consistent (D5, D10).
+- **An arrow constrains its own axis only.** Between two floor cells on an arrow's axis, the edge
+  exists only in the arrow's direction. Across the axis it stays two-way, so a robot can cross a
+  one-way aisle or leave it into a spur. Arrows on one axis that point against each other leave no
+  way through, and the compiler refuses them with both cells named (D4: invalid input).
+- **Endpoints link only to the floor beside them, never to each other** (approved in D37). A rack
+  face of side-by-side storage cells is then a row of separate dead ends. A spur is two-way even
+  beside an arrow on its axis, because a robot enters it and leaves the way it came.
+- **Ids from the kind and the cell:** `X-r003-c012` for floor, `S-`, `ST-`, `CH-`, `PK-` for
+  endpoints. An id depends on nothing but its own cell, so floor ids are identical in every
+  candidate layout. Runs on two candidates can be paired by id, and the disturbance schedule,
+  seeded per corridor by node ids (D36), gives shared corridors the same episodes.
+- **The compiler does not judge fitness for traffic.** An endpoint between two floor cells is
+  compiled as drawn. Whether a map is fit for the traffic planner is the checker's question
+  (L2), asked of every map, whatever its source.
+- **One loader for map files and layout files**, told apart by their `format` field, so every
+  place that reads a map can read a layout.
+
+**Consequences:**
+- **Rack ends must be blocked.** A storage cell that also touches a cross aisle has two floor
+  neighbours and is not a leaf. The example layouts cap every rack row with `#`; a test that
+  forgot to do so caught the rule in action.
+- **A layout is a grid approximation of a building:** axis-aligned, at the resolution of `cell_m`,
+  with no curves and no diagonal racks. The limitations will say so (L9).
+- **The presets cannot be written as layouts exactly.** Their corridors are 2 m and 4 m single
+  edges, where a layout has one edge per cell. A layout with the same footprint has more nodes.
+- **Three synthetic examples** in `layouts/examples/`: the hand-checked two-aisle hall (31 nodes
+  and 50 edges with its slot assigned), a small hall (101 nodes) and an L-shaped hall with a row of
+  columns in a two-lane cross aisle (273 nodes). All are strongly connected with leaf endpoints,
+  checked against NetworkX.

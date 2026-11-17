@@ -1,0 +1,19 @@
+{
+  "format": "amr-layout",
+  "version": 1,
+  "description": "Synthetic hall: two one-way aisles between two cross aisles",
+  "cell_m": 1.0,
+  "grid": [
+    "########",
+    "#C####P#",
+    "#......#",
+    "#^##v###",
+    "#^S#vS##",
+    "#^##v###",
+    "#^S#vS##",
+    "#^##v###",
+    "#......#",
+    "#T#T#?##",
+    "########"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "format": "amr-layout",
+  "version": 1,
+  "description": "Synthetic hall: four one-way aisles between double-sided rack rows, two cross aisles",
+  "cell_m": 1.0,
+  "grid": [
+    "#############",
+    "##C#?#?#C#?##",
+    "#..........##",
+    "#^##v##^##v##",
+    "#^SSvSS^SSvS#",
+    "P^SSvSS^SSvS#",
+    "#^SSvSS^SSvS#",
+    "P^SSvSS^SSvS#",
+    "#^SSvSS^SSvS#",
+    "?^SSvSS^SSvS#",
+    "#^##v##^##v##",
+    "#..........##",
+    "##T?#?T#?T###",
+    "#############"
+  ]
+}

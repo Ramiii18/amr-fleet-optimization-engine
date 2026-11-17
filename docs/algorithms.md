@@ -2187,3 +2187,44 @@ maps, fleets and disturbances at 140 and 90 orders/h; mean completion about 4 mi
 - **Cost:** linear in the size of the file.
 - **Limitations:** one file at a time, so the two disturbance models are compared by opening each;
   no link from a row to a replay; delay episodes are not drawn on the map.
+
+## 21. Layouts: from a floor plan to a checked map (`layout/`, D37 onwards)
+
+### 21.1 The layout file and its compiler (`layout/model.py`, `layout/compiler.py`, D38)
+
+**Problem.** Describe a site's floor plan so that it can be reviewed in a diff, written from a
+picture and fixed by hand, and turned into the engine's directed graph the same way every time.
+
+**Approach.** A text grid, one character per cell (`#` blocked, `.` and arrows floor, `S T C P`
+endpoints, `?` candidate slots). Compiling makes one node per floor cell and endpoint, and edges
+between 4-neighbours:
+- floor to floor: two-way, unless a cell of the pair is an arrow on the pair's axis, then one way;
+  arrows on one axis that point against each other are refused;
+- endpoint to floor: two-way, always;
+- endpoint to endpoint: never.
+
+| Rule | Why |
+|---|---|
+| One node per cell | one robot per cell (D23): a two-cell aisle is two lanes, not one long corridor |
+| Arrows constrain their own axis only | robots can cross a one-way aisle and enter spurs from it |
+| Endpoints never join each other | side-by-side storage cells on a rack face stay separate dead ends |
+| Ids from the kind and the cell (`X-r003-c012`) | the same floor cell has the same id in every candidate layout, so runs pair across layouts |
+
+**Example** (the two-aisle hall in `layouts/examples/`): column 1 runs up, column 4 runs down, rows 2
+and 8 are two-way cross aisles. Counted by hand and checked edge by edge in the tests: 22 floor
+cells, 9 endpoints with the slot assigned (31 nodes); 19 two-way pairs (38 edges) and 12 one-way
+edges, 50 in all.
+
+**Complexity.** One pass over the grid: O(rows × columns) time and memory. Nodes come in reading
+order and each cell's edges in a fixed order, so the same file gives the same graph, byte for byte
+when written as a map.
+
+**Invariants (tested).** Every edge joins 4-neighbours and has length `cell_m`; coordinates follow
+the cell; an unassigned slot is absent; a floor id never depends on the slots; reading, writing and
+compiling repeat to the byte.
+
+**Limitations.** Axis-aligned cells at one resolution: no curves, diagonal racks or aisles
+narrower than a cell. `cell_m` is also the minimum spacing between robots (D23), the number of
+storage cells and how often a robot meets disturbances, so layouts are compared at one cell size
+(D37). The compiler does not decide whether a map suits the traffic planner: a storage cell that
+touches a cross aisle compiles with two neighbours, and the checker reports it.
