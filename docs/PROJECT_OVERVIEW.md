@@ -80,6 +80,16 @@ Phase 2 added:
 - a mock interface shaped like VDA 5050 3.0.0: the engine's plans executed by mock robots through
   orders and state messages, validated against the official schemas (P5).
 
+The digital twin (2026-11-11 to 11-16) added replay traces, a browser viewer that plays them
+back, and an experiment lab for paired comparisons over seeds.
+
+Phase 3 (2026-11-17) added layouts:
+- a text file format for floor plans, compiled into the map, and a checker that refuses maps the
+  traffic planner cannot handle;
+- a documented, measured procedure for turning a floor plan picture into a layout;
+- static screening of station and charger placements, and a pre-registered study of whether it
+  picks what the simulation prefers.
+
 Some goals above are **not built yet** and are in the Phase 2 backlog:
 - blocked aisles (corridors closed without a robot);
 - order priorities and deadlines;

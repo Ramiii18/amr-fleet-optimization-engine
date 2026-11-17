@@ -745,9 +745,28 @@ importer; the aisle-direction search is decided after L7.
 | **L4** | Vision step: procedure, render and synthetic-plan scripts, 3 ground truths, a blind transcription, scores (D42) | Deterministic scripts; scores and the KPI gap between truth and transcription recorded as measured | **Done** |
 | **L6** | Static screening: round-trip station proxy, a spread control, CP-SAT p-median for chargers, candidates and an experiment file (D43) | CP-SAT equals brute force on at least 200 small instances; candidates fully assigned and well formed; deterministic | **Done** |
 | **L7** | The study on a synthetic L-shaped hall: pre-registration commit, then the runs | All delivered, 0 conflicts; contrasts, Holm p, Kendall's tau with its interval and the explanation recorded verbatim | **Done** (pre-registered `5bd94c6`, run as registered; [results](LAYOUT_STUDY.md)) |
-| **L8** | (optional, decided after L7) Search over one-way aisle directions | Strong connectivity asserted; deterministic and capped | Not decided |
-| **L9** | Closing docs: README, algorithms section 21, limitations, architecture, overview | Docs link test; every number traced to a script and a run | Not started |
+| **L8** | (optional, decided after L7) Search over one-way aisle directions | Strong connectivity asserted; deterministic and capped | Skipped (owner, 2026-11-17) |
+| **L9** | Closing docs: README, algorithms section 21, limitations, architecture, overview | Docs link test; every number traced to a script and a run | **Done** |
+
+**Phase 3 acceptance (2026-11-17).**
+- **A picture becomes a checked layout** through a documented procedure
+  ([LAYOUT_FROM_FLOOR_PLAN.md](LAYOUT_FROM_FLOOR_PLAN.md)), measured blind on six synthetic plans:
+  three clean, decoded from pixels, all exact; three degraded, read from the image alone, two
+  exact and one with 6 wrong cells of 182 (D42).
+- **The checker refuses maps and fleets the planner cannot handle,** before the run (D39).
+- **The lab compares layouts** with paired statistics (D41, D44). Presets still reproduce every
+  published result: the 320 lab runs and 156 benchmark runs re-run with 0 differing values.
+- **The study answers its question with recorded numbers** ([LAYOUT_STUDY.md](LAYOUT_STUDY.md)):
+  the proxy's choice held at moderate load with greedy dispatch (better than both controls by 5 to
+  6 s) and was inconclusive in the other three combinations; it never lost on the primary KPI.
+- **Not done:** L8 (skipped); the two study follow-ups in the backlog below.
 ## Phase 2 backlog (unordered)
+
+- **From the layout study (L7):** explain the longer worst case of clustered stations at moderate
+  load, with more seeds or with logging of station queues (waits at and near each station).
+- **From the layout study (L7):** a study with heavier battery use (longer runs, smaller batteries
+  or lower start levels), so that charger placement is actually tested.
+- **From Phase 3:** the search over one-way aisle directions (L8, skipped).
 
 - **From P2:** a CP-SAT schedule of charging slots over a horizon (intervals with charger capacity),
   against the rule-based policies.

@@ -2382,3 +2382,53 @@ the spread control has the largest smallest gap of all sets; chargers are the br
 every candidate is fully assigned, well formed for batteries, and has the same pairing key as the
 others; the proxies recomputed on a candidate's own map equal those of the search; the output is the
 same, byte for byte, on every run.
+
+### 21.7 The layout study (D44, [LAYOUT_STUDY.md](LAYOUT_STUDY.md))
+
+**Design.** Pre-registered before any candidate existed: one synthetic hall, a hand-made baseline,
+screened candidates (three by proxy, one spread control), 10 robots at 0.60 and 0.85 of the
+baseline's capacity (from a pilot on the baseline only, by a rule fixed in advance), two policies,
+20 seeds, the schedule model with batteries. Twelve primary tests, Holm-corrected, margin 5 s.
+
+**Result.** The proxy's clustered stations beat both controls by 5 to 6 s at moderate load with
+greedy dispatch; the other nine primary tests were inconclusive; the proxy's choice never lost on
+mean completion time. Kendall's tau between the rankings ranged from -0.20 to +0.60, mostly noise
+because the proxy separates its top three by 0.2 m. Clustered stations had a longer worst case at
+moderate load (exploratory).
+
+**What it teaches.** A static proxy is a good first filter when the simulation cannot tell its top
+choices apart anyway; congestion shows first in the tail, not the mean; and a study needs enough
+load on the mechanism it tests (here, batteries) to say anything about it.
+
+### 21.8 Interview notes for Phase 3
+
+**Why a text grid for floor plans, and not polygons?** It diffs line by line, a person can review
+and fix it, a model can write it from a picture, and compiling it is trivially deterministic. The
+price is an axis-aligned approximation at one resolution, which is also the robot spacing.
+
+**Why does the checker live above `domain`?** Its battery rule needs the safety bound computed in
+`domain`, and `warehouse` is the bottom layer. Strong connectivity, a pure graph algorithm, sits in
+`routing`.
+
+**Why 3N − 1 holding spots and not N + 1?** Read from the code: a free spot must have no
+reservation from now on, and each other robot can block three at once (the start it is still
+waiting on, its pickup, its final hold); one more may be excluded for the planning robot. The test
+builds that state and shows 3N − 2 failing.
+
+**Why is the station proxy separable, and why does that matter?** Orders pick a station uniformly,
+so the expected round trip is a mean over stations of per-station terms. The best set is just the
+nearest slots, which cluster. Congestion is an interaction between stations that the proxy cannot
+see; that is exactly what the simulation was for.
+
+**How do you compare two layouts when the maps differ?** Pair by what they share: the order stream
+by storage id and station rank, starts by rank, disturbances on shared corridors, and check it with
+a pairing key; refuse to compare when it differs.
+
+**Why pre-register?** Because the study has many forks (KPI, margin, seeds, loads, which pairs to
+test) and the results were mostly inconclusive. Fixing them first is what lets "inconclusive" be
+reported as a result rather than tuned away.
+
+**Your blind transcriptions scored 100%. What does that prove?** Little, at first: the agents
+decoded pixel-exact plans from pixel values. The second round, from the image alone on degraded
+plans, is the meaningful one, and it found a characteristic error: a rack end read as an aisle,
+then "repaired" to satisfy the checker.

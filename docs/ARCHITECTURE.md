@@ -2,7 +2,7 @@
 
 This is a living document. It describes what exists **now** and marks everything else as planned.
 
-## Current state (M1 to M5, Phase 2 and replay traces; 2026-11-11)
+## Current state (M1 to M5, Phase 2, the digital twin and Phase 3 layouts; 2026-11-17)
 
 ```text
 src/amr_optimizer/
@@ -42,6 +42,8 @@ src/amr_optimizer/
                conflicts.py  independent conflict checker (vertex, head-on, following)
                sipp.py       ItineraryPlanner: safe-interval path planning through stops to a hold
                execution.py  executing plans under delays: naive or in planned order (Phase 2)
+               disturbances.py  disturbance schedules: delay episodes per corridor, breakdowns
+                             per robot, fixed before a run; fingerprints (D36)
   viz/         motion.py     robot position and activity at any tick (pure functions)
                plots.py      map, robots, scaling chart, animation (matplotlib; `viz` extra)
   metrics/     kpis.py       compute_kpis from the event log; nearest-rank percentile;
@@ -56,6 +58,10 @@ src/amr_optimizer/
                screening.py  static screening: separable station proxy, CP-SAT p-median for chargers,
                              spread control, candidate and experiment writers (D43)
                __main__.py   `python -m amr_optimizer.layout compile|check|screen` (D40, D43)
+  lab/         experiment.py experiment files (versions 1 and 2: layouts, battery, named contrasts)
+               runner.py     runs in worker processes, fingerprints, pairing keys, map hashes;
+                             paired analysis and reports (D36, D40, D41, D44)
+               analysis.py   paired contrasts: t and bootstrap intervals, signed-rank, Holm, margins
   replay/      trace.py      ReplayTrace: a finished run as a versioned record for viewers (map,
                              visits, orders, event log, KPIs, conflicts); strict parser (D33)
                schema.py     the same format as a JSON Schema, for other languages and the API docs
@@ -134,6 +140,8 @@ planner (D20). Everything else is the standard library.
 | `metrics` | KPI computation | **Exists** (M2) |
 | `traffic` | Timed paths, reservations, conflict checking, SIPP itinerary planning, ordered execution, re-timing | **Exists** (M4; Phase 2: delays, re-timing); mutex zones in the backlog |
 | `viz` | Figures and animations of maps, runs and benchmark results (optional extra, matplotlib) | **Exists** (M5) |
+| `lab` | Experiments over seeds: paired comparisons of policies or of layouts | **Exists** (digital twin, phase 2b; layouts in Phase 3) |
+| `layout` | Layout files, their compiler, the well-formedness checker, static screening | **Exists** (Phase 3) |
 | `replay` | Replay traces: a finished run as a versioned, validated record for viewers | **Exists** (digital twin, phase 1a) |
 | `api` | HTTP service: planning, simulation jobs and their replay traces (optional extra, FastAPI and Uvicorn) | **Exists** (Phase 2, P4; traces in phase 1a of the digital twin) |
 | `web/` | Browser viewer that replays traces (React, TypeScript, Vite, a 2D canvas; D34). Not a Python package: it talks to `api` over HTTP only | **Exists** (digital twin, phase 1b) |

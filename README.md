@@ -16,8 +16,9 @@ traffic. Blue robots are driving to a pickup, orange ones carry a load, and blac
 > Everything runs on synthetic maps and synthetic orders. This is a portfolio and learning project:
 > it does not control physical robots (the VDA 5050 robots are mocks), has not been deployed in any
 > real fleet, and is not a safety system. Milestones M1 to M5 and Phase 2 (P1 delays, P2 batteries and charging, P3 breakdowns and
-> replanning, P4 an HTTP service, P5 a VDA 5050-shaped adapter) are complete; see the
-> [roadmap](docs/ROADMAP.md).
+> replanning, P4 an HTTP service, P5 a VDA 5050-shaped adapter) are complete, and so are the digital
+> twin (replay viewer, experiment lab) and Phase 3 (layouts from floor plans); see the
+> [roadmap](docs/ROADMAP.md). Every layout and floor plan in this repository is synthetic.
 
 ## Results at a glance
 
@@ -36,6 +37,7 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | **Charging policy matters, and the best one at moderate load fails at high load** | With synthetic batteries, topping up idle robots cuts mean completion time by 26 s and the mean per-run worst case by 70 to 75 s at moderate load, against charging only when low. Returning low robots to work as soon as they pass the low threshold looks even better at moderate load. At high load it makes robots thrash: about 200 charging trips per run instead of 11 to 13, and a mean per-run worst case 520 to 600 s worse, which the mean does not show. |
 | **Replanning around breakdowns recovers most of their cost** | Without recovery, 8 to 15 breakdowns per run raise mean completion time by 95 to 902 s, because robots queue behind a broken one. Re-timing every plan, so that new jobs are planned around it, recovers 43% to 86% of that cost. Replanning the delayed robots too recovers 75% to 96% (bootstrap intervals in the benchmarks), and cuts the mean per-run worst case by 216 to 4,953 s. Replanning safely needed re-timing first, to keep execution deadlock-free; a stress test found two subtle bugs before the benchmark ran. |
 | **The plans speak the industry's robot interface** | The engine's plans run on mock robots through VDA 5050 3.0.0 orders and state messages. Every message validates against the specification's official schemas. Fleet control releases each robot's route under the planned order of robots and knows robots only from their reports. Over 800 jobs: zero conflicts, every job delivered, 0.6 to 8.5 s later than planned on average, because robots may stop only at nodes. An external review found a deadlock on a ring of robots waiting for each other; it is fixed and kept as a test. |
+| **A cheap layout proxy picked a good station placement, but mostly could not be told apart** | On a synthetic 40 x 30 m hall, a free-flow proxy clustered four stations mid-dock. In a pre-registered study (20 seeds, 12 primary tests, Holm), that placement beat a spread control by 5.0 s and a hand-made baseline by 6.0 s at moderate load with greedy dispatch; the other nine tests were inconclusive, and it never lost on mean completion time ([layout study](docs/LAYOUT_STUDY.md)). |
 | **Decisions are fast enough for online use** | Every decision took under 1 s (`cpsat-fair` P95 up to 265 ms at 25 robots); greedy and insertion take a few milliseconds. Measured on a laptop. |
 
 <picture>
@@ -59,6 +61,8 @@ seeded scenarios and reports paired differences with 95% confidence intervals
 | **Robot interface** (`vda5050/`) | VDA 5050 3.0.0 orders, states and updates; mock robots; fleet control that releases bases under the planned order | Base and horizon as ordered execution, the official JSON schemas as the test oracle |
 | **Service** (`api/`) | An HTTP API for dispatch decisions and background simulation jobs, with a Dockerfile | FastAPI with Pydantic at the boundary only, a process pool for CPU-bound work, bounded queues |
 | **Replay** (`replay/`, `web/`) | A versioned trace of a finished run, served by the API and written by the CLI; a browser viewer that plays it back | Lossless visits instead of frames, strict validation in Python and TypeScript, golden fixtures as a cross-language oracle, bounded storage |
+| **Layouts** (`layout/`) | Floor plans as text grids compiled into the map; a checker that refuses maps the traffic planner cannot handle; static screening of station and charger placements | One node per cell, arrows that constrain their own axis, strongly connected components (iterative Tarjan), a holding-spot bound derived from the code, a separable station proxy and a CP-SAT p-median |
+| **Experiments** (`lab/`) | Paired comparisons of policies or layouts over seeds, from experiment files | Fingerprints and pairing keys, t and bootstrap intervals, Holm over pre-registered tests, equivalence margins |
 | **Evaluation** (`metrics/`, `viz/`) | KPIs from the event log, conflict counts from trajectories, paired statistics, figures and animation | Nearest-rank percentiles, t confidence intervals, colour-vision-safe palette |
 
 The [algorithms guide](docs/algorithms.md) explains each component: the problem, the approach, its
@@ -98,7 +102,7 @@ The reasoning behind each design choice is recorded in [decisions](docs/DECISION
 - **Observation without interference.** Recording robot events changes no run: the older trace
   fixtures still come out byte for byte, and `scripts/check_published_results.py` re-runs published
   benchmark rows and compares every KPI with the committed results.
-- **Checks on every commit:** over 1,800 Python tests, ruff, and mypy in strict mode; 192 viewer
+- **Checks on every commit:** over 2,300 Python tests, ruff, and mypy in strict mode; 194 viewer
   tests, ESLint and the TypeScript compiler in strict mode; and a Docker build in CI.
 
 ## Quick start
@@ -244,8 +248,34 @@ the file before the runs.
   results…**) and shows each difference with its interval, zero and the margin on one axis. It
   shows the file's figures and computes none.
 
-## Reproducing every number
+## Your own layout
 
+A layout file describes a floor plan as a text grid, one character per square metre: `#` blocked,
+`.` floor, arrows for one-way floor, `S` storage, `T` station, `C` charger, `P` parking, `?` a
+candidate position ([format and rules](docs/LAYOUT_FROM_FLOOR_PLAN.md), D38). Examples are in
+[`layouts/examples/`](layouts/examples/).
+
+```powershell
+.venv\Scripts\python.exe -m amr_optimizer.layout check layouts\examples\l_hall.layout.json --robots 8
+.venv\Scripts\amr-sim.exe --map layouts\examples\l_hall.layout.json --robots 8 --traffic
+```
+
+- **Checked before it runs.** With traffic, a map is refused unless every endpoint is a dead end,
+  every place is reachable from every other, and there are enough holding spots for the fleet
+  (3N − 1 for N robots), with every violation named (D39).
+- **From a picture.** A documented procedure turns a floor plan image into a layout file, checked
+  by rendering the map over the plan (`scripts/render_layout.py`). It was measured blind on
+  synthetic plans only: exact on three clean ones, and on two of three degraded ones; the third had
+  6 wrong cells of 182 (D42). A transcription is an approximation, to be confirmed by a person.
+- **Where should stations go?** `python -m amr_optimizer.layout screen` ranks candidate slots by a
+  free-flow proxy and writes candidate layouts and a lab experiment (D43). The lab compares
+  layouts by seed (D41). On one synthetic hall, a pre-registered study found the proxy's choice
+  better than both controls in one of four conditions and inconclusive in the others
+  ([layout study](docs/LAYOUT_STUDY.md)).
+- **Real plans stay private:** `layouts/private/` is git-ignored, and nothing from a real site is
+  committed.
+
+## Reproducing every number
 | Result | Command (`.venv\Scripts\python.exe scripts\...`) | Run time on the development laptop | Recorded in |
 |---|---|---:|---|
 | Dijkstra vs A* | `compare_routing.py` | about 1 s | [benchmarks](docs/benchmarks.md#routing-dijkstra-vs-a-m1-re-run-2026-11-04) |
@@ -259,6 +289,10 @@ the file before the runs.
 | Plans through VDA 5050 messages | `vda5050_demo.py` | under 1 min | [benchmarks](docs/benchmarks.md#vda-5050-plans-executed-through-messages-phase-2-p5-2026-11-06) |
 | Direct paired contrasts, recovery intervals | `paired_contrasts.py` (reads the committed CSVs) | about 2 s | [benchmarks](docs/benchmarks.md#direct-paired-contrasts-and-recovery-intervals-reanalysis-2026-11-06) |
 | Figures and animation | `make_figures.py` | about 25 s | [docs/figures](docs/figures/) |
+| Cell size: 1.0 m against 0.5 m | `measure_cell_size.py` | about 8 s | [benchmarks](docs/benchmarks.md) |
+| Vision step scores | `score_transcription.py` (per plan) | not timed | [benchmarks](docs/benchmarks.md) |
+| Layout study: pilot | `pilot_capacity.py` (command in the study) | about 50 s | [layout study](docs/LAYOUT_STUDY.md) |
+| Layout study: runs and tau | `python -m amr_optimizer.lab` on the study's experiment, then `layout_study_tau.py` | about 2 min | [layout study](docs/LAYOUT_STUDY.md) |
 
 The comparison scripts run in parallel worker processes (`--jobs`, default 8). The KPIs don't depend
 on the machine or on parallelism. Run times and decision latencies do.
@@ -287,7 +321,8 @@ In short:
 - breakdowns are announced with their exact repair time, and closed aisles are not modelled;
 - the HTTP service is a local demonstration: no authentication, and jobs live in memory;
 - the VDA 5050 adapter is a mock: no broker, no real robots, one job per robot;
-- everything was evaluated on one synthetic map with uniform demand.
+- everything was evaluated on a few synthetic maps with uniform demand;
+- layouts are grids of 1 m cells, and reading a floor plan was measured on synthetic plans only.
 
 The full list is in [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 
@@ -299,6 +334,8 @@ The full list is in [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 - [Decisions](docs/DECISIONS.md): design decisions and their reasons
 - [Architecture](docs/ARCHITECTURE.md): modules, dependencies and modelling assumptions
 - [Limitations](docs/LIMITATIONS.md): what the engine does not model or prove
+- [From a floor plan to a layout](docs/LAYOUT_FROM_FLOOR_PLAN.md): the procedure and the file format
+- [Layout study](docs/LAYOUT_STUDY.md): the pre-registration and its results
 - [Roadmap](docs/ROADMAP.md): milestones, acceptance criteria and the Phase 2 backlog
 - [Progress log](docs/LEARNING_PROGRESS.md): what was built and verified, by session
 

@@ -228,7 +228,16 @@ limits in mind.
 ## Layouts from floor plans (Phase 3)
 
 - **A layout is a grid approximation of a building:** square cells of one size, axis-aligned, with
-  no curves or diagonal racks. The cell size is also the closest two robots can be (D23, D38).
+  no curves or diagonal racks. The cell size is also the closest two robots can be (D23, D38), and
+  a finer cell flatters capacity: at 0.5 m, completion was 5 to 6% faster only because robots may
+  follow half a metre apart (benchmarks).
+- **Synthetic plans only.** Every committed layout and plan image is invented. Real plans stay in
+  the git-ignored `layouts/private/`; none was used for any committed result.
+- **The station proxy depends on the demand model.** Because demand is uniform, it is separable
+  and rewards clustering. With skewed demand it would have to weight storage locations.
+- **The layout study is one hall, one fleet of 10, two loads and 20 seeds.** Nine of its twelve
+  primary tests were inconclusive; low-battery charging was rare, so it says little about charger
+  placement ([LAYOUT_STUDY.md](LAYOUT_STUDY.md)).
 - **The vision step is measured on six synthetic plans only.** Three clean plans were transcribed
   exactly, decoded from pixel values. Three degraded ones (rotated, blurred, noisy, at a non-integer
   scale), read from the image alone, gave two exact layouts and one with 6 wrong cells of 182 (a
@@ -238,9 +247,10 @@ limits in mind.
 
 ## Evaluation
 
-- **One map.** All comparisons use the generated large map (461 nodes, 6 stations): uniform demand,
-  retrieval orders from storage to stations. Other layouts, clustered demand and larger fleets are
-  untested.
+- **Few maps.** The benchmarks use the generated large map (461 nodes, 6 stations); the experiment
+  lab uses the medium and large presets; the layout study one synthetic 40 x 30 m hall. Demand is
+  uniform everywhere: retrieval orders from a uniformly random storage location to a uniformly
+  random station. Clustered demand (ABC classes, slotting) and larger fleets are untested.
 - **20 seeds per configuration.** Confidence intervals are reported; differences smaller than about a
   second, or a few seconds at high load, cannot be resolved. Worst-case values are means of per-run
   maxima.
