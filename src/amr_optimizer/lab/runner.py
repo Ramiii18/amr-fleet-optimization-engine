@@ -445,7 +445,9 @@ def report(
     d = experiment.disturbances
     layouts = experiment.compares_layouts
     first, mean = (
-        ("Family / policy / layout", "Layout") if layouts else ("Family / policy", "Policy")
+        ("Family / policy / layout vs reference", "Layout")
+        if layouts
+        else ("Family / policy", "Policy")
     )
     lines = [
         f"**{experiment.name}**: {len(experiment.seeds)} seeds, disturbances: {d.model}, "
@@ -457,9 +459,10 @@ def report(
         "|---|---|---:|---:|---|---|---|---:|---:|---:|---:|---|",
     ]
     for c in contrasts:
-        primary = c.kpi == experiment.primary_kpi
+        primary = c.holm_p is not None if layouts else c.kpi == experiment.primary_kpi
+        label = f"{c.variant} vs {c.baseline}" if layouts else c.variant
         lines.append(
-            f"| {c.variant} | {c.kpi}{' (primary)' if primary else ''} | {c.mean_variant:.1f} "
+            f"| {label} | {c.kpi}{' (primary)' if primary else ''} | {c.mean_variant:.1f} "
             f"| {c.mean_baseline:.1f} | {c.difference:+.1f} [{c.low:+.1f}, {c.high:+.1f}] "
             f"| [{c.bootstrap_low:+.1f}, {c.bootstrap_high:+.1f}] | {c.wins}-{c.losses}-{c.ties} "
             f"| {c.signed_rank_p:.3f} | {'' if c.holm_p is None else f'{c.holm_p:.3f}'} "

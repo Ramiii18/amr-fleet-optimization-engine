@@ -1,6 +1,7 @@
 # Layout study: pre-registration (Phase 3, L7)
 
-**Status: pre-registered on 2026-11-17, before any candidate layout was screened or simulated.**
+**Status: pre-registered on 2026-11-17 (`5bd94c6`), before any candidate layout was screened or
+simulated; run as registered the same day. Results: see [Results](#results-added-after-the-runs-2026-11-17).**
 Everything below is fixed by this commit. Anything decided after the runs will be labelled as
 added afterwards. The results will be added to this document in a later commit, whatever they are.
 
@@ -148,3 +149,151 @@ pre-registration, and the original analysis would still be reported.
   - "Throughput" is lower than the load at light load, because it counts the run until the last
     delivery.
   - Per-run rows are in `docs/results/layout_study_pilot.json`.
+
+---
+
+# Results (added after the runs, 2026-11-17)
+
+Everything below was computed after the pre-registration (`5bd94c6`) and follows it. Nothing above
+was changed.
+
+## What was run
+
+- **Screening:** the pre-registered command, run once at `5bd94c6`, unchanged. It wrote
+  `experiments/layout_study/candidates/` and stopped at no stopping case, because the spread set
+  differs from the top three.
+
+  | Layout | Station columns (dock wall) | Charger columns (opposite wall) | Station proxy, m per order | Charger proxy, m per trip |
+  |---|---|---|---:|---:|
+  | baseline | 4, 14, 24, 34 | 2, 5, 8 | 68.55 | 72.44 |
+  | proxy-1 | 16, 18, 20, 22 | 2, 20, 38 | 62.15 | 58.76 |
+  | proxy-2 | 18, 20, 22, 24 | 2, 20, 26 | 62.23 | 58.52 |
+  | proxy-3 | 16, 18, 20, 24 | 2, 20, 26 | 62.34 | 58.52 |
+  | spread | 2, 14, 26, 38 | 14, 26, 35 | 71.47 | 62.72 |
+
+  As expected of a separable proxy, the proxy clusters all four stations in adjacent slots in the
+  middle of the dock wall. The proxies of proxy-1 to proxy-3 lie within 0.2 m of each other.
+
+- **The experiment** took 120 s with 8 workers, at `5bd94c6`. Every run is in
+  `docs/results/layout_study.json`.
+
+  ```powershell
+  .venv\Scripts\python.exe -m amr_optimizer.lab experiments\layout_study\candidates\experiment.json `
+      --workers 8 --out docs\results\layout_study.json
+  ```
+
+## Checks
+
+- **Runs:** 400; with undelivered orders 0; with conflicts 0; longer than their disturbance
+  schedule 0.
+- **Pairing:** the pairing keys of the five layouts are equal for every family, policy and seed, so
+  the lab paired every run.
+
+## Primary tests: mean completion time, Holm over 12 tests, margin 5 s
+
+The reading follows the pre-registered rules.
+- **Better or worse:** the Holm-adjusted p is below 0.05 and the interval excludes zero.
+- **Equivalent:** the whole interval lies within ±5 s.
+- **Inconclusive:** otherwise.
+
+| Family | Policy | Contrast | Mean (s) | Reference mean (s) | Difference [95% t interval] | Wins-losses | Holm p | Reading |
+|---|---|---|---:|---:|---|---|---:|---|
+| moderate-10 | greedy | proxy-1 vs spread | 116.1 | 121.1 | -5.0 [-7.5, -2.5] | 16-4 | 0.005 | **better** |
+| moderate-10 | greedy | proxy-1 vs baseline | 116.1 | 122.1 | -6.0 [-9.1, -2.9] | 17-3 | 0.008 | **better** |
+| moderate-10 | greedy | spread vs baseline | 121.1 | 122.1 | -0.9 [-4.5, +2.7] | 10-10 | 1.000 | **equivalent** |
+| moderate-10 | cpsat-fair | proxy-1 vs spread | 116.7 | 119.1 | -2.5 [-5.9, +1.0] | 13-7 | 1.000 | inconclusive |
+| moderate-10 | cpsat-fair | proxy-1 vs baseline | 116.7 | 120.2 | -3.5 [-7.2, +0.2] | 13-7 | 0.656 | inconclusive |
+| moderate-10 | cpsat-fair | spread vs baseline | 119.1 | 120.2 | -1.0 [-5.5, +3.4] | 11-9 | 1.000 | inconclusive |
+| high-10 | greedy | proxy-1 vs spread | 144.9 | 145.1 | -0.3 [-19.3, +18.8] | 14-6 | 1.000 | inconclusive |
+| high-10 | greedy | proxy-1 vs baseline | 144.9 | 141.0 | +3.8 [-15.8, +23.5] | 16-4 | 1.000 | inconclusive |
+| high-10 | greedy | spread vs baseline | 145.1 | 141.0 | +4.1 [-2.6, +10.8] | 11-9 | 1.000 | inconclusive |
+| high-10 | cpsat-fair | proxy-1 vs spread | 131.9 | 131.6 | +0.3 [-10.9, +11.5] | 10-10 | 1.000 | inconclusive |
+| high-10 | cpsat-fair | proxy-1 vs baseline | 131.9 | 130.6 | +1.3 [-9.4, +12.1] | 15-5 | 1.000 | inconclusive |
+| high-10 | cpsat-fair | spread vs baseline | 131.6 | 130.6 | +1.1 [-8.4, +10.5] | 12-8 | 1.000 | inconclusive |
+
+**The answer to the question, per combination:**
+
+| Family | Policy | Proxy-best against spread | Proxy-best against baseline | Spread against baseline |
+|---|---|---|---|---|
+| moderate-10 | greedy | **holds** (better by 5.0 s) | better by 6.0 s | equivalent |
+| moderate-10 | cpsat-fair | inconclusive | inconclusive | inconclusive |
+| high-10 | greedy | inconclusive | inconclusive | inconclusive |
+| high-10 | cpsat-fair | inconclusive | inconclusive | inconclusive |
+
+- **The static proxy's choice holds in one of the four combinations:** moderate load with greedy
+  dispatch. There, the clustered stations beat both the spread control and the hand-made baseline
+  by 5 to 6 s (about 4 to 5%).
+- **In the other three, 20 seeds show no difference between any of the three placements.** The
+  proxy's choice is neither confirmed nor refuted there.
+  - At moderate load with `cpsat-fair`, the intervals are narrow (about ±4 s) and lean the same
+    way, but they do not clear zero after correction.
+  - At high load the intervals are wide (±7 to ±20 s), so differences of the size seen at moderate
+    load could not be resolved.
+- **Nowhere did the proxy's choice lose on the primary KPI.** The congestion that clustering might
+  cause did not show up in mean completion time in any combination.
+
+## Secondary: does the proxy rank the five layouts as the simulation does?
+
+Kendall's tau-b between the proxy ranking and the ranking by mean completion time, with a 95%
+percentile interval from 10,000 resamples of seeds. With five layouts this is descriptive only.
+
+```powershell
+.venv\Scripts\python.exe scripts\layout_study_tau.py docs\results\layout_study.json `
+    experiments\layout_study\candidates\screening.json
+```
+
+| Family | Policy | Layouts by proxy (best first) | Layouts by simulation (best first) | tau-b | 95% bootstrap interval |
+|---|---|---|---|---:|---|
+| moderate-10 | greedy | proxy-1 < proxy-2 < proxy-3 < baseline < spread | proxy-1 < proxy-3 < proxy-2 < spread < baseline | +0.60 | [+0.20, +0.80] |
+| moderate-10 | cpsat-fair | proxy-1 < proxy-2 < proxy-3 < baseline < spread | proxy-3 < proxy-2 < proxy-1 < spread < baseline | +0.20 | [+0.00, +0.60] |
+| high-10 | greedy | proxy-1 < proxy-2 < proxy-3 < baseline < spread | proxy-3 < proxy-2 < baseline < proxy-1 < spread | +0.20 | [-0.20, +0.80] |
+| high-10 | cpsat-fair | proxy-1 < proxy-2 < proxy-3 < baseline < spread | proxy-3 < baseline < proxy-2 < spread < proxy-1 | -0.20 | [-0.60, +0.60] |
+
+- **The rankings broadly agree only at moderate load with greedy dispatch** (+0.60). Elsewhere the
+  rank correlation is weak or negative, and every interval is wide.
+- **The proxy separates its own top three by 0.2 m per order,** far below what the simulation can
+  resolve, so their order in the simulated ranking is noise. Much of tau is that noise.
+
+## Exploratory (not corrected; post hoc where it explains)
+
+All of these come from `docs/results/layout_study.json`, through the lab's report.
+
+- **proxy-3 against baseline:** better in 3 of 4 combinations by the lab's interval verdict,
+  without correction:
+  - moderate, greedy: -5.9 s [-9.5, -2.3];
+  - moderate, `cpsat-fair`: -6.0 s [-10.0, -2.1];
+  - high, greedy: -8.5 s [-15.8, -1.2];
+  - high, `cpsat-fair`: -8.2 s [-17.1, +0.7], which is inconclusive.
+
+  proxy-3 keeps one station apart from the other three (columns 16, 18, 20, 24). It was not a
+  primary test, and its proxy differs from proxy-1's by 0.2 m.
+- **The worst case is longer with clustered stations at moderate load.** proxy-1 against baseline,
+  `completion_max_s`, without correction:
+  - greedy: +37.1 s [+4.0, +70.2];
+  - `cpsat-fair`: +48.4 s [+1.6, +95.1].
+
+  This fits the expectation that clustered stations congest. But the rows do not record queueing
+  per station, so the cause is not established. At high load the same difference is inconclusive.
+- **Charging was mostly topping up.**
+  - Robots made about 32 opportunistic top-ups per run but only 0.44 trips because a battery ran
+    low.
+  - Waits for a charger occurred in 10 of 400 runs, at most 3.8 s on average for any layout.
+  - Time out of service averaged at most 3.3% per layout, and reached 14.7% in a single run.
+  - The exploratory charger KPIs show no clear difference between layouts, so **this study gives
+    little evidence about charger placement**, even though the chargers differed in every
+    candidate.
+
+## What this shows, and what it does not
+
+- **One synthetic hall, one fleet size, two loads, 20 seeds.** The answer holds for this hall and
+  these conditions only.
+- **The headline:** on this hall the cheap static proxy picked a station placement that was never
+  worse in mean completion time than the spread control or the hand-made baseline, and was better
+  by 5 to 6 s at moderate load under greedy dispatch. Elsewhere, 20 seeds could not tell the
+  placements apart. Clustering showed its cost only in the worst case at moderate load, and only
+  in exploratory tests.
+- **Charger placement is barely informed by this study:** low-battery charging was rare, and the
+  charger KPIs show no clear difference.
+- **The generated experiment file names the baseline with a Windows path**
+  (`..\..\..\layouts\study\baseline.layout.json`), as the screening command was given it. It runs
+  on Windows; on Linux the path would need forward slashes.

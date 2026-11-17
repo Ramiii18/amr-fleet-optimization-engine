@@ -1190,3 +1190,21 @@ it sets the study's loads by a rule fixed in advance. Command, table and rule:
 [the pre-registration](LAYOUT_STUDY.md), section "The pilot that set the loads". Capacity
 C = 224.0 orders/h (`cpsat-fair` at 400 orders/h); families at 130 and 190 orders/h; all 60 runs
 delivered every order. Per-run rows: `docs/results/layout_study_pilot.json`.
+
+## Layout study: screened placements against a hand-made baseline (Phase 3, L7, 2026-11-17)
+
+Pre-registered at `5bd94c6` and run as registered (400 runs, 120 s, 8 workers). Full tables, the
+screening output, Kendall's tau and the exploratory results:
+[docs/LAYOUT_STUDY.md](LAYOUT_STUDY.md), "Results". Rows: `docs/results/layout_study.json`.
+
+- **Checks:** every run delivered every order, with 0 conflicts and none longer than its schedule;
+  every run was paired.
+- **Primary tests** (mean completion, Holm over 12, margin 5 s):
+  - At moderate load with greedy dispatch, proxy-1 (four clustered stations) beat the spread
+    control by -5.0 s [-7.5, -2.5] (Holm p 0.005) and the baseline by -6.0 s [-9.1, -2.9] (Holm p
+    0.008); spread and baseline were equivalent.
+  - The other nine tests are inconclusive.
+- **Secondary, tau-b between proxy and simulated ranking:** +0.60 [+0.20, +0.80], +0.20, +0.20 and
+  -0.20 across the four family and policy combinations.
+- **Exploratory:** clustered stations had a longer worst case at moderate load (+37 and +48 s,
+  uncorrected).

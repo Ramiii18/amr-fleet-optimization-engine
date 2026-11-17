@@ -1,0 +1,167 @@
+{
+  "base": "hall.base.layout.json",
+  "candidates": [
+    {
+      "name": "baseline",
+      "file": "..\\..\\..\\layouts\\study\\baseline.layout.json",
+      "station_round_trip_m": 68.545,
+      "charger_trip_m": 72.435
+    },
+    {
+      "name": "proxy-1",
+      "file": "proxy-1.layout.json",
+      "stations": [
+        [
+          28,
+          16
+        ],
+        [
+          28,
+          18
+        ],
+        [
+          28,
+          20
+        ],
+        [
+          28,
+          22
+        ]
+      ],
+      "chargers": [
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          20
+        ],
+        [
+          1,
+          38
+        ]
+      ],
+      "station_round_trip_m": 62.145,
+      "charger_trip_m": 58.755,
+      "smallest_station_gap_m": 8.0
+    },
+    {
+      "name": "proxy-2",
+      "file": "proxy-2.layout.json",
+      "stations": [
+        [
+          28,
+          18
+        ],
+        [
+          28,
+          20
+        ],
+        [
+          28,
+          22
+        ],
+        [
+          28,
+          24
+        ]
+      ],
+      "chargers": [
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          20
+        ],
+        [
+          1,
+          26
+        ]
+      ],
+      "station_round_trip_m": 62.225,
+      "charger_trip_m": 58.515,
+      "smallest_station_gap_m": 8.0
+    },
+    {
+      "name": "proxy-3",
+      "file": "proxy-3.layout.json",
+      "stations": [
+        [
+          28,
+          16
+        ],
+        [
+          28,
+          18
+        ],
+        [
+          28,
+          20
+        ],
+        [
+          28,
+          24
+        ]
+      ],
+      "chargers": [
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          20
+        ],
+        [
+          1,
+          26
+        ]
+      ],
+      "station_round_trip_m": 62.345,
+      "charger_trip_m": 58.515,
+      "smallest_station_gap_m": 8.0
+    },
+    {
+      "name": "spread",
+      "file": "spread.layout.json",
+      "stations": [
+        [
+          28,
+          2
+        ],
+        [
+          28,
+          14
+        ],
+        [
+          28,
+          26
+        ],
+        [
+          28,
+          38
+        ]
+      ],
+      "chargers": [
+        [
+          1,
+          14
+        ],
+        [
+          1,
+          26
+        ],
+        [
+          1,
+          35
+        ]
+      ],
+      "station_round_trip_m": 71.465,
+      "charger_trip_m": 62.715,
+      "smallest_station_gap_m": 28.0
+    }
+  ]
+}

@@ -164,7 +164,7 @@ def test_layouts_are_compared_per_policy_paired_by_seed(folder: Path) -> None:
     assert other.kpi == "completion_max_s"
     results = results_to_dict(experiment, rows, [primary, other], commit=None)
     assert results["version"] == 2
-    assert "| Family / policy / layout | KPI | Layout | Baseline |" in report(
+    assert "| Family / policy / layout vs reference | KPI | Layout | Baseline |" in report(
         experiment, rows, [primary, other]
     )
 
@@ -378,3 +378,21 @@ def test_contrasts_need_a_layout_comparison() -> None:
     data["contrasts"] = [["a", "b"]]
     with pytest.raises(ExperimentValidationError, match="need a layout comparison"):
         experiment_from_dict(data)
+
+
+def test_the_report_names_each_reference(folder: Path) -> None:
+    save_layout(OTHER, folder / "other.layout.json")
+    data = layout_experiment(
+        layouts=[
+            {"name": "baseline", "map": "baseline.layout.json"},
+            {"name": "moved", "map": "moved.layout.json"},
+            {"name": "other", "map": "other.layout.json"},
+        ],
+        contrasts=[["moved", "other"]],
+        seeds=[0, 1],
+    )
+    experiment = experiment_from_dict(data, base_dir=folder)
+    rows = run_experiment(experiment)
+    text = report(experiment, rows, analyse(experiment, rows))
+    assert "| hall-4/greedy/moved vs other | completion_mean_s (primary) |" in text
+    assert "| hall-4/greedy/moved vs baseline | completion_mean_s |" in text  # exploratory

@@ -744,7 +744,7 @@ importer; the aisle-direction search is decided after L7.
 | **L3b** | Layout comparisons in the lab: experiment version 2, pairing across layouts, a battery block (D41) | Cross-layout pairing test; version 1 files unchanged | **Done** |
 | **L4** | Vision step: procedure, render and synthetic-plan scripts, 3 ground truths, a blind transcription, scores (D42) | Deterministic scripts; scores and the KPI gap between truth and transcription recorded as measured | **Done** |
 | **L6** | Static screening: round-trip station proxy, a spread control, CP-SAT p-median for chargers, candidates and an experiment file (D43) | CP-SAT equals brute force on at least 200 small instances; candidates fully assigned and well formed; deterministic | **Done** |
-| **L7** | The study on a synthetic L-shaped hall: pre-registration commit, then the runs | All delivered, 0 conflicts; contrasts, Holm p, Kendall's tau with its interval and the explanation recorded verbatim | Pre-registered ([plan](LAYOUT_STUDY.md)); not run |
+| **L7** | The study on a synthetic L-shaped hall: pre-registration commit, then the runs | All delivered, 0 conflicts; contrasts, Holm p, Kendall's tau with its interval and the explanation recorded verbatim | **Done** (pre-registered `5bd94c6`, run as registered; [results](LAYOUT_STUDY.md)) |
 | **L8** | (optional, decided after L7) Search over one-way aisle directions | Strong connectivity asserted; deterministic and capped | Not decided |
 | **L9** | Closing docs: README, algorithms section 21, limitations, architecture, overview | Docs link test; every number traced to a script and a run | Not started |
 ## Phase 2 backlog (unordered)
