@@ -95,6 +95,11 @@ assigned) is a node; neighbours share an edge only up, down, left and right.
    .venv\Scripts\python.exe -m amr_optimizer.layout check <name>.layout.json --robots 6
    ```
 
+   When the checker refuses a cell, look at the plan again at that place before changing the
+   grid: the refusal usually points at a misread neighbour. Never block or unblock a cell only to
+   satisfy the checker. (This comes from the second round's plain hall, where a rack end read as
+   floor was "repaired" by blocking two rack bays; it is untested guidance.)
+
 5. **Render and compare.** Measure the plan's scale in pixels per metre from its scale bar, and the
    pixel of the building's outer top-left corner. Then:
 
