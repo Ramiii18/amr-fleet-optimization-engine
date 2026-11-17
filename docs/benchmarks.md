@@ -1182,3 +1182,11 @@ one corrected render for the origin of the straightened image.
 - **Still not shown:** scanned or photographed plans, CAD exports with dense text, hand sketches,
   plans that do not sit on a whole-metre module, and repeat transcriptions of one plan. Three plans
   and one transcription each do not give an error rate.
+
+## Layout study: the capacity pilot (Phase 3, L7, 2026-11-17)
+
+The baseline of the study hall only, on pilot seeds 100 to 104, under the study's own conditions;
+it sets the study's loads by a rule fixed in advance. Command, table and rule:
+[the pre-registration](LAYOUT_STUDY.md), section "The pilot that set the loads". Capacity
+C = 224.0 orders/h (`cpsat-fair` at 400 orders/h); families at 130 and 190 orders/h; all 60 runs
+delivered every order. Per-run rows: `docs/results/layout_study_pilot.json`.
