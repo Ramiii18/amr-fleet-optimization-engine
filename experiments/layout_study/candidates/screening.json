@@ -3,7 +3,7 @@
   "candidates": [
     {
       "name": "baseline",
-      "file": "..\\..\\..\\layouts\\study\\baseline.layout.json",
+      "file": "../../../layouts/study/baseline.layout.json",
       "station_round_trip_m": 68.545,
       "charger_trip_m": 72.435
     },

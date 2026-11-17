@@ -266,3 +266,22 @@ def test_slot_roles_keep_stations_and_chargers_apart() -> None:
         screen(BASE, stations=7, chargers=0, top=1, station_slots=station_slots)
     with pytest.raises(ScreeningError, match="charger slots"):
         screen(BASE, stations=1, chargers=6, top=1, charger_slots=charger_slots)
+
+
+@pytest.mark.parametrize(
+    ("given", "written"),
+    [
+        (
+            "..\\..\\..\\layouts\\study\\baseline.layout.json",
+            "../../../layouts/study/baseline.layout.json",
+        ),
+        ("../hand.layout.json", "../hand.layout.json"),
+        ("hand.layout.json", "hand.layout.json"),
+    ],
+)
+def test_experiment_paths_use_forward_slashes_on_every_os(given: str, written: str) -> None:
+    experiment = experiment_for({"proxy-1": "sub\\proxy-1.layout.json"}, given, {"name": "x"})
+    layouts = experiment["layouts"]
+    assert isinstance(layouts, list)
+    maps = [layout["map"] for layout in layouts]
+    assert maps == [written, "sub/proxy-1.layout.json"]

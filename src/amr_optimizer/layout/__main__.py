@@ -27,6 +27,7 @@ from amr_optimizer.layout.io import load_layout, load_map_file
 from amr_optimizer.layout.screening import (
     ScreeningError,
     experiment_for,
+    portable_path,
     proxies,
     screen,
     write_candidates,
@@ -133,7 +134,7 @@ def _screen(args: argparse.Namespace) -> int:
                 0,
                 {
                     "name": "baseline",
-                    "file": args.baseline,
+                    "file": portable_path(args.baseline),
                     "station_round_trip_m": round(measured.station_round_trip_m, 6),
                     "charger_trip_m": round(measured.charger_trip_m, 6),
                 },

@@ -84,7 +84,7 @@
   "layouts": [
     {
       "name": "baseline",
-      "map": "..\\..\\..\\layouts\\study\\baseline.layout.json"
+      "map": "../../../layouts/study/baseline.layout.json"
     },
     {
       "name": "proxy-1",

@@ -157,6 +157,12 @@ pre-registration, and the original analysis would still be reported.
 Everything below was computed after the pre-registration (`5bd94c6`) and follows it. Nothing above
 was changed.
 
+**Post-registration fix (path format only):** the experiment file first named the baseline with
+Windows separators; the writer now uses forward slashes on every OS, and the same pre-registered
+command regenerated `experiment.json` and `screening.json` with only that line changed. A re-run
+reproduced every row and analysis value of `docs/results/layout_study.json` (0 of 17,300 differ).
+No setting or result changed.
+
 ## What was run
 
 - **Screening:** the pre-registered command, run once at `5bd94c6`, unchanged. It wrote

@@ -44,7 +44,7 @@ import itertools
 import math
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from ortools.sat.python import cp_model
 
@@ -263,6 +263,12 @@ def proxies(layout: Layout) -> Proxies:
     return Proxies(sum(round_trips) / len(round_trips), charger_trip)
 
 
+def portable_path(path: str) -> str:
+    """``path`` with forward slashes, whatever the operating system: an experiment file written on
+    Windows must also run on Linux. Backslashes are read as separators on every OS."""
+    return PureWindowsPath(path).as_posix()
+
+
 def experiment_for(
     candidates: Mapping[str, str], baseline: str, template: Mapping[str, object]
 ) -> dict[str, object]:
@@ -272,8 +278,8 @@ def experiment_for(
     for field in ("layouts", "baseline", "format", "version"):
         if field in template:
             raise ScreeningError(f"the template must not set {field!r}: screening writes it")
-    layouts = [{"name": "baseline", "map": baseline}]
-    layouts += [{"name": name, "map": path} for name, path in candidates.items()]
+    layouts = [{"name": "baseline", "map": portable_path(baseline)}]
+    layouts += [{"name": name, "map": portable_path(path)} for name, path in candidates.items()]
     return {
         "format": "amr-experiment",
         "version": 2,
