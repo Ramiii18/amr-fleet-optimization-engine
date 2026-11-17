@@ -19,10 +19,11 @@ from dataclasses import asdict
 from pathlib import Path
 
 from amr_optimizer.dispatch import POLICIES
+from amr_optimizer.domain import ChargingPolicy
 from amr_optimizer.lab.analysis import Contrast, holm, paired_contrast
-from amr_optimizer.lab.experiment import KPI_NAMES, Disturbances, Experiment, Family
+from amr_optimizer.lab.experiment import KPI_NAMES, Battery, Disturbances, Experiment, Family
 from amr_optimizer.layout import load_map_file, require_well_formed
-from amr_optimizer.metrics import compute_kpis
+from amr_optimizer.metrics import compute_charging_kpis, compute_kpis
 from amr_optimizer.scenario import Scenario, ScenarioSpec, generate_scenario
 from amr_optimizer.sim import RobotEventKind, simulate
 from amr_optimizer.traffic import (
@@ -34,7 +35,13 @@ from amr_optimizer.traffic import (
     fingerprint,
     generate_disturbances,
 )
-from amr_optimizer.warehouse import PRESETS, WarehouseGraph, generate_grid_warehouse
+from amr_optimizer.warehouse import (
+    PRESETS,
+    NodeId,
+    NodeKind,
+    WarehouseGraph,
+    generate_grid_warehouse,
+)
 from amr_optimizer.warehouse.io import graph_to_dict
 
 RESULTS_FORMAT = "amr-experiment-results"
@@ -78,11 +85,55 @@ def map_hash(graph: WarehouseGraph) -> str:
     return fingerprint(graph_to_dict(graph))
 
 
+def _place(graph: WarehouseGraph, node: NodeId) -> str:
+    """A node as candidate layouts share it: floor cells and storage by id (the same in every
+    candidate, D38), stations, chargers and parking by kind and rank (their cells may move)."""
+    kind = graph.node(node).kind
+    if kind in (NodeKind.INTERSECTION, NodeKind.STORAGE):
+        return node
+    ranked = sorted(n.id for n in graph.nodes_of_kind(kind))
+    return f"{kind.value}#{ranked.index(node)}"
+
+
+def pairing_key(scenario: Scenario, conditions: object, *extra: object) -> str:
+    """A hash of what two layouts of one replication should share (D41): the orders by release
+    tick, storage location and station rank; the robots by id and start; and the disturbances
+    on the floor and at storage. Equal keys mean that runs on two layouts can be paired."""
+    graph = scenario.graph
+    shared = conditions
+    if isinstance(conditions, dict) and "delay_episodes" in conditions:
+        fixed = {NodeKind.INTERSECTION, NodeKind.STORAGE}
+        shared = conditions | {
+            "delay_episodes": [
+                episode
+                for episode in conditions["delay_episodes"]
+                if {graph.node(episode[0]).kind, graph.node(episode[1]).kind} <= fixed
+            ]
+        }
+    return fingerprint(
+        [
+            [o.id, o.release_tick, _place(graph, o.pickup), _place(graph, o.dropoff)]
+            for o in scenario.orders
+        ],
+        [[r.robot_id, _place(graph, r.node)] for r in scenario.robots],
+        shared,
+        *extra,
+    )
+
+
 def run_one(
-    family: Family, d: Disturbances, seed: int, policy: str, source: str | Path | None = None
+    family: Family,
+    d: Disturbances,
+    seed: int,
+    policy: str,
+    source: str | Path | None = None,
+    *,
+    layout: str | None = None,
+    battery: Battery | None = None,
 ) -> Row:
     """One run: ``policy`` on replication ``seed`` of ``family``, whose map is ``source`` (by
-    default the family's ``map``, which must then be a preset or an absolute path)."""
+    default the family's ``map``, which must then be a preset or an absolute path). ``layout``
+    names the layout the map belongs to, in an experiment that compares layouts."""
     spec = ScenarioSpec(
         robots=family.robots, orders_per_hour=family.orders_per_hour, duration_s=family.duration_s
     )
@@ -115,6 +166,9 @@ def run_one(
         breakdown_seed=seed,
         recovery=Recovery(d.recovery) if broken else Recovery.WAIT,
         disturbances=schedule,
+        battery=None if battery is None else battery.spec(),
+        battery_seed=seed,
+        charging=ChargingPolicy.WHEN_LOW if battery is None else ChargingPolicy(battery.charging),
     )
     kpis = asdict(compute_kpis(result))
     events = result.robot_events
@@ -122,17 +176,27 @@ def run_one(
     scheduled = None
     if schedule is not None:
         scheduled = sum(b.tick <= result.end_tick for b in schedule.breakdowns)
-    return {
-        "family": family.name,
+    # A battery is part of the conditions; without one the fingerprint is as it always was.
+    extra = () if battery is None else ({"battery": asdict(battery), "seed": seed},)
+    row: Row = {"family": family.name}
+    if layout is not None:
+        row["layout"] = layout
+    row |= {
         "seed": seed,
         "policy": policy,
         "fingerprint": fingerprint(
             [[o.id, o.release_tick, o.pickup, o.dropoff] for o in scenario.orders],
             [[r.robot_id, r.node] for r in scenario.robots],
             conditions,
+            *extra,
         ),
         "map_hash": map_hash(graph),
+        "pairing": pairing_key(scenario, conditions, *extra),
         **{name: kpis[name] for name in KPI_NAMES},
+    }
+    if battery is not None:
+        row |= asdict(compute_charging_kpis(result))
+    return row | {
         "all_delivered": result.all_delivered,
         "end_tick": result.end_tick,
         "delays": len(delay_events),
@@ -147,19 +211,40 @@ def run_one(
     }
 
 
-def _run(args: tuple[Family, Disturbances, int, str, str | Path]) -> Row:
-    return run_one(*args)
+Job = tuple[Family, Disturbances, int, str, str | Path, str | None, Battery | None]
+
+
+def _run(job: Job) -> Row:
+    family, d, seed, policy, source, layout, battery = job
+    return run_one(family, d, seed, policy, source, layout=layout, battery=battery)
+
+
+def _maps(experiment: Experiment) -> list[tuple[Family, str | None, str | Path]]:
+    """Every (family, layout name, map source) of ``experiment``, in run order."""
+    if experiment.compares_layouts:
+        return [
+            (family, layout.name, experiment.layout_source(layout))
+            for family in experiment.families
+            for layout in experiment.layouts
+        ]
+    return [(family, None, experiment.map_source(family)) for family in experiment.families]
 
 
 def run_experiment(experiment: Experiment, *, workers: int = 1) -> list[Row]:
-    """Every run of ``experiment``, in the order family, seed, policy. With ``workers`` > 1 the
-    runs are spread over that many processes; the rows are the same."""
-    sources = {family.name: experiment.map_source(family) for family in experiment.families}
-    for family in experiment.families:  # refuse an unfit map before any run (D39)
-        require_well_formed(family_graph(sources[family.name]), robots=family.robots)
-    jobs = [
-        (family, experiment.disturbances, seed, policy, sources[family.name])
-        for family in experiment.families
+    """Every run of ``experiment``, in the order family, layout (if it compares layouts), seed,
+    policy. With ``workers`` > 1 the runs are spread over that many processes; the rows are the
+    same."""
+    maps = _maps(experiment)
+    battery = experiment.battery
+    for family, _, source in maps:  # refuse an unfit map before any run (D39)
+        require_well_formed(
+            family_graph(source),
+            robots=family.robots,
+            battery=None if battery is None else battery.spec(),
+        )
+    jobs: list[Job] = [
+        (family, experiment.disturbances, seed, policy, source, layout, battery)
+        for family, layout, source in maps
         for seed in experiment.seeds
         for policy in experiment.policies
     ]
@@ -176,7 +261,13 @@ class UnpairedRunsError(ValueError):
 def analyse(experiment: Experiment, rows: Sequence[Mapping[str, object]]) -> list[Contrast]:
     """For every family, every policy against the baseline on every KPI. The primary KPI's
     tests carry a Holm-adjusted p-value over all families and policies; the rest is
-    exploratory. Raises `UnpairedRunsError` if the runs of a seed differ in fingerprint."""
+    exploratory. Raises `UnpairedRunsError` if the runs of a seed differ in fingerprint.
+
+    In an experiment that compares layouts: for every family and policy, every layout against
+    the baseline layout, paired by seed. The runs of one seed must then share their pairing key
+    across layouts (D41), and their fingerprint across policies on one layout."""
+    if experiment.compares_layouts:
+        return _with_holm(experiment, _layout_contrasts(experiment, rows))
     by_key = {(str(r["family"]), int(str(r["seed"])), str(r["policy"])): r for r in rows}
     contrasts: list[Contrast] = []
     rng = random.Random(0)
@@ -214,6 +305,75 @@ def analyse(experiment: Experiment, rows: Sequence[Mapping[str, object]]) -> lis
                         rng=rng,
                     )
                 )
+    return _with_holm(experiment, contrasts)
+
+
+def _layout_contrasts(
+    experiment: Experiment, rows: Sequence[Mapping[str, object]]
+) -> list[Contrast]:
+    by_key = {
+        (str(r["family"]), str(r["layout"]), int(str(r["seed"])), str(r["policy"])): r for r in rows
+    }
+    layouts = [layout.name for layout in experiment.layouts]
+
+    def row(family: str, layout: str, seed: int, policy: str) -> Mapping[str, object]:
+        try:
+            return by_key[family, layout, seed, policy]
+        except KeyError:
+            raise UnpairedRunsError(f"no run for {(family, layout, seed, policy)}") from None
+
+    for family in experiment.families:
+        for seed in experiment.seeds:
+            for layout in layouts:
+                prints = {
+                    row(family.name, layout, seed, p)["fingerprint"] for p in experiment.policies
+                }
+                if len(prints) != 1:
+                    raise UnpairedRunsError(
+                        f"family {family.name!r}, layout {layout!r}, seed {seed}: the policies "
+                        "faced different conditions"
+                    )
+            for policy in experiment.policies:
+                keys = {row(family.name, layout, seed, policy)["pairing"] for layout in layouts}
+                if len(keys) != 1:
+                    raise UnpairedRunsError(
+                        f"family {family.name!r}, seed {seed}, policy {policy!r}: the layouts "
+                        "faced different conditions (their pairing keys differ: orders, starts "
+                        "or disturbances are not the same by index)"
+                    )
+    contrasts: list[Contrast] = []
+    rng = random.Random(0)
+    for family in experiment.families:
+        for policy in experiment.policies:
+            for layout in layouts:
+                if layout == experiment.baseline:
+                    continue
+                for kpi in (experiment.primary_kpi, *experiment.kpis):
+                    values, base = (
+                        [
+                            float(str(row(family.name, name, s, policy)[kpi]))
+                            for s in experiment.seeds
+                        ]
+                        for name in (layout, experiment.baseline)
+                    )
+                    contrasts.append(
+                        paired_contrast(
+                            kpi,
+                            f"{family.name}/{policy}/{layout}",
+                            experiment.baseline,
+                            values,
+                            base,
+                            margin=experiment.margin if kpi == experiment.primary_kpi else 0.0,
+                            confidence=experiment.confidence,
+                            resamples=experiment.resamples,
+                            rng=rng,
+                        )
+                    )
+    return contrasts
+
+
+def _with_holm(experiment: Experiment, contrasts: list[Contrast]) -> list[Contrast]:
+    """The primary KPI's tests with Holm-adjusted p-values over all of them."""
     primary = [i for i, c in enumerate(contrasts) if c.kpi == experiment.primary_kpi]
     if all(not math.isnan(contrasts[i].p_value) for i in primary):
         adjusted = holm([contrasts[i].p_value for i in primary])
@@ -233,7 +393,8 @@ def results_to_dict(
     """Everything needed to check or repeat the experiment: its file, every run, the analysis."""
     return {
         "format": RESULTS_FORMAT,
-        "version": RESULTS_VERSION,
+        # Version 2 for layout comparisons: their variants name a layout too (family/policy/layout).
+        "version": 2 if experiment.compares_layouts else RESULTS_VERSION,
         "source": "Synthetic simulation output of the AMR Fleet Optimization Engine.",
         "commit": commit,
         "experiment": experiment.to_dict(),
@@ -262,12 +423,16 @@ def report(
 ) -> str:
     """The analysis as Markdown tables."""
     d = experiment.disturbances
+    layouts = experiment.compares_layouts
+    first, mean = (
+        ("Family / policy / layout", "Layout") if layouts else ("Family / policy", "Policy")
+    )
     lines = [
         f"**{experiment.name}**: {len(experiment.seeds)} seeds, disturbances: {d.model}, "
         f"baseline {experiment.baseline}, primary KPI {experiment.primary_kpi}, "
         f"margin {experiment.margin:g}, {experiment.confidence:.0%} intervals.",
         "",
-        "| Family / policy | KPI | Policy | Baseline | Difference [t interval] | Bootstrap | "
+        f"| {first} | KPI | {mean} | Baseline | Difference [t interval] | Bootstrap | "
         "Wins-losses-ties | Signed-rank p | Holm p | Correlation | Variance ratio | Verdict |",
         "|---|---|---:|---:|---|---|---|---:|---:|---:|---:|---|",
     ]

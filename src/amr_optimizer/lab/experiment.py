@@ -30,6 +30,15 @@
 - The **primary KPI** and the **margin** are stated here, before any run. The primary tests
   are corrected for multiple comparisons; the other KPIs are exploratory.
 
+**Version 2** (D41) adds two optional parts; a file without them is written as version 1.
+
+- ``layouts``: ``[{"name": "baseline", "map": "hall.layout.json"}, ...]``. The experiment then
+  compares **layouts**, not policies: families give the fleet and load but no map, ``baseline``
+  names a layout, and each policy (one or more) is compared across layouts, paired by seed.
+- ``battery``: ``{"charging": "opportunistic", "capacity_m": 3600.0, ...}`` (the fields of
+  `BatterySpec`, all optional). Robots run on batteries (D26, D27), the map must have a charger,
+  and the charging KPIs may be named as KPIs.
+
 Parsing is strict, like scenario and trace files: an unknown, missing or mistyped field is an
 error that names its place.
 """
@@ -40,14 +49,19 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from amr_optimizer.dispatch import POLICIES
-from amr_optimizer.metrics import RunKpis
+from amr_optimizer.domain import BatterySpec, ChargingPolicy
+from amr_optimizer.metrics import ChargingKpis, RunKpis
 from amr_optimizer.traffic import Recovery
 from amr_optimizer.warehouse import PRESETS
 
 FORMAT_NAME = "amr-experiment"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+"""The newest version; version 1 files are read too, and written back as version 1."""
 MODELS = ("none", "independent", "schedule")
 KPI_NAMES = tuple(f.name for f in fields(RunKpis) if f.type in (float, int, "float", "int"))
+CHARGING_KPI_NAMES = tuple(
+    f.name for f in fields(ChargingKpis) if f.type in (float, int, "float", "int")
+)
 
 
 class ExperimentValidationError(ValueError):
@@ -61,6 +75,40 @@ class Family:
     robots: int
     orders_per_hour: float
     duration_s: float
+
+
+@dataclass(frozen=True, slots=True)
+class LayoutChoice:
+    """One of the layouts an experiment compares: a name and a map or layout file."""
+
+    name: str
+    map: str
+
+
+_DEFAULT_BATTERY = BatterySpec()
+
+
+@dataclass(frozen=True, slots=True)
+class Battery:
+    """The battery of every robot, and when robots charge (D26, D27)."""
+
+    charging: str = ChargingPolicy.OPPORTUNISTIC.value
+    capacity_m: float = _DEFAULT_BATTERY.capacity_m
+    full_charge_s: float = _DEFAULT_BATTERY.full_charge_s
+    low_share: float = _DEFAULT_BATTERY.low_share
+    high_share: float = _DEFAULT_BATTERY.high_share
+    start_min_share: float = _DEFAULT_BATTERY.start_min_share
+    start_max_share: float = _DEFAULT_BATTERY.start_max_share
+
+    def spec(self) -> BatterySpec:
+        return BatterySpec(
+            self.capacity_m,
+            self.full_charge_s,
+            self.low_share,
+            self.high_share,
+            self.start_min_share,
+            self.start_max_share,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,14 +139,30 @@ class Experiment:
     margin: float = 0.0
     confidence: float = 0.95
     resamples: int = 10_000
+    layouts: tuple[LayoutChoice, ...] = ()
+    battery: Battery | None = None
     base_dir: Path | None = field(default=None, compare=False)
     """Where relative map paths start: the experiment file's folder. Not part of the file."""
 
+    @property
+    def compares_layouts(self) -> bool:
+        return bool(self.layouts)
+
+    @property
+    def version(self) -> int:
+        return 2 if self.layouts or self.battery is not None else 1
+
     def map_source(self, family: Family) -> str | Path:
         """A preset name, or the path of the family's map or layout file."""
-        if family.map in PRESETS:
-            return family.map
-        path = Path(family.map)
+        return self._source(family.map)
+
+    def layout_source(self, layout: LayoutChoice) -> str | Path:
+        return self._source(layout.map)
+
+    def _source(self, name: str) -> str | Path:
+        if name in PRESETS:
+            return name
+        path = Path(name)
         return path if path.is_absolute() or self.base_dir is None else self.base_dir / path
 
     def __post_init__(self) -> None:
@@ -111,25 +175,41 @@ class Experiment:
             raise fail("family names must differ")
         if len(set(self.seeds)) != len(self.seeds) or any(seed < 0 for seed in self.seeds):
             raise fail("seeds must be distinct and non-negative")
-        if len(self.policies) < 2 or len(set(self.policies)) != len(self.policies):
-            raise fail("needs at least two distinct policies")
+        least = 1 if self.compares_layouts else 2
+        if len(self.policies) < least or len(set(self.policies)) != len(self.policies):
+            raise fail(f"needs at least {'one' if least == 1 else 'two'} distinct policies")
         for policy in self.policies:
             if policy not in POLICIES:
                 raise fail(f"unknown policy {policy!r}; known: {sorted(POLICIES)}")
-        if self.baseline not in self.policies:
+        if self.compares_layouts:
+            names = [layout.name for layout in self.layouts]
+            if len(names) < 2 or len(set(names)) != len(names):
+                raise fail("needs at least two layouts with distinct names")
+            if self.baseline not in names:
+                raise fail(f"the baseline {self.baseline!r} is not among the layouts")
+            for layout in self.layouts:
+                self._check_map(f"layout {layout.name!r}", layout.map)
+        elif self.baseline not in self.policies:
             raise fail(f"the baseline {self.baseline!r} is not among the policies")
+        known = KPI_NAMES + (CHARGING_KPI_NAMES if self.battery is not None else ())
         for kpi in (self.primary_kpi, *self.kpis):
-            if kpi not in KPI_NAMES:
-                raise fail(f"unknown KPI {kpi!r}; known: {list(KPI_NAMES)}")
+            if kpi not in known:
+                raise fail(f"unknown KPI {kpi!r}; known: {list(known)}")
         if self.primary_kpi in self.kpis or len(set(self.kpis)) != len(self.kpis):
             raise fail("each KPI is listed once, and the primary KPI not among the others")
+        if self.battery is not None:
+            if self.battery.charging not in {p.value for p in ChargingPolicy}:
+                raise fail(f"battery.charging: unknown charging policy {self.battery.charging!r}")
+            try:
+                self.battery.spec()
+            except ValueError as error:
+                raise fail(f"battery: {error}") from None
         for family in self.families:
-            source = self.map_source(family)
-            if isinstance(source, Path) and not source.is_file():
-                raise fail(
-                    f"family {family.name!r}: unknown map {family.map!r}: neither a preset "
-                    f"({', '.join(PRESETS)}) nor a map or layout file"
-                )
+            if self.compares_layouts:
+                if family.map:
+                    raise fail(f"family {family.name!r}: the layouts give the map, not the family")
+            else:
+                self._check_map(f"family {family.name!r}", family.map)
             if family.robots < 1 or family.orders_per_hour <= 0 or family.duration_s <= 0:
                 raise fail(f"family {family.name!r}: robots, load and duration must be positive")
         d = self.disturbances
@@ -146,22 +226,40 @@ class Experiment:
         if self.margin < 0 or not 0 < self.confidence < 1 or self.resamples < 100:
             raise fail("needs margin >= 0, 0 < confidence < 1 and at least 100 resamples")
 
+    def _check_map(self, owner: str, name: str) -> None:
+        source = self._source(name)
+        if isinstance(source, Path) and not source.is_file():
+            raise ExperimentValidationError(
+                f"experiment: {owner}: unknown map {name!r}: neither a preset "
+                f"({', '.join(PRESETS)}) nor a map or layout file"
+            )
+
     def to_dict(self) -> dict[str, object]:
         def plain(value: object) -> dict[str, object]:
             return {name: getattr(value, name) for name in value.__slots__}  # type: ignore[attr-defined]
 
         own = plain(self)
-        del own["base_dir"]
-        return {
+        for name in ("base_dir", "layouts", "battery"):
+            del own[name]
+        families = [plain(family) for family in self.families]
+        if self.compares_layouts:
+            for family in families:
+                del family["map"]
+        data: dict[str, object] = {
             "format": FORMAT_NAME,
-            "version": FORMAT_VERSION,
+            "version": self.version,
             **own,
-            "families": [plain(family) for family in self.families],
+            "families": families,
             "policies": list(self.policies),
             "seeds": list(self.seeds),
             "kpis": list(self.kpis),
             "disturbances": plain(self.disturbances),
         }
+        if self.layouts:
+            data["layouts"] = [plain(layout) for layout in self.layouts]
+        if self.battery is not None:
+            data["battery"] = plain(self.battery)
+        return data
 
 
 def _object(
@@ -193,7 +291,9 @@ def _items[T](value: object, kind: type[T], where: str) -> tuple[T, ...]:
 def experiment_from_dict(data: object, *, base_dir: Path | None = None) -> Experiment:
     """Build an experiment from parsed JSON, or raise `ExperimentValidationError` naming the
     place of the first problem. Relative map paths are resolved against ``base_dir``."""
-    optional = ("kpis", "margin", "confidence", "resamples", "primary_kpi")
+    optional: tuple[str, ...] = ("kpis", "margin", "confidence", "resamples", "primary_kpi")
+    if isinstance(data, dict) and data.get("version") == 2:
+        optional += ("layouts", "battery")
     required = (
         "format",
         "version",
@@ -205,20 +305,47 @@ def experiment_from_dict(data: object, *, base_dir: Path | None = None) -> Exper
         "disturbances",
     )
     top = _object(data, "experiment", required, optional)
-    if top["format"] != FORMAT_NAME or top["version"] != FORMAT_VERSION:
+    version = top["version"]
+    if top["format"] != FORMAT_NAME or isinstance(version, bool) or version not in (1, 2):
         raise ExperimentValidationError(
-            f"experiment: expected format {FORMAT_NAME!r} version {FORMAT_VERSION}"
+            f"experiment: expected format {FORMAT_NAME!r} version 1 or 2"
         )
+    layouts = []
+    if "layouts" in top:
+        if not isinstance(top["layouts"], list):
+            raise ExperimentValidationError("experiment.layouts: expected a list")
+        for i, item in enumerate(top["layouts"]):
+            obj = _object(item, f"layouts[{i}]", ("name", "map"))
+            layouts.append(
+                LayoutChoice(
+                    _typed(obj["name"], str, f"layouts[{i}].name"),
+                    _typed(obj["map"], str, f"layouts[{i}].map"),
+                )
+            )
+    battery = None
+    if "battery" in top:
+        names = tuple(f.name for f in fields(Battery))
+        obj = _object(top["battery"], "battery", (), names)
+        battery = Battery(
+            **{
+                name: _typed(obj[name], str if name == "charging" else float, f"battery.{name}")
+                for name in names
+                if name in obj
+            }  # type: ignore[arg-type]
+        )
+    family_fields: tuple[str, ...] = ("name", "robots", "orders_per_hour", "duration_s")
+    if not layouts:
+        family_fields = ("name", "map", *family_fields[1:])
     families = []
     if not isinstance(top["families"], list):
         raise ExperimentValidationError("experiment.families: expected a list")
     for i, item in enumerate(top["families"]):
         where = f"families[{i}]"
-        obj = _object(item, where, ("name", "map", "robots", "orders_per_hour", "duration_s"))
+        obj = _object(item, where, family_fields)
         families.append(
             Family(
                 name=_typed(obj["name"], str, f"{where}.name"),
-                map=_typed(obj["map"], str, f"{where}.map"),
+                map=_typed(obj["map"], str, f"{where}.map") if "map" in obj else "",
                 robots=_typed(obj["robots"], int, f"{where}.robots"),
                 orders_per_hour=_typed(obj["orders_per_hour"], float, f"{where}.orders_per_hour"),
                 duration_s=_typed(obj["duration_s"], float, f"{where}.duration_s"),
@@ -253,6 +380,8 @@ def experiment_from_dict(data: object, *, base_dir: Path | None = None) -> Exper
         seeds=_items(top["seeds"], int, "experiment.seeds"),
         disturbances=disturbances,
         kpis=_items(top.get("kpis", []), str, "experiment.kpis"),
+        layouts=tuple(layouts),
+        battery=battery,
         base_dir=base_dir,
         **extra,  # type: ignore[arg-type]
     )

@@ -13,6 +13,7 @@
 | Pairing gain measured under both models (5, step 2) | Done: the schedule did not improve it |
 | Schedule in scenario files and in traces; episodes in the viewer (2.3) | Not built |
 | Results page in the viewer (4) | Built for a results file opened in the browser; no link from a row to its replay |
+| Batteries in experiment files; comparing layouts | Built in Phase 3 (D41): experiment files version 2 |
 | Hierarchical bootstrap for pooled tail KPIs; pilot-based number of seeds; warm-up exclusion (3) | Not built |
 
 The lab compares the existing dispatch policies across scenarios and seeds. Its purpose is to

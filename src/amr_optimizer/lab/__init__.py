@@ -1,17 +1,21 @@
-"""The experiment lab: paired comparisons of dispatch policies over seeds (D36)."""
+"""The experiment lab: paired comparisons of dispatch policies, or of layouts, over seeds (D36,
+D41)."""
 
 from amr_optimizer.lab.analysis import Contrast, bootstrap_interval, holm, paired_contrast
 from amr_optimizer.lab.experiment import (
+    Battery,
     Disturbances,
     Experiment,
     ExperimentValidationError,
     Family,
+    LayoutChoice,
     experiment_from_dict,
     load_experiment,
 )
 from amr_optimizer.lab.runner import (
     UnpairedRunsError,
     analyse,
+    pairing_key,
     report,
     results_to_dict,
     run_experiment,
@@ -21,11 +25,13 @@ from amr_optimizer.lab.runner import (
 )
 
 __all__ = [
+    "Battery",
     "Contrast",
     "Disturbances",
     "Experiment",
     "ExperimentValidationError",
     "Family",
+    "LayoutChoice",
     "UnpairedRunsError",
     "analyse",
     "bootstrap_interval",
@@ -33,6 +39,7 @@ __all__ = [
     "holm",
     "load_experiment",
     "paired_contrast",
+    "pairing_key",
     "report",
     "results_to_dict",
     "run_experiment",

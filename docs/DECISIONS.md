@@ -906,7 +906,7 @@ robot's path.
 - **Two models, two sets of numbers.** Results under the schedule are not comparable with results
   under the independent model, and every result names its model.
 - **Not built** (see the design's status): the schedule in scenario files and in traces, batteries
-  in experiments, hierarchical bootstrap for pooled tail KPIs, and the runner on the HTTP service.
+  in experiments (built since, D41), hierarchical bootstrap for pooled tail KPIs, and the runner on the HTTP service.
 - **The viewer's results page reads, it does not compute** (added 2026-11-16). It opens a results
   file in the browser and shows the lab's own means, intervals and verdicts. Statistics exist in
   one place, Python, so the page cannot disagree with the report. The parser refuses a file whose
@@ -1108,3 +1108,39 @@ stated in D37.
   because robots may follow half a metre apart ([benchmarks](benchmarks.md)). The default stays
   1.0 m (D37).
 - **The service still takes preset names only.**
+
+## D41: The lab compares layouts, pairing runs by what the layouts share; experiment files gain batteries
+**Status:** Accepted (2026-11-17, Phase 3, L3b). Code: `lab/experiment.py`, `lab/runner.py`
+([algorithms](algorithms.md), section 21.4). Experiment files version 2; version 1 is unchanged.
+**Why:**
+- **A new axis, not a new tool.** An experiment with a `layouts` list compares layouts: families
+  give fleet and load, `baseline` names a layout, and every policy (one or more) is compared across
+  layouts, paired by seed. Statistics, Holm correction, margins and verdicts are the lab's own.
+- **What makes two layouts' runs a pair.** Runs on two maps never share a fingerprint. What can be
+  shared is checked with a **pairing key**, a hash of:
+  - the orders by release tick, storage location (by id) and station (by rank among the stations);
+  - the robots by id, and their starts by id on floor and storage, by kind and rank elsewhere;
+  - the disturbances on corridors between floor cells and storage, and every breakdown;
+  - the battery, when there is one.
+  Candidates with the same storage cells and the same number of stations draw the same indices
+  from a seed (`generate_orders` chooses from sorted id lists), and with stable cell ids (D38) the
+  schedule (D36) gives every shared corridor the same episodes. Equal keys are required: the
+  analysis refuses layouts whose keys differ, naming the family, seed and policy.
+- **The fingerprint keeps its job:** within one layout, the policies of a seed must share it.
+- **Batteries in experiment files** (from the backlog; needed to judge charger placement): a
+  `battery` block with the charging policy and the fields of `BatterySpec`. Rows then carry the
+  charging KPIs, which may be named as KPIs, and the checker includes the battery rules (D39). The
+  battery joins the fingerprint only when it is present, so earlier fingerprints are unchanged.
+- **Version 2 only when needed.** A file without layouts or a battery is written as version 1, and a
+  version 1 file may not use the new parts.
+
+**Consequences:**
+- **Results of a layout comparison are results version 2**, because a comparison names a family, a
+  policy and a layout. The viewer's results page reads version 1 only and says so; it was not
+  extended.
+- **Rows gain a `pairing` field** (and `layout` in layout comparisons). Committed results still
+  reproduce value for value.
+- **The pairing is only as good as its assumptions.** Moving a station changes which station an
+  order goes to physically, and moving a charger changes where the third robot starts; that is the
+  difference being measured. Layouts that differ in storage cells or station counts cannot be
+  compared this way, and are refused rather than compared unpaired.

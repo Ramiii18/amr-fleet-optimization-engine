@@ -163,7 +163,7 @@ def _change(path: list[Any], value: Any) -> dict[str, Any]:
     [
         (_change(["colour"], "red"), r"unknown field\(s\) \['colour'\]"),
         (_change(["seeds"], None), r"missing field\(s\) \['seeds'\]"),
-        (_change(["version"], 2), "expected format"),
+        (_change(["version"], 3), "expected format"),
         (_change(["seeds"], [0, 0]), "distinct"),
         (_change(["seeds"], [0, 1.5]), r"seeds\[1\]: expected int"),
         (_change(["policies"], ["greedy"]), "at least two"),

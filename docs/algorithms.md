@@ -2291,3 +2291,31 @@ better plan but a more generous model, which is why the default stays 1.0 m.
 
 **Limitations.** One hall, one load, five seeds for the cell-size figures. The service still takes
 preset names only.
+
+### 21.4 Comparing layouts (`lab/`, D41)
+
+**Problem.** Two layouts are two maps, so their runs can never have equal fingerprints. Comparing
+them unpaired would throw away the main source of precision in the lab: the same orders and the
+same disturbances in both runs of a seed.
+
+**Approach.** Pair by what the layouts share, and check it. A pairing key hashes the orders (release
+tick, storage id, station rank), the robots' starts (by id on floor and storage, by kind and rank
+elsewhere), the disturbances on floor and storage corridors, every breakdown, and the battery.
+
+**Why the key matches on real candidates.** `generate_orders` draws a storage location and a
+station from sorted id lists, one random number each. Two candidates with the same storage cells
+and the same number of stations draw the same indices from the same seed. The schedule seeds each
+corridor's episodes by the corridor's node ids, and each robot's breakdowns by its id, so every
+corridor the candidates share meets the same episodes (tested on the small hall with one station
+and one charger moved: more than 100 shared corridors, identical episodes and breakdowns).
+
+**Analysis.** For every family and policy, every layout against the baseline layout, paired by seed,
+with the lab's statistics: t and bootstrap intervals, signed-rank, wins, the margin and Holm over
+all primary tests. Runs whose keys differ are refused, not compared unpaired.
+
+**Batteries.** Version 2 experiment files may give a battery and a charging policy. Rows then carry
+the charging KPIs (trips, time out of service, waiting for a charger, occupancy, lowest level),
+which the analysis can compare.
+
+**Limitations.** Candidates must share storage cells and station counts. The viewer's results page
+reads policy comparisons (results version 1) only.
