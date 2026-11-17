@@ -53,7 +53,9 @@ src/amr_optimizer/
                io.py         layout files (strict parser, one row per line); one loader for map
                              and layout files
                wellformed.py check_well_formed: is a map fit for the traffic planner (D39)
-               __main__.py   `python -m amr_optimizer.layout compile|check` (D40)
+               screening.py  static screening: separable station proxy, CP-SAT p-median for chargers,
+                             spread control, candidate and experiment writers (D43)
+               __main__.py   `python -m amr_optimizer.layout compile|check|screen` (D40, D43)
   replay/      trace.py      ReplayTrace: a finished run as a versioned record for viewers (map,
                              visits, orders, event log, KPIs, conflicts); strict parser (D33)
                schema.py     the same format as a JSON Schema, for other languages and the API docs

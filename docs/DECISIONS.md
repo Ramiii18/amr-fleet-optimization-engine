@@ -1190,3 +1190,40 @@ Scripts: `make_synthetic_floorplan.py`, `render_layout.py`, `score_transcription
 - What this shows: on clean and moderately degraded synthetic plans the procedure gives exact or
   nearly exact layouts, and the checker catches the consequences of a misread rack end. It is still
   three plans with one transcription each, synthetic, on a whole-metre module.
+
+## D43: Static screening: a separable station proxy, an exact p-median for chargers, and a spread control
+**Status:** Accepted (2026-11-17, Phase 3, L6). Code: `layout/screening.py`,
+`python -m amr_optimizer.layout screen` ([algorithms](algorithms.md), section 21.6).
+**Why:**
+- **Screen cheaply, decide by simulation.** Free-flow distances rank candidate slot assignments in
+  under a second; the lab then judges a handful with traffic. The question of the study is whether
+  the two agree.
+- **Stations: the mean round trip between storage and the station.** Orders choose a storage
+  location and a station uniformly (`generate_orders`), the loaded drive goes from storage to the
+  station, and the next empty drive starts near it. One-way aisles make the two directions differ,
+  so both count. The proxy of a set is the mean over its stations, which is **separable**: the best
+  set is the slots with the smallest round trips, and it tends to cluster. Every combination is
+  enumerated (capped at 200,000), so the ranking is exact, ties broken by slot order.
+- **Chargers: a p-median, solved exactly.** A low robot drives from where it is, mostly a holding
+  spot near the station it served, to its best charger, and starts its next job from there. With
+  the chosen stations as sources, the cost of a charger is the drive to it plus its mean drive to
+  storage. Each source taking its best charger is not separable, so CP-SAT solves it (one worker,
+  deterministic; integer millimetres) and the tests check it against brute force on 220 random
+  instances.
+- **Controls.** A **spread** candidate maximises the smallest round trip between two of its
+  stations (exact, by enumeration); the owner's hand-made **baseline** is added by the experiment
+  generator. The proxy-best and the next ones by proxy complete the set.
+- **Parking is not decided** (owner's choice): parking spots stay as the base draws them, and slots
+  chosen for nothing are blocked. A base must leave every station and charger to its slots.
+- **Pairing by construction.** Every candidate keeps the base's storage cells and the station and
+  charger counts, so the lab pairs them (D41); a test checks equal pairing keys.
+
+**Consequences:**
+- **The proxy ignores congestion and charger queues on purpose.** A clustered station set is what
+  it rewards; whether traffic punishes that is the study's question.
+- **Charger proxies are approximate models of the engine's rule**, which sends a robot to the
+  nearest *free* charger by travel time from wherever it stands. The p-median uses stations as
+  sources and adds the onward drive to storage.
+- **Near-ties are expected.** On the L-shaped example with 4 stations, the four best sets by proxy
+  were within 1 m of each other per order (38.6 to 39.6 m) and the spread control was 47.5 m, so a
+  ranking among the proxy-best sets is unlikely to be resolved by any simulation.

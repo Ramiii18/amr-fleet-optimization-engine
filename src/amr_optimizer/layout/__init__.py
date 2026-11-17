@@ -1,5 +1,5 @@
-"""Floor plans as layout files compiled into warehouse graphs, and the check that a map is fit
-for the traffic planner (Phase 3, D37 to D39)."""
+"""Floor plans as layout files compiled into warehouse graphs, the check that a map is fit for
+the traffic planner, and static screening of candidate layouts (Phase 3, D37 to D43)."""
 
 from amr_optimizer.layout.compiler import cell_node_id, compile_layout
 from amr_optimizer.layout.io import (

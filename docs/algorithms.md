@@ -2343,3 +2343,37 @@ degraded (non-integer scale, rotation, blur, noise, dimension text) and the agen
 image alone: two exact, one with 6 wrong cells of 182, where a rack end was read as an aisle. Three
 synthetic plans with one transcription each are evidence about this procedure on such plans, not an
 error rate.
+
+### 21.6 Static screening (`layout/screening.py`, D43)
+
+**Problem.** Choose which candidate slots become stations and chargers. Simulating every assignment
+is too slow; free-flow distances are fast but ignore congestion.
+
+**Station proxy, and why it is separable.** An order picks a storage location k and a station s
+uniformly, so per order the expected loaded-plus-return drive is
+
+    (1 / |S|) · Σ over s in S of m(s),   with   m(s) = mean over k of [d(k, s) + d(s, k)].
+
+Each station contributes on its own: the sum has no interaction terms. The best set is therefore
+the |S| slots with the smallest m(s), and since m is smallest near the middle of the storage, the
+best set clusters. Congestion at clustered stations is an interaction the formula cannot see; the
+simulation can.
+
+**Charger proxy: the p-median.** Sources i (the chosen stations), slots j, cost
+c(i, j) = d(i, j) + mean over k of d(j, k). Choose p slots minimising Σ_i min over chosen j of
+c(i, j). As an integer program: y_j (open), x_ij (i served by j), Σ y_j = p, Σ_j x_ij = 1, x_ij ≤ y_j,
+minimise Σ c_ij x_ij. It is NP-hard in general but tiny here (a few sources, a dozen slots); CP-SAT
+proves the optimum. Brute force over all C(n, p) sets agrees on 220 random instances.
+
+**Spread control: p-dispersion.** The station set that maximises the smallest round trip between two
+of its stations, by enumeration.
+
+**Complexity.** Two Dijkstra runs per slot (on the map and on the reversed map): O(slots ·
+(E + V log V)). Enumeration of C(slots, stations) sets, capped at 200,000. One small CP-SAT model per
+candidate.
+
+**Invariants (tested).** The proxy-best set is the nearest slots; candidates come in order of proxy;
+the spread control has the largest smallest gap of all sets; chargers are the brute-force optimum;
+every candidate is fully assigned, well formed for batteries, and has the same pairing key as the
+others; the proxies recomputed on a candidate's own map equal those of the search; the output is the
+same, byte for byte, on every run.
